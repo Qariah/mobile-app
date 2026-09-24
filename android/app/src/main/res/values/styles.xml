@@ -1,0 +1,23 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+  <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- Redmi-freeze fix: the app manages its own light/dark theming, so opt OUT
+         of OS auto-force-dark. On MIUI (Xiaomi) the force-dark path runs
+         ForceDarkHelper.updateByCheckExcludeList on EVERY view of a freshly
+         mounted tree (~150 views when opening a reciter profile), piling onto
+         the react-native-screens ScreenContainer layout flood and wedging the
+         main thread for seconds on the slow Helio G85. Stock Android/Samsung
+         don't run this MIUI path → part of why the freeze was Xiaomi-specific. -->
+    <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+    <item name="android:enforceNavigationBarContrast" tools:targetApi="29">true</item>
+    <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+    <item name="colorPrimary">@color/colorPrimary</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+  </style>
+  <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
+    <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
+    <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
+    <item name="postSplashScreenTheme">@style/AppTheme</item>
+    <item name="android:windowSplashScreenBehavior">icon_preferred</item>
+  </style>
+</resources>

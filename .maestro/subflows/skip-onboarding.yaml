@@ -1,0 +1,94 @@
+# Reusable: get to the main app surface from any cold-start landing, on iOS AND Android.
+# Handles the full first-run sequence (shown after `clearState`) AND is a no-op when the tab
+# bar is already up (every step is guarded on it).
+#
+# CALLER CONTRACT — call this only on a launch that lands on the TAB BAR: i.e. right after
+# `launchApp: { clearState: true }`, or after a restore that lands on a tab. The loop exits on
+# `visible: "Mushaf"`, which is a TAB LABEL. The Mushaf READER is tab-less (README notes 4-5) —
+# it shows a surah header like "Al-Baqarah" and no "Mushaf" text. So on a `clearState: false`
+# relaunch that restoreSession pushes into the reader, this subflow is NOT a no-op: the loop
+# body runs, the `extendedWaitUntil` below matches none of its six selectors, and the flow
+# FAILS after 30 s. The old one-shot `when:` guards were skipped harmlessly in that case.
+# No flow does this today (mushaf-session-restore.yaml deliberately does not re-call this
+# after its relaunch). If one needs to, add the reader's own signal to the exit condition
+# rather than calling this as-is.
+#
+# First-run surfaces, and why the ORDER is not fixed:
+#   - welcome screen            → "Get started"
+#   - sign-in screen            → "Skip for now" (Android text) / "Skip sign-in for now" (iOS label)
+#   - What's New card           → "Skip". A root-mounted modal that opens 800 ms after an async
+#     version check (components/modals/WhatsNewOnboarding), so it races the onboarding stack:
+#     it can open OVER THE WELCOME screen or, after "Get started", OVER THE SIGN-IN screen.
+#     Both orders were seen on iOS 18 Release builds on 2026-09-20 (the 1975 hotfix boot gate
+#     hit the second one); the old subflow assumed "Skip" → "Get started" → "Skip for now"
+#     and failed 4/4 there.
+# Two more surfaces race the same way: the Android 13+ POST_NOTIFICATIONS system dialog
+# ("Allow", requested at player init, S24.1) came up ~10 s after launch over the splash on a
+# fresh API-34 emulator, and the S33 background-playback prompt ("NOT NOW") came up over the
+# welcome screen. A fixed chain of one-shot `when:` guards (they check once, never wait)
+# missed whichever overlay arrived a moment late, and that overlay then hid every other
+# selector (2026-09-20).
+# So this subflow is a bounded loop, not a sequence: each pass waits for ANY known surface,
+# dismisses overlays first, then advances whichever onboarding screen is showing, until the
+# tab bar ("Mushaf", a tab label on both platforms) is on screen. Already onboarded = the
+# loop body never runs.
+#
+# Maestro text is a FULL-MATCH, case-insensitive regex. "Skip" therefore matches only the
+# card's button, never "Skip for now". The card's last-page button reads "Get Started", which
+# also matches "Get started" — so each pass dismisses the card BEFORE it looks for "Get started".
+appId: com.qariah.app
+---
+- repeat:
+    while:
+      notVisible: "Mushaf"
+    # welcome + card + sign-in + two dialogs = 5 surfaces; 8 passes leaves slack.
+    times: 8
+    commands:
+      # First Release launch on a fresh simulator/emulator can sit on splash for 10+ s.
+      - extendedWaitUntil:
+          visible: "Get started|Skip|Skip( sign-in)? for now|Allow|NOT NOW|Mushaf"
+          timeout: 30000
+      # Overlays first — each one hides the screen under it.
+      - runFlow:
+          when:
+            visible: "Allow"
+          commands:
+            - tapOn: "Allow"
+      - runFlow:
+          when:
+            visible: "NOT NOW"
+          commands:
+            - tapOn: "NOT NOW"
+      - runFlow:
+          when:
+            visible: "Skip"
+          commands:
+            - tapOn: "Skip"
+      # Then the onboarding screens. Android exposes the sign-in button's visible text
+      # "Skip for now"; iOS exposes its accessibilityLabel "Skip sign-in for now".
+      - runFlow:
+          when:
+            visible: "Get started"
+          commands:
+            - tapOn: "Get started"
+      - runFlow:
+          when:
+            visible: "Skip( sign-in)? for now"
+          commands:
+            - tapOn: "Skip( sign-in)? for now"
+# An overlay can still arrive just after the tab bar paints. One last sweep.
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- runFlow:
+    when:
+      visible: "NOT NOW"
+    commands:
+      - tapOn: "NOT NOW"
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"

@@ -1,0 +1,18 @@
+# C4 — Browse All: the full reciter grid renders and scrolls.
+appId: com.qariah.app
+tags:
+  - regression
+  - search
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Search'
+- tapOn: 'Browse All'
+# grid mounted — a "N reciters" count header (full-match regex → wildcard)
+- extendedWaitUntil:
+    visible: '.*reciters.*'
+    timeout: 6000
+# grid scrolls without crashing
+- scroll
+- assertVisible: '.*reciters.*'

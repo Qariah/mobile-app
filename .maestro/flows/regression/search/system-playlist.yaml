@@ -1,0 +1,21 @@
+# J4 — System-playlist detail. WIP (tagged `wip`, excluded from the green regression gate).
+#
+# Finding (2026-06-30, on-device): tapping a curated playlist card ("Stories of the Prophets")
+# does NOT open a titled detail screen — the tap completes and the app lands on the Mushaf
+# surah grid (hierarchy showed "SURAH OF THE DAY", not a playlist header). So J4's real
+# interaction model is tap→navigate/play, not tap→detail. Confirm the intended target + add a
+# stable `testID` on the playlist card and its destination before promoting this to `regression`.
+appId: com.qariah.app
+tags:
+  - wip
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Search'
+- tapOn: 'Stories of the Prophets'
+# TODO(testID): assert the confirmed destination (playlist detail header or the started-playback
+# mini-player). The title text is not echoed on the landing screen — see finding above.
+- extendedWaitUntil:
+    visible: '.*Stories of the Prophets.*'
+    timeout: 6000

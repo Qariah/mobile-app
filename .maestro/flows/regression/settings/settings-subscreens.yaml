@@ -1,0 +1,22 @@
+# K1/K2 — Settings index renders + a sub-screen navigates and back returns.
+# Grounded on-device: index sections ACCOUNT / APPEARANCE / AUDIO & PLAYBACK / QURAN /
+# APP & DATA / FEEDBACK; the Mushaf Settings sub-screen shows "Arabic Font Size" + "PAGE DESIGN".
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Settings'
+- assertVisible: 'Default Reciter'
+- assertVisible: 'QURAN'
+# Mushaf Settings sub-screen mounts (a control unique to it)
+- tapOn: 'Mushaf Settings'
+- extendedWaitUntil:
+    visible: 'Arabic Font Size'
+    timeout: 6000
+# back returns to the Settings index
+- back
+- assertVisible: 'Default Reciter'

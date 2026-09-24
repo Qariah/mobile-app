@@ -1,0 +1,24 @@
+# Stage-1 critical path: browse → open a single-rewaya reciter → surah rows render (#114).
+# Point-taps the first grid cell — refine to a `testID` on the reciter card later
+# (Phase-1 prereq), which also lets this flow assert playback start deterministically.
+appId: com.qariah.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../subflows/skip-onboarding.yaml
+- assertVisible: ".*Listen"
+# "Browse by" → Reciters tile → reciter grid.
+- tapOn: "Reciters"
+- tapOn:
+    point: 50%,32%
+# reciter profile header loaded ("N recitation(s)"). Maestro text = full-match
+# regex, so wildcard to match the node "5 recitations".
+- extendedWaitUntil:
+    visible: ".*recitation.*"
+    timeout: 6000
+# #114 — the surah list rendered (a "JUZ N" divider is present), not the skeleton shimmer.
+- extendedWaitUntil:
+    visible: ".*JUZ.*"
+    timeout: 6000

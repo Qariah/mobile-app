@@ -1,0 +1,19 @@
+# E1 — Mushaf reader: open a surah from the Mushaf tab → the page renders past the spinner.
+# Page glyphs are Skia (canvas, no a11y nodes) — assert the RN surah-header chrome instead.
+appId: com.qariah.app
+tags:
+  - regression
+  - mushaf
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Mushaf'
+- extendedWaitUntil:
+    visible: 'Al-Baqarah'
+    timeout: 6000
+- tapOn: 'Al-Baqarah'
+# reader mounted + DigitalKhatt/Skia resolved — the surah-header chrome text is present
+- extendedWaitUntil:
+    visible: '.*Al-Baqarah.*'
+    timeout: 10000

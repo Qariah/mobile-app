@@ -1,0 +1,192 @@
+import React, {useMemo, useState, useCallback} from 'react';
+import {
+  View,
+  StyleSheet,
+  useWindowDimensions,
+  ActivityIndicator,
+} from 'react-native';
+import {moderateScale} from 'react-native-size-matters';
+import {moderateScale as moderateScaleCapped} from '@/utils/scale';
+import {LegendList} from '@legendapp/list';
+import {Reciter} from '@/data/reciterData';
+import {Theme} from '@/utils/themeUtils';
+import {BrowseReciterCard} from './BrowseReciterCard';
+
+interface BrowseGridProps {
+  reciters: Reciter[];
+  onReciterPress: (reciter: Reciter) => void;
+  theme: Theme;
+  keyboardShouldPersistTaps?: 'always' | 'handled' | 'never';
+  onScrollBeginDrag?: () => void;
+  getRewayatIdForReciter?: (reciter: Reciter) => string | undefined;
+  // Optional bottom inset to clear the floating mini-player + tab bar.
+  // Callers compute via `useBottomInset` so the last grid row stays
+  // tappable when the mini-player is visible. Defaults to 0 for callers
+  // that don't need it; the original `moderateScale(80)` floor still
+  // applies when the inset is small or unset.
+  bottomInset?: number;
+}
+
+function createStyles(_theme: Theme, bottomInset = 0) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    gridContainer: {
+      paddingHorizontal: moderateScale(10),
+      paddingBottom: Math.max(moderateScaleCapped(80), bottomInset),
+      paddingTop: moderateScale(8),
+    },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: moderateScale(10),
+    },
+    loadingContainer: {
+      padding: moderateScale(20),
+      alignItems: 'center',
+    },
+  });
+}
+
+// Create rows of items for grid layout
+const createItemRows = (
+  reciters: Reciter[],
+  numColumns: number,
+): Array<Reciter[]> => {
+  const rows: Array<Reciter[]> = [];
+  for (let i = 0; i < reciters.length; i += numColumns) {
+    rows.push(reciters.slice(i, i + numColumns));
+  }
+  return rows;
+};
+
+const BrowseGrid = React.memo(
+  ({
+    reciters,
+    onReciterPress,
+    theme,
+    keyboardShouldPersistTaps = 'handled',
+    onScrollBeginDrag,
+    getRewayatIdForReciter,
+    bottomInset = 0,
+  }: BrowseGridProps) => {
+    const {width: windowWidth} = useWindowDimensions();
+    const [isLoading] = useState(false);
+
+    // Calculate number of columns based on screen width
+    const numColumns = useMemo(() => {
+      const minCardWidth = moderateScale(120);
+      return Math.max(3, Math.floor(windowWidth / minCardWidth));
+    }, [windowWidth]);
+
+    // Convert flat list to rows for grid layout
+    const itemRows = useMemo(() => {
+      return createItemRows(reciters, numColumns);
+    }, [reciters, numColumns]);
+
+    const styles = useMemo(
+      () => createStyles(theme, bottomInset),
+      [theme, bottomInset],
+    );
+
+    // Calculate item dimensions
+    const itemDimensions = useMemo(() => {
+      const totalHorizontalPadding = moderateScale(16);
+      const gapSpace = moderateScale(10) * (numColumns - 1);
+      const availableWidth = windowWidth - totalHorizontalPadding - gapSpace;
+      const itemWidth = availableWidth / numColumns;
+      const itemHeight = itemWidth * 1.2;
+
+      return {
+        width: itemWidth,
+        height: itemHeight,
+      };
+    }, [windowWidth, numColumns]);
+
+    // Render a row of items
+    const renderRow = useCallback(
+      ({item}: {item: Reciter[]}) => (
+        <View style={styles.row}>
+          {item.map(reciter => (
+            <BrowseReciterCard
+              key={reciter.id}
+              reciter={reciter}
+              onPress={() => onReciterPress(reciter)}
+              width={itemDimensions.width}
+              height={itemDimensions.height}
+              theme={theme}
+              rewayatId={getRewayatIdForReciter?.(reciter)}
+            />
+          ))}
+          {/* Add empty placeholders for the last row if needed */}
+          {item.length < numColumns &&
+            Array(numColumns - item.length)
+              .fill(null)
+              .map((_, index) => (
+                <View
+                  key={`placeholder-${index}`}
+                  style={{width: itemDimensions.width}}
+                />
+              ))}
+        </View>
+      ),
+      [
+        itemDimensions,
+        onReciterPress,
+        theme,
+        numColumns,
+        styles.row,
+        getRewayatIdForReciter,
+      ],
+    );
+
+    const keyExtractor = useCallback(
+      (item: Reciter[], index: number) => `row-${index}`,
+      [],
+    );
+
+    const renderFooter = useCallback(() => {
+      if (!isLoading) return null;
+
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.text} />
+        </View>
+      );
+    }, [isLoading, styles.loadingContainer, theme.colors.text]);
+
+    return (
+      <View style={styles.container}>
+        <LegendList
+          data={itemRows}
+          renderItem={renderRow}
+          keyExtractor={keyExtractor}
+          contentContainerStyle={styles.gridContainer}
+          scrollIndicatorInsets={{bottom: bottomInset}}
+          estimatedItemSize={itemDimensions.height}
+          recycleItems
+          drawDistance={2000}
+          showsVerticalScrollIndicator={false}
+          ListFooterComponent={renderFooter}
+          keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+          waitForInitialLayout
+          onEndReachedThreshold={0.5}
+          maintainVisibleContentPosition
+          onScrollBeginDrag={onScrollBeginDrag}
+        />
+      </View>
+    );
+  },
+  (prevProps, nextProps) =>
+    prevProps.theme === nextProps.theme &&
+    prevProps.onReciterPress === nextProps.onReciterPress &&
+    prevProps.reciters.length === nextProps.reciters.length &&
+    prevProps.getRewayatIdForReciter === nextProps.getRewayatIdForReciter &&
+    prevProps.bottomInset === nextProps.bottomInset &&
+    prevProps.keyboardShouldPersistTaps === nextProps.keyboardShouldPersistTaps,
+);
+
+BrowseGrid.displayName = 'BrowseGrid';
+
+export default BrowseGrid;

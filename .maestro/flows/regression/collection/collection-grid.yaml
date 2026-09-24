@@ -1,0 +1,17 @@
+# I1 — Collection grid: every category renders (empty-state text is fine — it proves the
+# category mounted). Grounded from the on-device Collection tab.
+appId: com.qariah.app
+tags:
+  - regression
+  - collection
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Collection'
+- assertVisible: 'Bookmarks'
+- assertVisible: 'Personal Notes'
+- assertVisible: 'Reflections'
+- assertVisible: 'Loved'
+- assertVisible: 'Downloads'
+- assertVisible: 'Playlists'

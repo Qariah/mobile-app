@@ -1,0 +1,16 @@
+# Stage-1: all 5 tabs reachable; key screens render content (not just the tab bar).
+appId: com.qariah.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../subflows/skip-onboarding.yaml
+- tapOn: "Mushaf"
+- tapOn: "Search"
+- tapOn: "Collection"
+- tapOn: "Settings"
+# a Settings content row (proves the Settings screen rendered, not just its tab label)
+- assertVisible: "Default Reciter.*"   # iOS joins the row title + subtitle into one label
+- tapOn: ".*Listen"
+- assertVisible: "Browse by"

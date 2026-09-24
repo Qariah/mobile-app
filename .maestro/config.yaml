@@ -1,0 +1,10 @@
+# Maestro workspace config — Qariah v2 regression flows.
+# The SAME flow files run on a local attached device (`maestro test .maestro/flows/...`)
+# and on BrowserStack App Automate (scripts/browserstack/run-maestro.sh).
+# See docs/operations/regression-test-plan.md for the 3-stage model.
+flows:
+  - 'flows/**'
+
+# Filter by tag at run time:  maestro test --include-tags=smoke .maestro/flows
+#   smoke      → Stage 1 boot gate (every build)
+#   regression → Stage 2 full regression (every publish)

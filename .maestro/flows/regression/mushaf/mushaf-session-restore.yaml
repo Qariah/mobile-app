@@ -1,0 +1,52 @@
+# E2 — Mushaf SESSION RESTORE across a cold start.
+#
+# Guards the bug that shipped in 3.2.0 (1705): on a cold start, app/_layout.tsx
+# prepare() restores the last session and pushes straight to /mushaf. Since
+# Sprint 30's `deferMushafPreload`, DigitalKhatt initialises NON-AWAITED off the
+# splash path, so that screen can mount before DK is ready. With a non-reactive
+# `dkReady` read, nothing re-renders when DK finishes and the spinner stays up
+# FOREVER — user sees a blank page with only a back button (owner report,
+# 2026-08-04, iOS beta). Fixed by subscribing to the DK cacheVersion
+# (useSyncExternalStore) in app/mushaf.tsx.
+#
+# HONEST LIMITATION: the underlying failure is a RACE. On a warm device with DK
+# caches already on disk, init can win the race and the buggy build would pass
+# this flow too — so a green run here is a GUARD against re-regression, not
+# proof the race is closed. The deterministic check is that app/mushaf.tsx
+# subscribes to cacheVersion; this flow verifies the restore path stays intact
+# end-to-end and would catch a wholesale revert.
+#
+# Distinct from mushaf-open-reader.yaml, which opens the reader from WITHIN a
+# running session and never exercises restore-on-launch at all — that blind spot
+# is why 1705 shipped with this bug.
+appId: com.qariah.app
+tags:
+  - regression
+  - mushaf
+---
+# 1. Establish a Mushaf session so there is something to restore.
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: "Mushaf"
+- extendedWaitUntil:
+    visible: "Al-Baqarah"
+    timeout: 8000
+- tapOn: "Al-Baqarah"
+- extendedWaitUntil:
+    visible: ".*Al-Baqarah.*"
+    timeout: 10000
+
+# 2. Kill the process. Session state is persisted; DK service state is not.
+- stopApp
+
+# 3. Cold start WITHOUT clearState — restore must push back into the reader.
+#    This is the exact path that hung on 1705.
+- launchApp:
+    clearState: false
+
+# 4. The reader must render past the DK spinner. If this times out, the
+#    non-reactive dkReady regression is back.
+- extendedWaitUntil:
+    visible: ".*Al-Baqarah.*"
+    timeout: 20000

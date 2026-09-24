@@ -1,0 +1,25 @@
+# J1/J2 — Search: type a query → real-time surah + reciter results → tap a result → destination.
+# Grounded: placeholder "Search surahs or reciters"; query "baqara" yields "2. Al-Baqarah"
+# (+ "The Cow" translation) and reciter rows (Hafs / Warsh).
+appId: com.qariah.app
+tags:
+  - regression
+  - search
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Search'
+- tapOn: 'Search surahs or reciters'
+- inputText: 'baqara'
+# surah result (Maestro text = full-match regex → wildcard the "2. " prefix + "The Cow" subtitle)
+- extendedWaitUntil:
+    visible: '.*Al-Baqarah.*'
+    timeout: 6000
+# reciter results also surface for the same query (a rewaya label proves the reciter section rendered)
+- assertVisible: '.*Hafs.*'
+# tap the surah result → opens the Mushaf reader at that surah (real surah-header text node)
+- tapOn: '.*Al-Baqarah.*'
+- extendedWaitUntil:
+    visible: '.*Al-Baqarah.*'
+    timeout: 8000

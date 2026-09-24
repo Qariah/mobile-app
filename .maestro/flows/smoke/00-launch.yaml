@@ -1,0 +1,21 @@
+# Stage-1 boot gate: app launches past splash and a primary surface renders.
+# Runs identically on the Pixel 3 (local) and every BrowserStack device.
+appId: com.qariah.app
+tags:
+  - smoke
+  - boot
+---
+# clearState so the gate always measures a TRUE cold first-run, and so this flow
+# cannot inherit state from whichever flow ran before it (Maestro runs the suite
+# in filename order and `02-browse-to-play` leaves the player sheet expanded over
+# the tab bar).
+- launchApp:
+    clearState: true
+# Clears the Android 13+ notification dialog, the 3-step onboarding, and the S33
+# background-playback prompt. 00-launch previously inlined only the S33 guard and
+# so failed on any clean install — the app was correctly sitting on onboarding,
+# but the flow asserted "Listen" immediately. Fixed 2026-08-02.
+- runFlow: ../../subflows/skip-onboarding.yaml
+# Past splash ⇒ the bottom tab bar is present (persists on every tab + Mushaf).
+- assertVisible:
+    text: ".*Listen"   # iOS exposes the selected tab as ", Listen" (2026-09-07)

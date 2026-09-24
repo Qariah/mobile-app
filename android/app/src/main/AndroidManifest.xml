@@ -1,0 +1,90 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+  <!-- Sprint 24 S24.1 — Android 13+ (API 33+) requires runtime POST_NOTIFICATIONS
+       grant for the media-player notification posted by the AudioControlsService
+       foreground service. Without it, Samsung/OnePlus/Xiaomi OEMs treat the
+       service as effectively background within seconds of the app going to the
+       home screen → kill it → audio stops. Symptom: user taps home, returns to
+       app, mini-player shows play (not pause); foreground service is gone.
+       expo-audio's plugin only adds this perm when enableBackgroundRecording=true;
+       it should also add it for enableBackgroundPlayback=true. Goodwill upstream
+       PR candidate (TECH_DEBT row tracked in Sprint 24). FB-1. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
+  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+  <!-- RECORD_AUDIO intentionally NOT declared: Qariah is playback-only. expo-audio
+       is configured with microphonePermission:false (app.config.ts) so prebuild
+       won't re-add it. (Sprint 32 — privacy hygiene.) -->
+
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+  <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
+  <!-- Qariah does not use the Android Advertising ID (no ads, no ad attribution SDKs). A transitive dep (likely Play Services) auto-merges this perm; we strip it so the Play Console tracker scan matches our "No, does not use AD_ID" declaration. Also enforced by ./withRemoveAdIdPermission.js so prebuild preserves this. See Sprint 24 S24.0 + TECH_DEBT #29. -->
+  <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW"/>
+      <category android:name="android.intent.category.BROWSABLE"/>
+      <data android:scheme="https"/>
+    </intent>
+  </queries>
+  <application android:name=".MainApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="true" android:theme="@style/AppTheme" android:supportsRtl="true" android:enableOnBackInvokedCallback="false" android:largeHeap="true">
+    <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_icon_color"/>
+    <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/notification_icon"/>
+    <meta-data android:name="expo.modules.notifications.default_notification_color" android:resource="@color/notification_icon_color"/>
+    <meta-data android:name="expo.modules.notifications.default_notification_icon" android:resource="@drawable/notification_icon"/>
+    <meta-data android:name="expo.modules.updates.ENABLED" android:value="false"/>
+    <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version"/>
+    <meta-data android:name="expo.modules.updates.ENABLE_BSDIFF_PATCH_SUPPORT" android:value="true"/>
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
+    <!-- REPORT-ONLY Sentry native release/dist fallback. Tags native-layer events
+         (captured before JS Sentry.init runs — the earliest boot frames where the
+         worst hangs live) so they tie to a build instead of `release: None`. The
+         JS-side Sentry.init value wins once JS runs. Placeholders are populated by
+         the `manifestPlaceholders` block in android/app/build.gradle; mirror any
+         change there. See planning/observability-gap-samsung-hang-2026-06-08.md §0. -->
+    <meta-data android:name="io.sentry.release" android:value="${sentryRelease}"/>
+    <meta-data android:name="io.sentry.dist" android:value="${sentryDist}"/>
+    <service android:name="expo.modules.audio.service.AudioControlsService" android:exported="false" android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService"/>
+      </intent-filter>
+    </service>
+    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="qariah"/>
+        <data android:scheme="exp+qariah"/>
+        <data android:scheme="com.qariah.app"/>
+      </intent-filter>
+      <!-- Audio share-intent target (expo-share-intent: androidIntentFilters +
+           androidMultiIntentFilters = ['audio/*'], one pair each). The committed
+           manifest had accumulated THREE identical pairs from repeated non-clean
+           `expo prebuild` runs (the plugin's manifest mod appends rather than
+           replaces), so this was deduped to a single pair by hand (TECH_DEBT #169).
+           The plugin config already emits exactly one pair, so do NOT re-triple by
+           re-running prebuild without the clean flag; a clean prebuild regenerates
+           the whole file (re-apply the Qariah annotations above), or dedupe after. -->
+      <intent-filter>
+        <action android:name="android.intent.action.SEND"/>
+        <data android:mimeType="audio/*"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.SEND_MULTIPLE"/>
+        <data android:mimeType="audio/*"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>

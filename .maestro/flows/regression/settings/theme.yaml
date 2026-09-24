@@ -1,0 +1,16 @@
+# K10 — Theme picker: the Appearance control switches theme without crashing.
+# Grounded: APPEARANCE section is inline on the Settings index with Light / Dark / Auto.
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: 'Settings'
+- assertVisible: 'APPEARANCE'
+- tapOn: 'Dark'
+- assertVisible: 'APPEARANCE' # index still rendered after applying (no crash / re-theme ok)
+- tapOn: 'Light'
+- assertVisible: 'APPEARANCE'

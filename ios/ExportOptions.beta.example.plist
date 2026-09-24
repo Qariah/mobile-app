@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Beta TestFlight build (bundle id `com.qariah.app.beta`). Copy this -->
+    <!-- to ios/ExportOptions.beta.plist (gitignored — contains team id) -->
+    <!-- and fill in your team id. Used by `scripts/ios-archive.sh --beta`. -->
+    <!-- One-time portal setup steps in CONTRIBUTING-QARIAH.md. -->
+
+    <key>method</key>
+    <string>app-store</string>
+
+    <key>teamID</key>
+    <string>YOUR_TEAM_ID</string>
+
+    <key>uploadSymbols</key>
+    <true/>
+
+    <key>compileBitcode</key>
+    <false/>
+
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <key>stripSwiftSymbols</key>
+    <true/>
+
+    <key>thinning</key>
+    <string>&lt;thin-for-all-variants&gt;</string>
+</dict>
+</plist>

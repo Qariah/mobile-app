@@ -1,0 +1,85 @@
+# Stage-1 #266 (Sprint 42): the mini-player close (✕) dismisses the bar AND a
+# subsequent play still works (stop must release the session without breaking
+# next-play — the playOpId/clearMainPlayer contract).
+# ANDROID-ONLY, and deliberately so (see the `android-only` tag below).
+# Selector notes: the ✕ carries accessibilityLabel="Close player" (RN →
+# content-desc), which on Android is its OWN node and can be tapped directly.
+# iOS merges the whole mini-player bar into ONE composed label
+# ("Ad-Dukhan, Still loading…, Close player" on 2026-09-09; the "Still loading"
+# second line was reverted 2026-09-13), so the ✕ is not individually
+# addressable there: a `.*Close player.*` selector matches the BAR, and tapping
+# it EXPANDS the player sheet instead of closing it. The dismissal assertion
+# then passes for the wrong reason (the bar is gone because the sheet covers
+# it) — a false green. Verified 2026-09-09 on the iPhone 16 Pro sim: the
+# post-tap hierarchy is "Bottom Sheet" + "Bottom sheet backdrop", and the next
+# step could no longer find the surah rows.
+#
+# #401 APP-SIDE FIX LANDED (2026-09-10), TAG DELIBERATELY KEPT: both bars
+# (`MiniPlayer` = iOS 26+, `FloatingPlayer` = Android and iOS < 26) now set
+# `accessible={false}` on the bar and give every control its own testID —
+# `mini-player-close`, `mini-player-play-pause`, `mini-player-expand` — so the
+# ✕ is its own element. That fix has NOT been proven on an iOS run: it needs a
+# build carrying it, and no such build has been installed on a simulator yet.
+# TO UN-GATE (do all three, in this order, and only then delete the tag):
+#   1. build + install a build that contains the #401 fix,
+#   2. `maestro test .maestro/flows/smoke/04-mini-player-close.yaml` on iOS,
+#      switching the three `Close player` selectors to `id: mini-player-close`,
+#   3. re-run the SAME file on Android (the `id` selector must hold on both;
+#      Android is 5/5 today on the text selector and must not regress).
+# Un-gating without step 2 re-creates exactly the false green this flow
+# documents.
+# The S42 boot-gate found the FloatingPlayer subtree is INVISIBLE to
+# `uiautomator dump`; Maestro's driver reads the RN a11y tree directly, so text
+# selectors work here — if a Maestro upgrade ever goes blind on this overlay,
+# fall back to point taps (see handoff-sprint-42).
+# The surah row is selected by TEXT, and the two platforms label it
+# DIFFERENTLY: Android exposes the visible title ("44. Ad-Dukhan"), iOS
+# composes an a11y label ("Surah Ad-Dukhan, The Smoke, 59 verses") with no
+# leading number. The alternation below matches both; a testID on the row is
+# the real fix (same Phase-1 prereq as 02's grid cell).
+appId: com.qariah.app
+tags:
+  - smoke
+  # ANDROID-ONLY (see the header). iOS runs must pass
+  # --exclude-tags=android-only; `platform:` is NOT honoured by Maestro 2.10.
+  - android-only
+---
+# clearState: a dirty launch carries a pending restoreSession push (often to
+# the Mushaf) that can yank navigation MID-FLOW — both suite-context failures
+# of this flow were that race (profile open, then teleported to the Mushaf
+# browser while waiting on the row tap). A fresh state has no session to
+# restore; skip-onboarding is built for the clearState path.
+- launchApp:
+    clearState: true
+- runFlow: ../../subflows/skip-onboarding.yaml
+# iOS exposes the SELECTED tab as ", Listen", so an exact match fails there
+# while the tab bar is rendering perfectly (00-launch hit this on 2026-09-07
+# and already uses the regex). This flow shipped in S42 Android-only, so the
+# iOS half was never exercised until the 2026-09-08 auto-sprint.
+- assertVisible: '.*Listen'
+# Same path as 02: Browse by → Reciters → first grid cell → surah rows.
+- tapOn: 'Reciters'
+- tapOn:
+    point: 50%,32%
+- extendedWaitUntil:
+    visible: '.*JUZ.*'
+    timeout: 6000
+# Start playback from the first surah row. Selected by TEXT ('\d+\. .*'
+# full-match regex = a surah title like "44. Ad-Dukhan"; nothing else on the
+# profile matches) — point-taps proved device-fragile (the row sits at ~66%
+# on a Pixel 7 but ~70% on a Pixel 3; both misses cost a re-gate cycle).
+- tapOn: '(\d+\. .*|Surah .*verses)'
+# Mini player appears once the track cues (network load — generous timeout).
+- extendedWaitUntil:
+    visible: 'Close player'
+    timeout: 10000
+# ✕ → the bar dismisses (the 'Close player' node unmounts with it).
+- tapOn: 'Close player'
+- extendedWaitUntil:
+    notVisible: 'Close player'
+    timeout: 5000
+# Next play still works after a stop (#266's second half): replay the row.
+- tapOn: '(\d+\. .*|Surah .*verses)'
+- extendedWaitUntil:
+    visible: 'Close player'
+    timeout: 10000
