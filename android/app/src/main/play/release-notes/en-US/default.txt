@@ -1,0 +1,9 @@
+Welcome to Qariah v2 — fully rebuilt.
+
+• Four launch reciters: Zaynab Talha (Hafs), Muna Abdifatar Abdifarah (Hafs), Hajar Boussaq (Warsh), Safa Ghoulem (Qālūn + Sūsī).
+
+• Cleaner playback: lock-screen controls, background play, gapless surah-to-surah.
+
+• Faster startup, much less battery drain than v1.
+
+Thank you for listening.

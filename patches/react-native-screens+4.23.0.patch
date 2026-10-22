@@ -1,0 +1,146 @@
+diff --git a/node_modules/react-native-screens/ios/bottom-tabs/RNSTabBarAppearanceCoordinator.mm b/node_modules/react-native-screens/ios/bottom-tabs/RNSTabBarAppearanceCoordinator.mm
+index d550ce3..12b6e36 100644
+--- a/node_modules/react-native-screens/ios/bottom-tabs/RNSTabBarAppearanceCoordinator.mm
++++ b/node_modules/react-native-screens/ios/bottom-tabs/RNSTabBarAppearanceCoordinator.mm
+@@ -93,14 +93,27 @@
+ 
+     // Normal icon
+     if (screenView.iconImageSource != nil) {
++      // Qariah patch (RNS #3940 / iOS 26.5 Debug crash) — weak-capture self,
++      // screenView, and tabBarItem so the async image-load completion block
++      // doesn't keep strong refs that race with the screen view's tab-bar
++      // lifecycle on iOS 26. Strong-dance + nil-guard in the callback.
++      __weak RNSTabBarAppearanceCoordinator *weakSelf = self;
++      __weak RNSBottomTabsScreenComponentView *weakScreenView = screenView;
++      __weak UITabBarItem *weakTabBarItem = tabBarItem;
+       [RNSImageLoadingHelper loadImageFromSource:screenView.iconImageSource
+                                  withImageLoader:imageLoader
+                                       asTemplate:isTemplate
+                                  completionBlock:^(UIImage *image) {
+-                                   [self updateTabBarItem:tabBarItem
+-                                                withImage:image
+-                                               isSelected:NO
+-                                            forScreenView:screenView];
++                                   __strong RNSTabBarAppearanceCoordinator *strongSelf = weakSelf;
++                                   __strong RNSBottomTabsScreenComponentView *strongScreenView = weakScreenView;
++                                   __strong UITabBarItem *strongTabBarItem = weakTabBarItem;
++                                   if (strongSelf == nil || strongScreenView == nil || strongTabBarItem == nil) {
++                                     return;
++                                   }
++                                   [strongSelf updateTabBarItem:strongTabBarItem
++                                                      withImage:image
++                                                     isSelected:NO
++                                                  forScreenView:strongScreenView];
+                                  }];
+     } else {
+       tabBarItem.image = nil;
+@@ -108,14 +121,24 @@
+ 
+     // Selected icon
+     if (screenView.selectedIconImageSource != nil) {
++      // Qariah patch (RNS #3940 / iOS 26.5 Debug crash) — see Normal icon comment above.
++      __weak RNSTabBarAppearanceCoordinator *weakSelf = self;
++      __weak RNSBottomTabsScreenComponentView *weakScreenView = screenView;
++      __weak UITabBarItem *weakTabBarItem = tabBarItem;
+       [RNSImageLoadingHelper loadImageFromSource:screenView.selectedIconImageSource
+                                  withImageLoader:imageLoader
+                                       asTemplate:isTemplate
+                                  completionBlock:^(UIImage *image) {
+-                                   [self updateTabBarItem:tabBarItem
+-                                                withImage:image
+-                                               isSelected:YES
+-                                            forScreenView:screenView];
++                                   __strong RNSTabBarAppearanceCoordinator *strongSelf = weakSelf;
++                                   __strong RNSBottomTabsScreenComponentView *strongScreenView = weakScreenView;
++                                   __strong UITabBarItem *strongTabBarItem = weakTabBarItem;
++                                   if (strongSelf == nil || strongScreenView == nil || strongTabBarItem == nil) {
++                                     return;
++                                   }
++                                   [strongSelf updateTabBarItem:strongTabBarItem
++                                                      withImage:image
++                                                     isSelected:YES
++                                                  forScreenView:strongScreenView];
+                                  }];
+     } else {
+       tabBarItem.selectedImage = nil;
+@@ -141,7 +164,16 @@
+   // This code handles case where image passed by the user is not
+   // of appropriate size & needs to be readjusted. W/o additional
+   // layout here the icon would be displayed with original dimensions.
+-  UIViewController *parent = screenView.controller.parentViewController;
++  //
++  // Qariah patch (RNS #3940 / iOS 26.5 Debug crash) — capture controller
++  // to a strong local once so the Swift-bridged unowned load on
++  // parentViewController can't abort. Early-return if the controller has
++  // been deallocated since the image-load was dispatched.
++  RNSTabsScreenViewController *strongController = screenView.controller;
++  if (strongController == nil) {
++    return;
++  }
++  UIViewController *parent = strongController.parentViewController;
+   if ([parent isKindOfClass:[UITabBarController class]]) {
+     UITabBarController *tabBarVC = (UITabBarController *)parent;
+     [tabBarVC.tabBar setNeedsLayout];
+diff --git a/node_modules/react-native-screens/ios/bottom-tabs/accessory/RNSBottomAccessoryHelper.mm b/node_modules/react-native-screens/ios/bottom-tabs/accessory/RNSBottomAccessoryHelper.mm
+index 3f7e675f..9cc937b6 100644
+--- a/node_modules/react-native-screens/ios/bottom-tabs/accessory/RNSBottomAccessoryHelper.mm
++++ b/node_modules/react-native-screens/ios/bottom-tabs/accessory/RNSBottomAccessoryHelper.mm
+@@ -20,6 +20,18 @@ @implementation RNSBottomAccessoryHelper {
+ #endif // REACT_NATIVE_VERSION_MINOR < 82
+ 
+   id<UITraitChangeRegistration> _traitChangeRegistration;
++
++  // Qariah patch (issue #217 / Sentry QARIAHV2-1G / iOS 26) — track whether the
++  // KVO "center" observer was actually registered, and on which exact view.
++  // -invalidate previously called -removeObserver: unconditionally, re-deriving
++  // the wrapper via _bottomAccessoryView.superview.superview at teardown time.
++  // If -registerForAccessoryFrameChanges was never called, or the view hierarchy
++  // changed so the re-derived wrapper differs from the one we registered against,
++  // -removeObserver: throws NSRangeException ("not registered as an observer") and
++  // the app crashes (fatal). We gate removal on _observingFrameChanges and remove
++  // from the exact stored _observedWrapperView.
++  BOOL _observingFrameChanges;
++  UIView *__weak _observedWrapperView;
+ }
+ 
+ - (instancetype)initWithBottomAccessoryView:(RNSBottomTabsAccessoryComponentView *)bottomAccessoryView
+@@ -112,7 +124,12 @@ - (void)handleContentViewVisibilityForEnvironmentIfNeeded
+ 
+ - (void)registerForAccessoryFrameChanges
+ {
+-  [self.nativeWrapperView addObserver:self forKeyPath:@"center" options:NSKeyValueObservingOptionInitial context:nil];
++  // Qariah patch (issue #217) — remember the exact view we observe + that we did
++  // register, so -invalidate can remove the observer safely and symmetrically.
++  UIView *wrapperView = self.nativeWrapperView;
++  [wrapperView addObserver:self forKeyPath:@"center" options:NSKeyValueObservingOptionInitial context:nil];
++  _observedWrapperView = wrapperView;
++  _observingFrameChanges = YES;
+ }
+ 
+ - (void)observeValueForKeyPath:(NSString *)keyPath
+@@ -192,9 +209,22 @@ - (void)invalidate
+ {
+   [_bottomAccessoryView unregisterForTraitChanges:_traitChangeRegistration];
+   _traitChangeRegistration = nil;
+-  // Using nativeWrapperView directly here to avoid failing RCTAssert in self.nativeWrapperView.
+-  // If we're called from didMoveToWindow, it's not a problem, but I'm not sure if this will always be the case.
+-  [_bottomAccessoryView.superview.superview removeObserver:self forKeyPath:@"center"];
++  // Qariah patch (issue #217 / Sentry QARIAHV2-1G / iOS 26) — only remove the KVO
++  // "center" observer if it was actually registered, and remove it from the exact
++  // view we registered against (stored in -registerForAccessoryFrameChanges) rather
++  // than re-deriving _bottomAccessoryView.superview.superview, which can resolve to a
++  // different view at teardown. Unconditional removal here threw NSRangeException
++  // ("not registered as an observer") and crashed the app on iOS 26 tab-accessory
++  // teardown. Upstream (react-native-screens main as of 4.25.x) still removes
++  // unconditionally; revisit/drop this patch if they add a guard.
++  if (_observingFrameChanges) {
++    UIView *observedView = _observedWrapperView;
++    if (observedView != nil) {
++      [observedView removeObserver:self forKeyPath:@"center"];
++    }
++    _observedWrapperView = nil;
++    _observingFrameChanges = NO;
++  }
+   _bottomAccessoryView = nil;
+ #if REACT_NATIVE_VERSION_MINOR < 82
+   [self invalidateDisplayLink];

@@ -1,0 +1,22 @@
+diff --git a/node_modules/react-native-mmkv/ios/HybridMMKVPlatformContext.swift b/node_modules/react-native-mmkv/ios/HybridMMKVPlatformContext.swift
+index 0d19d4a..e1e0909 100644
+--- a/node_modules/react-native-mmkv/ios/HybridMMKVPlatformContext.swift
++++ b/node_modules/react-native-mmkv/ios/HybridMMKVPlatformContext.swift
+@@ -36,7 +36,16 @@ class HybridMMKVPlatformContext: HybridMMKVPlatformContextSpec {
+     }
+     // Get the URL for the AppGroup
+     guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) else {
+-      throw RuntimeError.error(withMessage: "Container for AppGroup \"\(appGroupID)\" not accessible")
++      // Qariah patch (#69 / QARIAHV2-P): the App Group container can be transiently
++      // unavailable at early init on some devices/builds (iPhone 16 Pro, build 1293).
++      // Throwing here crashes every unguarded `createMMKV()` in the boot path (a
++      // fatal: MMKVPlatformContext.getAppGroupDirectory threw). Fall back to the
++      // app-sandbox base dir instead of crashing — returning nil makes MMKV use the
++      // default path (getBaseDirectory). Normal devices (container accessible) are
++      // unaffected; affected devices boot and self-heal once the container resolves.
++      // The share extension shares via UserDefaults(suiteName:), not MMKV, so this
++      // fallback does not affect share interop.
++      return nil
+     }
+     return url.path
+   }

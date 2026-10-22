@@ -1,0 +1,39 @@
+# Reusable: get to the main app surface from any cold-start landing.
+# Handles the full 3-step onboarding (shown after `clearState`) AND is a no-op when already
+# onboarded (restoreSession may land on any tab/Mushaf — the whole sequence is guarded on "Skip").
+# Onboarding exit order: intro carousel "Skip" → final "Get started" → sign-in "Skip for now".
+# Casing is exact (Maestro text = full-match regex): "Get started" / "Skip for now".
+# The steps are nested under the "Skip" guard with waits so each screen transition settles.
+appId: com.qariah.app
+---
+# Android 13+ POST_NOTIFICATIONS runtime dialog. Qariah requests it at player
+# init (S24.1) so background playback can post its media notification, and on a
+# clean install it is the FIRST thing on screen — a system dialog that covers the
+# app entirely. Found 2026-08-02 on the 3.2.0 boot gate: every flow that runs
+# from `clearState` sees this before any app UI, so it must be dismissed before
+# the onboarding guard below. Must come first.
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- runFlow:
+    when:
+      visible: "Skip"
+    commands:
+      - tapOn: "Skip"
+      - extendedWaitUntil:
+          visible: "Get started"
+          timeout: 6000
+      - tapOn: "Get started"
+      - extendedWaitUntil:
+          visible: "Skip for now"
+          timeout: 6000
+      - tapOn: "Skip for now"
+# S33 background-playback prompt — a native dialog that can appear on launch in either mode
+# (onboarded or fresh); dismiss it independently of the onboarding guard above.
+- runFlow:
+    when:
+      visible: "NOT NOW"
+    commands:
+      - tapOn: "NOT NOW"

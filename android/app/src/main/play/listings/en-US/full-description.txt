@@ -1,0 +1,39 @@
+Qariah is the first dedicated Qur'an audio app curated entirely from women reciters — a quiet, ad-free space for Muslim women, families, and learners who want to hear the Qur'an in voices like their own.
+
+WHY QARIAH
+
+• A library only of women reciters. Every recording in Qariah is by a trained female qariah, and the catalogue grows release after release.
+
+• Multiple riwāyāt. Listen across Hafs an Asim, Warsh an Nafi', Qālūn an Nafi', and Sūsī an Abī ʿAmr — note the differences, feel each tradition.
+
+• Truly ad-free. No banners, no interstitials, ever.
+
+• Designed for women. Soft, modest, calm. No imagery of public performance, no marketing-driven UI — just the Qur'an.
+
+WHAT'S INCLUDED
+
+• A growing roster of women reciters, with full surahs in their primary riwāyah.
+
+• Crisp audio streamed from a private CDN — works on slow connections.
+
+• Background playback, lock-screen controls, and continue-where-you-left-off.
+
+• Bookmark your favorite reciters and surahs.
+
+WHO IT'S FOR
+
+• Muslim women looking to listen to recitation in voices that feel familiar.
+
+• Mothers and teachers introducing daughters to recitation and tajwīd.
+
+• Anyone who wants to broaden their listening beyond the male reciters who dominate every other Qur'an app.
+
+PRIVACY
+
+We don't show ads. We don't sell data. We don't ask you to sign in. The only network calls Qariah makes are to fetch audio and to report anonymous crash reports so we can fix bugs.
+
+CONTACT
+
+Questions, feedback, or a recording you'd like us to consider? Email support@qariah.app.
+
+Qariah is a sister project of Bayaan (an open-source Qur'an app for male reciters) and inherits the same audio engine and design discipline.
