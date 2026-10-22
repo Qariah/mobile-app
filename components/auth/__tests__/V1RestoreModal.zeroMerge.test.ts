@@ -14,15 +14,20 @@
 // The component module reaches AnalyticsService (→ MMKV) and v1Restore
 // (→ expo-crypto) at import time; neither has a native module in jest. Same
 // stubs as services/analytics/__tests__/AnalyticsService.test.ts.
-const mockMmkvStorage = new Map<string, string>();
-jest.mock('react-native-mmkv', () => ({
-  createMMKV: () => ({
-    getString: (key: string) => mockMmkvStorage.get(key),
-    set: (key: string, value: string) => mockMmkvStorage.set(key, value),
-    delete: (key: string) => mockMmkvStorage.delete(key),
-    getAllKeys: () => Array.from(mockMmkvStorage.keys()),
-  }),
-}));
+// The store lives inside the factory: since Pass C (Sprint 47) the import
+// chain reaches i18n/language.ts, which reads MMKV at import time, before a
+// module-scope `const` here is initialised.
+jest.mock('react-native-mmkv', () => {
+  const mockMmkvStorage = new Map<string, string>();
+  return {
+    createMMKV: () => ({
+      getString: (key: string) => mockMmkvStorage.get(key),
+      set: (key: string, value: string) => mockMmkvStorage.set(key, value),
+      delete: (key: string) => mockMmkvStorage.delete(key),
+      getAllKeys: () => Array.from(mockMmkvStorage.keys()),
+    }),
+  };
+});
 
 jest.mock('expo-crypto', () => ({
   randomUUID: () => 'test-device-id',

@@ -10,8 +10,13 @@ import {LinearGradient} from 'expo-linear-gradient';
 import Color from 'color';
 
 export interface CategoryCardProps {
+  id: string;
   title: string;
   backgroundColor: string;
+  icon: {
+    name: string;
+    type: string;
+  };
   onPress: () => void;
 }
 

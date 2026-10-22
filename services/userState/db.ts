@@ -399,6 +399,25 @@ export async function deleteCachedBookmark(id: string): Promise<void> {
   await database.runAsync(`DELETE FROM cache_bookmarks WHERE id = ?`, [id]);
 }
 
+// @ai-start
+/**
+ * M4 (TECH_DEBT #244) — account-switch cleanup (`accountCleanup.ts`). Deletes
+ * the queued writes and the cached QF state of the previous account when a
+ * different account signs in. Without this, the next account on the device
+ * sent the previous account's queued reading sessions and preferences with
+ * its own token.
+ */
+export async function clearAccountSyncState(): Promise<void> {
+  const database = requireDb();
+  await database.execAsync(`
+    DELETE FROM sync_queue;
+    DELETE FROM cache_preferences;
+    DELETE FROM cache_reading_sessions;
+    DELETE FROM cache_bookmarks;
+  `);
+}
+// @ai-end
+
 /**
  * Test-only / dev helper: wipes the DB. Don't ship a settings hook for this.
  */

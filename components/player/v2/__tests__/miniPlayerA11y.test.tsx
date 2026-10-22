@@ -4,16 +4,14 @@
 //
 // The bug: both bars wrap their content in a `Pressable` (tap = open the full
 // player). A Pressable is `accessible` by default, and on iOS an accessible
-// container ABSORBS its children into one composed label
-// ("Ad-Dukhan, Qariah Reciter, Close player"). VoiceOver could not reach the
-// close control, and Maestro's `Close player` selector matched the BAR — so
-// the tap EXPANDED the player instead of closing it, and the flow's dismissal
-// assertion then passed for the wrong reason (the sheet covered the bar).
+// container ABSORBS its children into one composed label. VoiceOver could not
+// reach a control on its own, and a Maestro selector for a control matched the
+// BAR — so the tap EXPANDED the player instead.
 //
 // These tests assert the contract that prevents that composition:
 //   1. the bar itself is NOT an accessibility element (`accessible={false}`),
 //   2. each control is addressable on its own (testID + label + button role),
-//   3. pressing the close control stops playback and does NOT open the sheet.
+//   3. the expand target opens the full player.
 // jsdom cannot reproduce the iOS a11y tree, so this locks the props that the
 // platform derives it from; a device run still owns the final proof.
 
@@ -23,7 +21,6 @@ import {render, fireEvent} from '@testing-library/react-native';
 const mockActions = {
   play: jest.fn(),
   pause: jest.fn(),
-  stop: jest.fn(),
 };
 const mockExpandPlayerSheet = jest.fn();
 
@@ -76,11 +73,6 @@ jest.mock('@/components/LoadingIndicator', () => {
 jest.mock('@/components/Icons', () => {
   const {View} = require('react-native');
   return {PlayIcon: View, PauseIcon: View};
-});
-
-jest.mock('@expo/vector-icons', () => {
-  const {View} = require('react-native');
-  return {Feather: View};
 });
 
 // FloatingPlayer-only dependencies.
@@ -143,21 +135,6 @@ describe.each(bars)('$name accessibility (#401)', ({Component}) => {
     expect(bar.onPress).toBeUndefined();
   });
 
-  it('exposes the close control as its own labelled button', () => {
-    const {getByTestId} = render(<Component />);
-    const close = getByTestId('mini-player-close');
-    expect(close.props.accessibilityLabel).toBe('Close player');
-    expect(close.props.accessibilityRole).toBe('button');
-    expect(close.props.accessible).not.toBe(false);
-  });
-
-  it('stops playback on close instead of expanding the player', () => {
-    const {getByTestId} = render(<Component />);
-    fireEvent.press(getByTestId('mini-player-close'));
-    expect(mockActions.stop).toHaveBeenCalledTimes(1);
-    expect(mockExpandPlayerSheet).not.toHaveBeenCalled();
-  });
-
   it('exposes the play/pause control as its own labelled button', () => {
     const {getByTestId} = render(<Component />);
     const playPause = getByTestId('mini-player-play-pause');
@@ -181,6 +158,5 @@ describe.each(bars)('$name accessibility (#401)', ({Component}) => {
     expect(expand.props.accessibilityLabel).toBe('Ad-Dukhan, Qariah Reciter');
     fireEvent.press(expand);
     expect(mockExpandPlayerSheet).toHaveBeenCalledTimes(1);
-    expect(mockActions.stop).not.toHaveBeenCalled();
   });
 });

@@ -52,6 +52,16 @@ import {
   QueueIcon,
   AmbientIcon,
 } from '@/components/Icons';
+// @ai-start
+import {
+  localizeDigits,
+  getTrackDisplayTitle,
+  getTrackArtistDisplay,
+} from '@/i18n/format';
+import {forceLTR} from '@/utils/rtl';
+import {invertLtrNativeSlider} from '@/i18n/qariahIosLanguage'; // Qariah
+import {getRecitationStyleLabel} from '@/components/player/v2/recitationStyle';
+// @ai-end
 
 interface TabletPlayerControlsColumnProps {
   onSpeedPress: () => void;
@@ -77,6 +87,7 @@ const formatTime = (s: number) => {
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 };
 
+// @ai-start
 export const TabletPlayerControlsColumn: React.FC<
   TabletPlayerControlsColumnProps
 > = ({
@@ -227,6 +238,11 @@ export const TabletPlayerControlsColumn: React.FC<
     try {
       if (next) await play();
       else await pause();
+      // @ai Re-sync with the store: play() can return with no audio and no
+      // state change (an early tap that got no player).
+      setOptimisticIsPlaying(
+        usePlayerStore.getState().playback.state === 'playing',
+      );
     } catch (e) {
       setOptimisticIsPlaying(!next);
       console.error('TabletPlayerControlsColumn: toggle failed', e);
@@ -346,19 +362,21 @@ export const TabletPlayerControlsColumn: React.FC<
               <Text
                 style={[styles.trackTitle, {color: textColor}]}
                 numberOfLines={1}>
-                {currentTrack?.title || ''}
+                {currentTrack ? getTrackDisplayTitle(currentTrack) : ''}
               </Text>
               <Text
                 style={[styles.trackArtist, {color: textColor}]}
                 numberOfLines={1}>
-                {currentTrack?.artist || ''}
+                {currentTrack ? getTrackArtistDisplay(currentTrack) : ''}
               </Text>
               {resolvedRewayah && (rewayat || currentTrack?.rewayahName) && (
                 <Text
                   style={[styles.trackRewayat, {color: secondaryColor}]}
                   numberOfLines={1}>
                   {`${getShortLabel(resolvedRewayah.id)}${
-                    rewayat?.style ? ` • ${rewayat.style}` : ''
+                    rewayat?.style
+                      ? ` • ${getRecitationStyleLabel(rewayat.style)}`
+                      : ''
                   }`}
                 </Text>
               )}
@@ -377,9 +395,11 @@ export const TabletPlayerControlsColumn: React.FC<
             </Pressable>
           </View>
 
-          <View style={styles.block}>
+          <View style={[styles.block, forceLTR]}>
             <Slider
               style={styles.slider}
+              // Qariah: stays left to right when UIKit runs RTL (iOS Arabic).
+              inverted={invertLtrNativeSlider}
               minimumValue={0}
               maximumValue={progress.duration || 1}
               tapToSeek
@@ -393,16 +413,19 @@ export const TabletPlayerControlsColumn: React.FC<
             />
             <View style={styles.timeRow}>
               <Text style={[styles.timeText, {color: textColor}]}>
-                {formatTime(displayTime)}
+                {localizeDigits(formatTime(displayTime))}
               </Text>
               <Text style={[styles.timeText, {color: secondaryColor}]}>
-                -{formatTime(Math.max(0, progress.duration - displayTime))}
+                -
+                {localizeDigits(
+                  formatTime(Math.max(0, progress.duration - displayTime)),
+                )}
               </Text>
             </View>
           </View>
 
           <View style={styles.block}>
-            <View style={styles.transport}>
+            <View style={[styles.transport, forceLTR]}>
               <Pressable
                 onPress={handleSeekBack}
                 disabled={trackLoading}
@@ -418,7 +441,7 @@ export const TabletPlayerControlsColumn: React.FC<
                       styles.seekLabelLeft,
                       {color: trackLoading ? secondaryColor : textColor},
                     ]}>
-                    {SEEK_INTERVAL}
+                    {localizeDigits(SEEK_INTERVAL)}
                   </Text>
                 </View>
               </Pressable>
@@ -471,7 +494,7 @@ export const TabletPlayerControlsColumn: React.FC<
                       styles.seekLabelRight,
                       {color: trackLoading ? secondaryColor : textColor},
                     ]}>
-                    {SEEK_INTERVAL}
+                    {localizeDigits(SEEK_INTERVAL)}
                   </Text>
                 </View>
               </Pressable>
@@ -494,7 +517,7 @@ export const TabletPlayerControlsColumn: React.FC<
                 ]}
                 onPress={onSpeedPress}>
                 <Text style={[styles.toolLabel, {color: textColor}]}>
-                  {`${playbackRate}x`}
+                  {localizeDigits(`${playbackRate}x`)}
                 </Text>
               </Pressable>
               <Pressable
@@ -566,6 +589,7 @@ export const TabletPlayerControlsColumn: React.FC<
     </GestureDetector>
   );
 };
+// @ai-end
 
 const styles = StyleSheet.create({
   root: {

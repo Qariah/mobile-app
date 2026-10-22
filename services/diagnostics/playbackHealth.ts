@@ -31,7 +31,9 @@
 // waited PLAYER_WAIT_MS for setPlayer and gave up (ExpoAudioService). A boot
 // restore that reaches loadTrack before setPlayer now waits for the player
 // (planning/boot-restore-player-order-plan.md), so that case no longer shows
-// here. The silence is real; the cause is not a network stall.
+// here. The silence is real; the cause is not a network stall. A play() that
+// waits for setPlayer and never gets a player, or that a pause, cleanup or
+// newer load cancels during that wait, starts no attempt.
 //
 // KNOWN BLIND SPOT: an iOS player that drops its rate to 0 on a network failure
 // while the item stays loaded looks like a remote pause, so it sends nothing.

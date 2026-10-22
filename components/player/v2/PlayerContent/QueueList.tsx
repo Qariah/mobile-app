@@ -3,7 +3,9 @@ import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {moderateScale, verticalScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {useTheme} from '@/hooks/useTheme';
-import {useBottomSheetScrollableCreator} from '@gorhom/bottom-sheet';
+// @ai-start
+import {usePlayerScrollable} from '@/hooks/usePlayerScrollable';
+// @ai-end
 import {FlashList, type ListRenderItemInfo} from '@shopify/flash-list';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {MaterialCommunityIcons} from '@expo/vector-icons';
@@ -14,6 +16,14 @@ import {NowPlayingIndicator} from '@/components/NowPlayingIndicator';
 import {GradientText} from '@/components/GradientText';
 import {useUploadsStore} from '@/store/uploadsStore';
 import Color from 'color';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {
+  localizeDigits,
+  getTrackDisplayTitle,
+  getTrackArtistDisplay,
+} from '@/i18n/format';
+// @ai-end
 
 interface UploadQueueItemProps {
   track: Track;
@@ -21,9 +31,11 @@ interface UploadQueueItemProps {
   onPress: () => void;
 }
 
+// @ai-start
 const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
   ({track, index, onPress}) => {
     const {theme} = useTheme();
+    const {t} = useTranslation(['player', 'common']);
 
     const playbackState = usePlayerStore(state => state.playback.state);
     const currentIndex = usePlayerStore(state => state.queue.currentIndex);
@@ -34,7 +46,9 @@ const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
       (playbackState === 'playing' || playbackState === 'buffering');
 
     const surahNum = track.surahId ? parseInt(track.surahId, 10) : undefined;
-    const displayTitle = surahNum ? `${surahNum}. ${track.title}` : track.title;
+    const displayTitle = surahNum
+      ? `${localizeDigits(surahNum)}. ${getTrackDisplayTitle(track)}`
+      : track.title;
 
     // Look up the full recitation for tags
     const recitation = useUploadsStore(state =>
@@ -46,15 +60,19 @@ const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
     const verseLabel = React.useMemo(() => {
       if (!recitation?.startVerse) return null;
       if (recitation.endVerse)
-        return `${recitation.startVerse}-${recitation.endVerse}`;
-      return `v${recitation.startVerse}`;
-    }, [recitation?.startVerse, recitation?.endVerse]);
+        return localizeDigits(
+          `${recitation.startVerse}-${recitation.endVerse}`,
+        );
+      return t('queue.verseShort', {verse: recitation.startVerse});
+    }, [recitation?.startVerse, recitation?.endVerse, t]);
 
     const recordingLabel = React.useMemo(() => {
-      if (recitation?.recordingType === 'salah') return 'Salah';
-      if (recitation?.recordingType === 'studio') return 'Studio';
+      if (recitation?.recordingType === 'salah')
+        return t('uploads.recordingType.salah');
+      if (recitation?.recordingType === 'studio')
+        return t('uploads.recordingType.studio');
       return null;
-    }, [recitation?.recordingType]);
+    }, [recitation?.recordingType, t]);
 
     const categoryLabel = React.useMemo(() => {
       if (recitation?.type !== 'other' || !recitation?.category) return null;
@@ -138,7 +156,7 @@ const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
               {color: theme.colors.textSecondary},
             ]}
             numberOfLines={1}>
-            {track.artist}
+            {getTrackArtistDisplay(track)}
           </Text>
         </View>
         {isCurrentTrack && (
@@ -154,6 +172,7 @@ const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
     );
   },
 );
+// @ai-end
 
 UploadQueueItem.displayName = 'UploadQueueItem';
 
@@ -216,20 +235,39 @@ interface QueueListProps {
   onRemoveQueueItem: (index: number) => void;
   // @ai B2: source context shown below "Queue" header (reciter name, playlist title, etc.)
   queueTitle?: string;
+  // @ai-start TECH_DEBT #295: the full player's top bar and controls float
+  // over the list. These props give the space that the overlays cover at the
+  // top and at the bottom of the list, so that the queue header and the first
+  // and last rows show in the clear.
+  contentPaddingTop?: number;
+  contentPaddingBottom?: number;
+  // @ai-end
 }
 
 interface IndexedTrack extends Track {
   _queueIndex: number;
 }
 
+// @ai-start
 export const QueueList: React.FC<QueueListProps> = ({
   onQueueItemPress,
   onRemoveQueueItem,
   queueTitle,
+  contentPaddingTop = 0, // @ai TECH_DEBT #295
+  contentPaddingBottom = 0, // @ai TECH_DEBT #295
 }) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['player', 'common', 'qariah']);
   const tracks = usePlayerStore(s => s.queue.tracks);
-  const renderScrollComponent = useBottomSheetScrollableCreator();
+  const renderScrollComponent = usePlayerScrollable();
+  // @ai TECH_DEBT #295: the list starts below the top bar, ends above the controls.
+  const listContentStyle = React.useMemo(
+    () => ({
+      paddingTop: contentPaddingTop + LIST_GAP_TOP,
+      paddingBottom: contentPaddingBottom + LIST_GAP_BOTTOM,
+    }),
+    [contentPaddingTop, contentPaddingBottom],
+  );
 
   const indexedTracks: IndexedTrack[] = React.useMemo(
     () => tracks.map((t, i) => ({...t, _queueIndex: i})),
@@ -245,24 +283,35 @@ export const QueueList: React.FC<QueueListProps> = ({
             styles.trackItemContainer,
             {backgroundColor: theme.colors.card},
           ]}>
-          {item.isUserUpload ? (
-            <UploadQueueItem
-              track={item}
-              index={index}
-              onPress={() => onQueueItemPress(index)}
-            />
-          ) : (
-            /* @ai C2: artworkUrl carries track.artwork so reciters with only a remote URL show their photo */
-            <TrackItem
-              reciterId={item.reciterId}
-              surahId={item.surahId || ''}
-              rewayatId={item.rewayatId}
-              onPress={() => onQueueItemPress(index)}
-              artworkUrl={item.artwork || undefined}
-            />
-          )}
+          {/* @ai TECH_DEBT #258: the row content gets the rest of the row and
+           * may shrink (flex: 1, minWidth: 0). TrackItem's outer view has no
+           * flex, so it took the full row width, and the ✕ below sat past the
+           * right edge of the screen on every row. */}
+          <View style={styles.rowContent}>
+            {item.isUserUpload ? (
+              <UploadQueueItem
+                track={item}
+                index={index}
+                onPress={() => onQueueItemPress(index)}
+              />
+            ) : (
+              /* @ai C2: artworkUrl carries track.artwork so reciters with only a remote URL show their photo */
+              <TrackItem
+                reciterId={item.reciterId}
+                surahId={item.surahId || ''}
+                rewayatId={item.rewayatId}
+                onPress={() => onQueueItemPress(index)}
+                artworkUrl={item.artwork || undefined}
+              />
+            )}
+          </View>
+          {/* @ai TECH_DEBT #258: a testID and a label, so a device test (and a
+           * screen reader) can find the remove control. */}
           <Pressable
             style={styles.removeButton}
+            testID={`queue-remove-${index}`}
+            accessibilityRole="button"
+            accessibilityLabel={t('qariah:a11y.removeFromQueue')}
             onPress={() => onRemoveQueueItem(index)}>
             <MaterialCommunityIcons
               name="close"
@@ -273,7 +322,13 @@ export const QueueList: React.FC<QueueListProps> = ({
         </View>
       );
     },
-    [onQueueItemPress, onRemoveQueueItem, theme.colors.text, theme.colors.card],
+    [
+      onQueueItemPress,
+      onRemoveQueueItem,
+      theme.colors.text,
+      theme.colors.card,
+      t, // @ai the remove label
+    ],
   );
 
   const keyExtractor = useCallback(
@@ -286,7 +341,7 @@ export const QueueList: React.FC<QueueListProps> = ({
       <View style={[styles.header, {borderBottomColor: theme.colors.border}]}>
         <View style={styles.headerLeft}>
           <Text style={[styles.headerTitle, {color: theme.colors.text}]}>
-            Queue
+            {t('common:terms.queue')}
           </Text>
           {/* @ai B2: show source context so user knows where this queue came from */}
           {queueTitle ? (
@@ -302,7 +357,7 @@ export const QueueList: React.FC<QueueListProps> = ({
         </View>
         <View style={styles.headerRight}>
           <Text style={[styles.queueCount, {color: theme.colors.text}]}>
-            {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+            {t('common:counts.tracks', {count: tracks.length})}
           </Text>
         </View>
       </View>
@@ -313,6 +368,7 @@ export const QueueList: React.FC<QueueListProps> = ({
       theme.colors.textSecondary,
       tracks.length,
       queueTitle,
+      t,
     ],
   );
 
@@ -327,7 +383,7 @@ export const QueueList: React.FC<QueueListProps> = ({
             style={styles.emptyIcon}
           />
           <Text style={[styles.emptyText, {color: theme.colors.text}]}>
-            Queue is empty
+            {t('queue.empty')}
           </Text>
         </View>
       </View>
@@ -341,7 +397,7 @@ export const QueueList: React.FC<QueueListProps> = ({
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={renderHeader}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={listContentStyle} // @ai TECH_DEBT #295
         renderScrollComponent={renderScrollComponent}
         showsVerticalScrollIndicator={false}
         bounces={true}
@@ -351,16 +407,18 @@ export const QueueList: React.FC<QueueListProps> = ({
     </View>
   );
 };
+// @ai-end
+
+// @ai TECH_DEBT #295: the list's own gaps (the old `listContent` padding),
+// added to the space under the player overlays.
+const LIST_GAP_TOP = verticalScale(8);
+const LIST_GAP_BOTTOM = verticalScale(20);
 
 const styles = StyleSheet.create({
   container: {
     width: '100%',
     height: '100%',
     backgroundColor: 'transparent',
-  },
-  listContent: {
-    paddingTop: verticalScale(8),
-    paddingBottom: verticalScale(20),
   },
   emptyContainer: {
     flex: 1,
@@ -417,6 +475,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingRight: moderateScale(8),
+  },
+  // @ai TECH_DEBT #258: the row content takes the free width and can shrink,
+  // so the remove ✕ always has room at the right end of the row.
+  rowContent: {
+    flex: 1,
+    minWidth: 0,
   },
   removeButton: {
     padding: moderateScale(8),

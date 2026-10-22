@@ -1,14 +1,13 @@
 // @ai
 // GH #364 — the QCF layout cache half.
 //
-// The cache key is `(fontFamily, pageNumber)` and carries NO orientation, so
-// it may only ever hold orientation-INDEPENDENT measurements. It used to
-// store a concrete `fontSize`, which meant a page measured in portrait handed
-// a portrait font size back to a landscape render. Plumbing layout metrics
-// into QCFPage would have silently no-opped on any already-cached page.
+// The cache stores orientation-INDEPENDENT measurements. It used to store a
+// concrete `fontSize` keyed by `(fontFamily, pageNumber)`, which meant a page
+// measured in portrait handed a portrait font size back to a landscape render.
 //
 // It now stores `widestRef` (a width at the reference font size) and the
-// render size is derived from that plus the live content width.
+// render size is derived from that plus the live content width. Pass C
+// (Sprint 47): upstream's key also carries the content width.
 
 jest.mock('react-native-mmkv', () => {
   const store = new Map<string, string | number>();
@@ -54,8 +53,8 @@ describe('QCFPageLayoutMetrics is orientation-independent', () => {
       widestRef: 900,
       lineWidthsAtRef: [{lineIndex: 0, width: 900}],
     };
-    qcfLayoutCacheService.setPageLayout(100, 'QCF_P100', value);
-    const read = qcfLayoutCacheService.getPageLayout(100, 'QCF_P100');
+    qcfLayoutCacheService.setPageLayout(100, 'QCF_P100', 360, value);
+    const read = qcfLayoutCacheService.getPageLayout(100, 'QCF_P100', 360);
     expect(read).not.toHaveProperty('fontSize');
     expect(read?.widestRef).toBe(900);
   });
@@ -69,14 +68,14 @@ describe('QCFPageLayoutMetrics is orientation-independent', () => {
       __store: Map<string, string | number>;
     };
     __store.set(
-      'qcf:QCF_P200:200',
+      'qcf:QCF_P200:200:360',
       JSON.stringify({
         fontSize: 26.4,
         lineWidthsAtRef: [{lineIndex: 0, width: 900}],
       }),
     );
     expect(
-      qcfLayoutCacheService.getPageLayout(200, 'QCF_P200'),
+      qcfLayoutCacheService.getPageLayout(200, 'QCF_P200', 360),
     ).toBeUndefined();
   });
 });

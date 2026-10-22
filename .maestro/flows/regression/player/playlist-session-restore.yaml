@@ -1,0 +1,102 @@
+# UPG-04 (TECH_DEBT #271) — a track played from a PLAYLIST plays after a cold start.
+#
+# Guards the defect in 3.2.2 (2579) and 3.2.1 (vc2027): play a surah from a playlist,
+# pause, kill the app, open it, tap Play in the mini player. The button showed Pause,
+# but no audio played (media session NONE). A play from a playlist writes no recent
+# track, so restoreSession() returned early and loaded no source, while the persisted
+# queue still showed the track. Fixed in services/player/utils/restoreSession.ts
+# (restorePersistedQueue).
+#
+# The check (Android): after the relaunch and the tap, the elapsed time in the full
+# player moves past 0:35. With the defect the time stays frozen at the restored
+# position. Maestro waits up to ~10 s for a playing screen to settle after a tap, so
+# the play and pause taps use short settle waits; even so, the restored position was
+# up to ~15 s on the emulator. A first version paused after an 8 s wait plus the
+# settle wait, near 0:20, and its 0:20 check passed on the defective build too.
+# The flow cannot hear audio; the Jest suite restoreSession.persistedQueue.test.ts
+# checks the loaded source, and the device notes check `dumpsys media_session`.
+appId: com.qariah.app
+tags:
+  - regression
+  - player
+---
+# 1. A fresh install: no recent track exists.
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+
+# 2. Make a playlist with one surah (Hud, A'tii Qah Suhaimi).
+- tapOn: '.*Listen'
+- tapOn: 'Reciters'
+# The reciter grid is in name order, so this reciter is the first cell. iOS merges
+# the Browse All grid into one a11y element (no per-card label, no search-field
+# placeholder), so the flow taps the first cell by point and then checks the name.
+- tapOn:
+    point: 17%,35%
+- extendedWaitUntil:
+    visible: '.*JUZ.*'
+    timeout: 10000
+- assertVisible: '.*Suhaimi.*'
+# iOS adds an icon glyph in front of some row labels, and composes card labels,
+# so the selectors below start with a wildcard.
+- tapOn:
+    text: 'More options'
+    index: 0
+- tapOn: '.*Add to Collection'
+- tapOn: '.*Create New Playlist'
+- tapOn: 'e.g., Morning Recitations'
+- inputText: 'PlTest'
+- tapOn: 'Save'
+# Close the track sheet with a backdrop tap (works on both platforms).
+- tapOn:
+    point: 50%,10%
+
+# 3. Play the surah from the playlist, then pause it.
+- tapOn: '.*Collection'
+- tapOn: '.*Playlists.*'
+- tapOn: '.*PlTest.*'
+- tapOn:
+    text: '.*11. Hud.*'
+    index: 0
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Pause'
+    timeout: 20000
+- tapOn:
+    id: 'mini-player-play-pause'
+    waitToSettleTimeoutMs: 500
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Play'
+    timeout: 5000
+
+# 4. Kill the app and open it again (no clearState).
+- stopApp
+- launchApp:
+    clearState: false
+
+# 5. The restored track shows. Tap Play, open the full player, and wait for the
+#    elapsed time to pass 0:35.
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Play'
+    timeout: 20000
+- tapOn:
+    id: 'mini-player-play-pause'
+- tapOn:
+    id: 'mini-player-expand'
+# Android only: on iOS the full player sheet is one opaque a11y element ("Bottom
+# Sheet"), so Maestro cannot read the elapsed time there. On iOS this flow runs the
+# restore path but cannot see the defect; the iOS proof for #271 compares two
+# screenshots of the full player instead.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible: '0:(3[5-9]|[4-5][0-9])'
+          timeout: 60000

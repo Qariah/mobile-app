@@ -36,6 +36,7 @@ import {useAyahTracker} from '@/hooks/useAyahTracker';
 import {useTimestampStore} from '@/store/timestampStore';
 import {findAyahTimestamp} from '@/utils/timestampUtils';
 import {useRewayatFollowAlong} from '@/hooks/useFollowAlong';
+import {getTrackArtistDisplay} from '@/i18n/format'; // Qariah: queue title
 
 interface PlayerContentProps {
   onSpeedPress: () => void;
@@ -49,7 +50,10 @@ interface PlayerContentProps {
 const ANIMATION_DURATION = 300;
 const DEFAULT_HEADER_HEIGHT = 100;
 const DEFAULT_CONTROLS_HEIGHT = 250;
+// @ai TECH_DEBT #295: the controls overlay's offset from the bottom edge.
+const CONTROLS_BOTTOM_OFFSET = moderateScale(20);
 
+// @ai-start
 const PlayerContent: React.FC<PlayerContentProps> = ({
   onSpeedPress,
   onSleepTimerPress,
@@ -271,7 +275,13 @@ const PlayerContent: React.FC<PlayerContentProps> = ({
             <QueueList
               onQueueItemPress={handleQueueItemPress}
               onRemoveQueueItem={handleRemoveQueueItem}
-              queueTitle={currentTrack?.artist || undefined}
+              queueTitle={
+                currentTrack ? getTrackArtistDisplay(currentTrack) : undefined
+              }
+              // @ai TECH_DEBT #295: the space under the top bar and under the
+              // controls (each overlay's offset from the edge plus its height).
+              contentPaddingTop={insets.top + moderateScale(4) + headerHeight}
+              contentPaddingBottom={CONTROLS_BOTTOM_OFFSET + controlsHeight}
             />
           </View>
         ) : (
@@ -364,6 +374,7 @@ const PlayerContent: React.FC<PlayerContentProps> = ({
     </View>
   );
 };
+// @ai-end
 
 const styles = StyleSheet.create({
   container: {
@@ -387,7 +398,7 @@ const styles = StyleSheet.create({
   },
   controlsOverlay: {
     position: 'absolute',
-    bottom: moderateScale(20),
+    bottom: CONTROLS_BOTTOM_OFFSET, // @ai TECH_DEBT #295
     left: moderateScale(16),
     right: moderateScale(16),
     borderRadius: moderateScale(38),

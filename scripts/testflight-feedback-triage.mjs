@@ -24,6 +24,7 @@
 // Flags: --dry-run, --max=20, --help
 // Env:   ASC_TF_APP_IDS (default "1594917787,6770301971")
 
+import {APP_STORE_ID} from './lib/app-ids.mjs';
 import {ascJwt, ascGet} from './lib/asc-client.mjs';
 import {
   existingMarkers,
@@ -43,7 +44,7 @@ if (args.help) {
   process.exit(0);
 }
 
-const APP_IDS = (process.env.ASC_TF_APP_IDS || '1594917787,6770301971')
+const APP_IDS = (process.env.ASC_TF_APP_IDS || `${APP_STORE_ID},6770301971`)
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);

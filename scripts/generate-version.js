@@ -13,17 +13,44 @@
  *   console.log(versionInfo.semanticVersion); // e.g., "1.0.3"
  */
 
-const {execSync} = require('child_process');
+const {execFileSync} = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 /**
- * Safely executes a Git command and returns the result
+ * The repository that holds THIS script. Every git call below runs with
+ * `git -C REPO_ROOT`, so the version never depends on `process.cwd()`.
+ *
+ * Why: git resolves the repository from the working directory. A build for
+ * one worktree, started from a shell in another checkout, read the OTHER
+ * checkout's commit count. On 2026-09-27 that wrote versionCode 2428 /
+ * versionName 3.2.2 into the native files where 2027 / 3.2.1 was correct
+ * (the 2026-08-15 CLAUDE.md standing rule records the first occurrence).
+ */
+const SCRIPT_DIR = __dirname; // == path.dirname(__filename)
+const REPO_ROOT = (() => {
+  try {
+    return execFileSync(
+      'git',
+      ['-C', SCRIPT_DIR, 'rev-parse', '--show-toplevel'],
+      {stdio: ['pipe', 'pipe', 'ignore']},
+    )
+      .toString()
+      .trim();
+  } catch (error) {
+    return path.join(SCRIPT_DIR, '..');
+  }
+})();
+
+/**
+ * Safely executes a Git command in REPO_ROOT and returns the result
  * Returns fallback value if command fails
  */
-function safeExec(command, fallback = '') {
+function safeGit(args, fallback = '') {
   try {
-    return execSync(command, {stdio: ['pipe', 'pipe', 'ignore']})
+    return execFileSync('git', ['-C', REPO_ROOT, ...args], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
       .toString()
       .trim();
   } catch (error) {
@@ -37,16 +64,27 @@ function safeExec(command, fallback = '') {
  */
 function getSemanticVersion() {
   // Try to get the latest tag that looks like a version
-  let tag = safeExec(
-    'git describe --tags --abbrev=0 --match "v[0-9]*.[0-9]*.[0-9]*" --match "[0-9]*.[0-9]*.[0-9]*" 2>/dev/null',
-  );
+  let tag = safeGit([
+    'describe',
+    '--tags',
+    '--abbrev=0',
+    '--match',
+    'v[0-9]*.[0-9]*.[0-9]*',
+    '--match',
+    '[0-9]*.[0-9]*.[0-9]*',
+    // Qariah (Sprint 48): never count a prerelease or test tag. Upstream's
+    // `v2.3.0-1809-test` sits on a merged upstream commit (5a813e23), so it
+    // was nearer than `v3.2.2` and the derive gave 2.3.0.
+    '--exclude',
+    '*-*',
+  ]);
 
   // If no version tags found, check existing version as fallback
   if (!tag) {
     // Try to read from package.json as fallback
     try {
       const packageJson = JSON.parse(
-        fs.readFileSync(path.join(__dirname, '..', 'package.json')),
+        fs.readFileSync(path.join(REPO_ROOT, 'package.json')),
       );
       tag = packageJson.version || '1.0.0';
     } catch (e) {
@@ -151,7 +189,7 @@ function getBuildNumber() {
   }
 
   // Try to get total commit count
-  const commitCount = safeExec('git rev-list --count HEAD', '1');
+  const commitCount = safeGit(['rev-list', '--count', 'HEAD'], '1');
 
   // Ensure it's a positive integer
   const count = parseInt(commitCount, 10);
@@ -172,14 +210,14 @@ function getVersionCode() {
  * Get the current Git branch name
  */
 function getCurrentBranch() {
-  return safeExec('git rev-parse --abbrev-ref HEAD', 'unknown');
+  return safeGit(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown');
 }
 
 /**
  * Get the current commit hash (short version)
  */
 function getGitHash() {
-  return safeExec('git rev-parse --short HEAD', 'unknown');
+  return safeGit(['rev-parse', '--short', 'HEAD'], 'unknown');
 }
 
 /**

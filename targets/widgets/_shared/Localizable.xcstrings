@@ -1,0 +1,522 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ · Juz %lld" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · الجزء %lld"
+          }
+        }
+      }
+    },
+    "A new ayah every day, in Digital Khatt." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آية جديدة كل يوم، بخط Digital Khatt."
+          }
+        }
+      }
+    },
+    "Ayah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآية"
+          }
+        }
+      }
+    },
+    "Ayah %lld of %lld" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآية %lld من %lld"
+          }
+        }
+      }
+    },
+    "Ayah of the Day" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آية اليوم"
+          }
+        }
+      }
+    },
+    "Choose the surah this control plays." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر السورة التي يشغّلها هذا الزر."
+          }
+        }
+      }
+    },
+    "Continue Listening" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متابعة الاستماع"
+          }
+        }
+      }
+    },
+    "Continue Reading" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متابعة القراءة"
+          }
+        }
+      }
+    },
+    "Continue reading" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع القراءة"
+          }
+        }
+      }
+    },
+    "Fourth surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السورة الرابعة"
+          }
+        }
+      }
+    },
+    "Open %@" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح تطبيق قارئة"
+          }
+        }
+      }
+    },
+    "Open %@ to set up" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح تطبيق قارئة للإعداد"
+          }
+        }
+      }
+    },
+    "Page %lld" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صفحة %lld"
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Pause Recitation" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف التلاوة مؤقتًا"
+          }
+        }
+      }
+    },
+    "Pauses the recitation playing in Bayaan." : {
+      "comment" : "Qariah (RFC-021 seam): PausePlaybackIntent description in Shortcuts. The key is the upstream English text in PlaybackIntents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يوقف التلاوة الجارية في تطبيق قارئة مؤقتًا."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pauses the recitation playing in Qariah."
+          }
+        }
+      }
+    },
+    "Pick up where you left off." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع من حيث توقفت."
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Play ${surah}" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل ${surah}"
+          }
+        }
+      }
+    },
+    "Play %@" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل %@"
+          }
+        }
+      }
+    },
+    "Play Reciter" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل قارئة"
+          }
+        }
+      }
+    },
+    "Play Surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل سورة"
+          }
+        }
+      }
+    },
+    "Play a chosen surah with your default reciter." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل سورة تختارها بصوت قارئتك الافتراضية."
+          }
+        }
+      }
+    },
+    "Play a favorite surah in one tap." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل سورتك المفضلة بلمسة واحدة."
+          }
+        }
+      }
+    },
+    "Play a surah in one tap." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل سورة بلمسة واحدة."
+          }
+        }
+      }
+    },
+    "Play or Pause" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل أو إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Play or Pause Bayaan" : {
+      "comment" : "Qariah (RFC-021 seam): SetPlayingControlIntent title (the Control Center play/pause control). The key is the upstream English text in PlaybackIntents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل قارئة أو إيقافها مؤقتًا"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play or Pause Qariah"
+          }
+        }
+      }
+    },
+    "Play or pause your recitation." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل تلاوتك أو أوقفها مؤقتًا."
+          }
+        }
+      }
+    },
+    "Playing" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل"
+          }
+        }
+      }
+    },
+    "Plays a surah in Bayaan with your default reciter." : {
+      "comment" : "Qariah (RFC-021 seam): PlaySurahIntent description in Shortcuts. The key is the upstream English text in PlaybackIntents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يشغّل سورة في تطبيق قارئة بصوت قارئتك الافتراضية."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plays a surah in Qariah with your default reciter."
+          }
+        }
+      }
+    },
+    "Quick Surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سورة سريعة"
+          }
+        }
+      }
+    },
+    "Reciter" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القارئة"
+          }
+        }
+      }
+    },
+    "Resume Recitation" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استئناف التلاوة"
+          }
+        }
+      }
+    },
+    "Resumes your recitation in Bayaan, or plays your most recent surah." : {
+      "comment" : "Qariah (RFC-021 seam): ResumePlaybackIntent description in Shortcuts. The key is the upstream English text in PlaybackIntents.swift.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستأنف التلاوة التي كنت تستمع إليها في تطبيق قارئة، أو يشغّل آخر سورة استمعت إليها."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumes your recitation in Qariah, or plays your most recent surah."
+          }
+        }
+      }
+    },
+    "Return to the page you were reading." : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عُد إلى الصفحة التي كنت تقرؤها."
+          }
+        }
+      }
+    },
+    "Rewayah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرواية"
+          }
+        }
+      }
+    },
+    "Second surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السورة الثانية"
+          }
+        }
+      }
+    },
+    "Start listening" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابدأ الاستماع"
+          }
+        }
+      }
+    },
+    "Start reading" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابدأ القراءة"
+          }
+        }
+      }
+    },
+    "Surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السورة"
+          }
+        }
+      }
+    },
+    "Third surah" : {
+      "comment" : "Qariah (Sprint 47, Pass C): Arabic for upstream text (RFC-021 seam). scripts/native-strings-from-review.mjs writes it from planning/pass-c/arabic-review/native-strings.csv",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السورة الثالثة"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

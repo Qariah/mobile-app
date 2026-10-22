@@ -21,6 +21,7 @@
 // Flags: --dry-run, --max=15 (cap per run), --help
 // Env:   ASC_APP_ID (default 1594917787 = com.qariah.app, the released app)
 
+import {APP_STORE_ID} from './lib/app-ids.mjs';
 import {ascJwt, ascGet} from './lib/asc-client.mjs';
 import {
   existingMarkers,
@@ -54,7 +55,7 @@ if (args.help) {
   process.exit(0);
 }
 
-const APP_ID = process.env.ASC_APP_ID || '1594917787';
+const APP_ID = process.env.ASC_APP_ID || APP_STORE_ID;
 const MARKER = 'appstore-review-id:';
 const LABEL = 'app-store';
 const REVIEWS_URL = `https://appstoreconnect.apple.com/apps/${APP_ID}/distribution/reviews`;

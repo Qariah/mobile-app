@@ -3,7 +3,23 @@
 # Google Play Developer API — AAB upload + track assignment automation.
 #
 # Usage:
-#   ./scripts/android-upload-play.sh --track=<internal|beta|production> <path/to/app-release.aab>
+#   ./scripts/android-upload-play.sh --track=<internal|alpha|beta|production>
+#       [--status=<draft|inProgress|completed>] [--user-fraction=<0-1>] <path/to/app-release.aab>
+#
+#   On the internal, alpha and beta tracks, --status defaults to `completed`.
+#   The whole track then gets the build once Play accepts it; alpha and beta
+#   go through Play review first. On --track=production, --status is REQUIRED.
+#   The script refuses to guess, because `completed` there sends the release
+#   to 100% of users at once.
+#   For a production release that you roll out by hand from the Console, use
+#   --status=draft. To start a 1% staged rollout directly, use
+#   --status=inProgress --user-fraction=0.01. A staged rollout needs a fraction
+#   strictly between 0 and 1, and the internal track has no staged rollout.
+#
+#   This script UPLOADS a new AAB. It cannot ramp, halt or complete a release
+#   that is already on the track: Play rejects a second upload of the same
+#   versionCode. Change a live rollout in the Play Console
+#   (Release → Production → Manage rollout).
 #
 # Pre-requisites (one-time setup; see "Provisioning" block below if missing):
 #   - .env.local var `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` pointing at a
@@ -13,14 +29,15 @@
 #
 # Steps (Google Play Developer API v3):
 #   1. JWT-sign access token from the service-account JSON, scope
-#      androidpublisher.
-#   2. POST /edits → returns edit id.
+#      androidpublisher (scripts/lib/google-play-auth.mjs does the signing).
+#   2. POST /edits → returns edit id. On production: GET the track, and stop
+#      while a staged rollout is live (an upload can stop it).
 #   3. POST /upload bundles → uploads AAB.
 #   4. PUT /tracks/<track> → assigns versionCode to the chosen track.
-#   5. POST /edits/<id>:commit → commits the edit (live on Play).
+#   5. POST /edits/<id>:commit → commits the edit (Play review starts, where it applies).
 #
 # After upload, appends a row to build/last-play-upload.ndjson:
-#   {timestamp, track, versionCode, sha, aabPath}
+#   {timestamp, track, status, userFraction, sentForReview, versionCode, sha, aabPath}
 # Mirrors scripts/ios-archive.sh's testflight-uploads.ndjson audit pattern.
 #
 # Mirror PR candidate: this script is fork-generic — the package name
@@ -45,14 +62,31 @@ NC='\033[0m'
 
 TRACK=""
 AAB_PATH=""
+# Release status on the track. It stays empty until the caller sets it. The
+# script sets the per-track default after it parses the arguments.
+#   draft      — uploaded + attached to the track but NOT live. A human starts
+#                the rollout from the Play Console. This is what you want for a
+#                staged production rollout you intend to drive by hand.
+#   inProgress — --user-fraction of users (staged rollout, after Play review).
+#   completed  — everyone on the track (after Play review, where it applies).
+RELEASE_STATUS=""
+USER_FRACTION=""
 
 for arg in "$@"; do
     case $arg in
         --track=*)
             TRACK="${arg#*=}"
             ;;
+        --status=*)
+            RELEASE_STATUS="${arg#*=}"
+            ;;
+        --user-fraction=*)
+            USER_FRACTION="${arg#*=}"
+            ;;
         --help|-h)
-            sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
+            # Print the header comment block, from line 3 to the first line
+            # that is not a comment.
+            awk 'NR>=3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0"
             exit 0
             ;;
         --*)
@@ -70,7 +104,7 @@ for arg in "$@"; do
 done
 
 if [ -z "$TRACK" ]; then
-    echo -e "${RED}❌ --track=<internal|beta|production> required${NC}"
+    echo -e "${RED}❌ --track=<internal|alpha|beta|production> required${NC}"
     exit 1
 fi
 case "$TRACK" in
@@ -80,6 +114,58 @@ case "$TRACK" in
         exit 1
         ;;
 esac
+# On a test track the default `completed` is safe. On production it sends the
+# release to 100% of users at once, so the caller must choose.
+if [ -z "$RELEASE_STATUS" ]; then
+    if [ "$TRACK" = "production" ]; then
+        echo -e "${RED}❌ --track=production requires an explicit --status.${NC}"
+        echo -e "${RED}   Use --status=draft (start the rollout by hand in the Play Console)${NC}"
+        echo -e "${RED}   or --status=inProgress --user-fraction=<0-1> (staged rollout).${NC}"
+        echo -e "${RED}   --status=completed sends the release to 100% of users at once.${NC}"
+        exit 1
+    fi
+    RELEASE_STATUS="completed"
+fi
+# The script refuses `halted`. It always uploads a NEW versionCode, and a halt
+# of a release that the script has just uploaded does nothing useful. To halt
+# a live rollout, use the Play Console.
+case "$RELEASE_STATUS" in
+    draft|inProgress|completed) ;;
+    *)
+        echo -e "${RED}❌ Invalid --status: $RELEASE_STATUS (expected draft|inProgress|completed)${NC}"
+        if [ "$RELEASE_STATUS" = "halted" ]; then
+            echo -e "${RED}   To halt a live rollout, use the Play Console (Release → Production → Halt rollout).${NC}"
+        fi
+        exit 1
+        ;;
+esac
+# Play accepts userFraction only on a staged (inProgress) release, and requires
+# it there. The internal track has no staged rollout.
+if [ "$RELEASE_STATUS" = "inProgress" ]; then
+    if [ "$TRACK" = "internal" ]; then
+        echo -e "${RED}❌ --status=inProgress is not valid on the internal track (it has no staged rollout).${NC}"
+        exit 1
+    fi
+    if [ -z "$USER_FRACTION" ]; then
+        echo -e "${RED}❌ --status=inProgress requires --user-fraction=<0-1> (e.g. 0.01 for 1%)${NC}"
+        exit 1
+    fi
+    # A plain decimal strictly between 0 and 1, for example 0.2 or .05.
+    # `20` (meant as 20%), `1.0`, `abc`, extra JSON and a newline fail here.
+    # [[ =~ ]] checks the whole string; grep would check each line apart.
+    # 1 to 4 decimals, not all zero. A longer value such as
+    # 0.99999999999999999999 parses to exactly 1, which Play rejects after
+    # the upload.
+    if ! [[ "$USER_FRACTION" =~ ^0?\.[0-9]{1,4}$ && "$USER_FRACTION" =~ [1-9] ]]; then
+        echo -e "${RED}❌ --user-fraction must be a decimal between 0 and 1, exclusive, with at most 4 decimals (got: $USER_FRACTION). Example: 0.2 for 20%.${NC}"
+        exit 1
+    fi
+    # JSON needs a leading zero: `.2` becomes `0.2`.
+    USER_FRACTION="0${USER_FRACTION#0}"
+elif [ -n "$USER_FRACTION" ]; then
+    echo -e "${RED}❌ --user-fraction is only valid with --status=inProgress; got --status=$RELEASE_STATUS${NC}"
+    exit 1
+fi
 
 if [ -z "$AAB_PATH" ]; then
     AAB_PATH="$REPO_ROOT/android/app/build/outputs/bundle/release/app-release.aab"
@@ -87,9 +173,18 @@ if [ -z "$AAB_PATH" ]; then
 fi
 if [ ! -f "$AAB_PATH" ]; then
     echo -e "${RED}❌ AAB not found: $AAB_PATH${NC}"
-    echo -e "${RED}   Build first with: ./scripts/android-archive.sh --bundle${NC}"
+    if [ "$TRACK" = "production" ]; then
+        echo -e "${RED}   Build first with: ./scripts/android-archive.sh --bundle --prod${NC}"
+    else
+        echo -e "${RED}   Build first with: ./scripts/android-archive.sh --bundle${NC}"
+    fi
     exit 1
 fi
+
+# The guard above checked TRACK, RELEASE_STATUS and USER_FRACTION. Make them
+# read-only, so a key with the same name in .env.local stops the script
+# instead of a silent override.
+readonly TRACK RELEASE_STATUS USER_FRACTION
 
 # ── Load env + service account ───────────────────────────────────────────────
 
@@ -122,8 +217,8 @@ MSG
     exit 1
 fi
 
-# Require: openssl, jq, curl, base64.
-for cmd in openssl jq curl base64; do
+# Require: node (token helper), jq, curl.
+for cmd in node jq curl; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo -e "${RED}❌ Required command not found: $cmd${NC}"
         exit 1
@@ -157,41 +252,19 @@ echo ""
 
 # ── Step 1: Mint OAuth2 access token via JWT grant ───────────────────────────
 
-CLIENT_EMAIL=$(jq -r '.client_email' "$SA_JSON")
-PRIVATE_KEY=$(jq -r '.private_key' "$SA_JSON")
-
-if [ -z "$CLIENT_EMAIL" ] || [ "$CLIENT_EMAIL" = "null" ]; then
-    echo -e "${RED}❌ Service-account JSON missing client_email${NC}"
-    exit 1
-fi
-
-NOW=$(date +%s)
-EXP=$((NOW + 3600))
-
-JWT_HEADER=$(printf '{"alg":"RS256","typ":"JWT"}' | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-JWT_PAYLOAD=$(printf '{"iss":"%s","scope":"https://www.googleapis.com/auth/androidpublisher","aud":"https://oauth2.googleapis.com/token","exp":%d,"iat":%d}' \
-    "$CLIENT_EMAIL" "$EXP" "$NOW" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-
-JWT_UNSIGNED="${JWT_HEADER}.${JWT_PAYLOAD}"
-
-# Sign with the service-account private key (PEM in JSON's `private_key`).
-PEM_TMP=$(mktemp)
-trap 'rm -f "$PEM_TMP"' EXIT
-printf '%s' "$PRIVATE_KEY" > "$PEM_TMP"
-
-JWT_SIG=$(printf '%s' "$JWT_UNSIGNED" | openssl dgst -sha256 -sign "$PEM_TMP" | openssl base64 -A | tr '+/' '-_' | tr -d '=')
-JWT="${JWT_UNSIGNED}.${JWT_SIG}"
+# scripts/lib/google-play-auth.mjs signs the JWT and exchanges it for a token
+# (TECH_DEBT #234: one helper for every Google Play script). It prints only the
+# token on stdout. A failure goes to stderr with a non-zero exit.
+# Node fetch (undici) tries only the IPv6 address on a hung IPv6 route, where
+# curl works. --dns-result-order=ipv4first avoids that (CLAUDE.md, 2026-08-15).
 
 echo -e "${YELLOW}🔑 Requesting OAuth2 access token…${NC}"
-TOKEN_RESPONSE=$(curl -sS -X POST https://oauth2.googleapis.com/token \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer" \
-    --data-urlencode "assertion=${JWT}")
-
-ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+if ! ACCESS_TOKEN=$(node --dns-result-order=ipv4first "$SCRIPT_DIR/lib/google-play-auth.mjs" --print-token --scope=publisher --sa-file="$SA_JSON"); then
+    echo -e "${RED}❌ Failed to obtain access token (the reason is in the message above)${NC}"
+    exit 1
+fi
 if [ -z "$ACCESS_TOKEN" ]; then
-    echo -e "${RED}❌ Failed to obtain access token. Response:${NC}"
-    echo "$TOKEN_RESPONSE" | jq .
+    echo -e "${RED}❌ Failed to obtain access token (the helper printed no token)${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ Access token acquired${NC}"
@@ -212,6 +285,38 @@ if [ -z "$EDIT_ID" ]; then
     exit 1
 fi
 echo -e "${GREEN}✓ Edit id: $EDIT_ID${NC}"
+
+# ── Step 2b: Production only — refuse while a staged rollout is live ─────────
+# Step 4 sends a track update that holds only the new release. Play can read
+# that as the whole release list for the track, so the update could stop a
+# staged rollout that is live (Gradle Play Publisher's promote path keeps a
+# live rollout in its update for this reason). Read the track first, in this edit, and
+# refuse. A failed read also refuses: on production, safe beats fast.
+abandon_edit() {
+    curl -sS -X DELETE "${API_BASE}/edits/${EDIT_ID}" \
+        -H "Authorization: Bearer ${ACCESS_TOKEN}" >/dev/null 2>&1 || true
+}
+# The versionCodes of each live staged (inProgress) release, comma-separated.
+# A release with no versionCodes still blocks (it prints "?").
+LIVE_STAGED_JQ='[.releases[]? | select(.status == "inProgress") | (.versionCodes // ["?"])[]] | join(",")'
+if [ "$TRACK" = "production" ]; then
+    TRACK_NOW=$(curl -sS "${API_BASE}/edits/${EDIT_ID}/tracks/production" \
+        -H "Authorization: Bearer ${ACCESS_TOKEN}")
+    if ! echo "$TRACK_NOW" | jq -e '.track' >/dev/null 2>&1; then
+        echo -e "${RED}❌ Cannot read the production track, so the script stops before the upload.${NC}"
+        echo "$TRACK_NOW" | jq . 2>/dev/null || echo "$TRACK_NOW"
+        abandon_edit
+        exit 1
+    fi
+    LIVE_STAGED=$(echo "$TRACK_NOW" | jq -r "$LIVE_STAGED_JQ")
+    if [ -n "$LIVE_STAGED" ]; then
+        echo -e "${RED}❌ A staged rollout is live on production (versionCode ${LIVE_STAGED}).${NC}"
+        echo -e "${RED}   An upload now can stop it. First complete or halt that rollout in the Play Console.${NC}"
+        echo -e "${RED}   Or upload to --track=internal and promote the release in the Play Console.${NC}"
+        abandon_edit
+        exit 1
+    fi
+fi
 
 # ── Step 3: Upload AAB ───────────────────────────────────────────────────────
 
@@ -246,19 +351,12 @@ VERSION_CODE="$UPLOADED_VERSION_CODE"
 # ── Step 4: Assign to track ──────────────────────────────────────────────────
 
 echo -e "\n${YELLOW}🚀 Assigning versionCode $VERSION_CODE to track '$TRACK'…${NC}"
-TRACK_PAYLOAD=$(cat <<EOF
-{
-  "track": "${TRACK}",
-  "releases": [
-    {
-      "name": "${VERSION_CODE}",
-      "versionCodes": ["${VERSION_CODE}"],
-      "status": "completed"
-    }
-  ]
-}
-EOF
-)
+# Build the JSON with jq, so that no argument value can change its shape. One
+# call for both cases: userFraction is present only for a staged rollout.
+TRACK_PAYLOAD=$(jq -n --arg track "$TRACK" --arg vc "$VERSION_CODE" \
+    --arg status "$RELEASE_STATUS" --argjson fraction "${USER_FRACTION:-null}" \
+    '{track: $track, releases: [{name: $vc, versionCodes: [$vc], status: $status}
+        + (if $fraction == null then {} else {userFraction: $fraction} end)]}')
 TRACK_RESPONSE=$(curl -sS -X PUT "${API_BASE}/edits/${EDIT_ID}/tracks/${TRACK}" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     -H "Content-Type: application/json" \
@@ -290,11 +388,13 @@ commit_edit() {
         -H "Authorization: Bearer ${ACCESS_TOKEN}" \
         -H "Content-Length: 0"
 }
+SENT_FOR_REVIEW="true"
 COMMIT_RESPONSE=$(commit_edit "${API_BASE}/edits/${EDIT_ID}:commit")
 if ! echo "$COMMIT_RESPONSE" | jq -e '.id' >/dev/null 2>&1 \
    && echo "$COMMIT_RESPONSE" | grep -qi 'changesNotSentForReview'; then
     echo -e "${YELLOW}↻ Retrying commit with changesNotSentForReview=true…${NC}"
     COMMIT_RESPONSE=$(commit_edit "${API_BASE}/edits/${EDIT_ID}:commit?changesNotSentForReview=true")
+    SENT_FOR_REVIEW="false"
 fi
 
 if ! echo "$COMMIT_RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
@@ -302,7 +402,25 @@ if ! echo "$COMMIT_RESPONSE" | jq -e '.id' >/dev/null 2>&1; then
     echo "$COMMIT_RESPONSE" | jq .
     exit 1
 fi
-echo -e "${GREEN}✓ Edit committed — release is live on track '$TRACK'${NC}"
+# Play serves an alpha, beta or production release only after Google's
+# review approves it. A commit with changesNotSentForReview=true is not in review at
+# all, on any track, internal included: then the red warning below tells the
+# owner to send it. A draft starts no review until a person rolls it out.
+if [ "$RELEASE_STATUS" = "draft" ]; then
+    SENT_FOR_REVIEW=""
+    echo -e "${GREEN}✓ Edit committed — release is a DRAFT on track '$TRACK' (NOT live).${NC}"
+    echo -e "${YELLOW}  Start the rollout from the Play Console when ready.${NC}"
+elif [ "$TRACK" = "internal" ]; then
+    echo -e "${GREEN}✓ Edit committed — release is on track 'internal'.${NC}"
+elif [ "$RELEASE_STATUS" = "inProgress" ]; then
+    echo -e "${GREEN}✓ Edit committed — staged rollout of ${USER_FRACTION} on track '$TRACK'. It starts after Play review approves it.${NC}"
+else
+    echo -e "${GREEN}✓ Edit committed — release on track '$TRACK'. It goes live after Play review approves it.${NC}"
+fi
+if [ "$SENT_FOR_REVIEW" = "false" ]; then
+    echo -e "${RED}⚠ The commit used changesNotSentForReview=true, so the change is NOT in review.${NC}"
+    echo -e "${RED}  Click \"Send for review\" in the Play Console (Publishing overview), or no user gets this build.${NC}"
+fi
 
 # ── Audit trail ──────────────────────────────────────────────────────────────
 
@@ -316,6 +434,9 @@ REC_TIMESTAMP="$REC_TIMESTAMP" \
 REC_SHA="$REC_SHA" \
 REC_BRANCH="$REC_BRANCH" \
 REC_TRACK="$TRACK" \
+REC_STATUS="$RELEASE_STATUS" \
+REC_USER_FRACTION="$USER_FRACTION" \
+REC_SENT_FOR_REVIEW="$SENT_FOR_REVIEW" \
 REC_VERSION_CODE="$VERSION_CODE" \
 REC_AAB_PATH="$AAB_PATH" \
 REC_PACKAGE="$PACKAGE_NAME" \
@@ -326,6 +447,13 @@ const path = require('path');
 const meta = {
   timestamp: process.env.REC_TIMESTAMP,
   track: process.env.REC_TRACK,
+  status: process.env.REC_STATUS,
+  userFraction: process.env.REC_USER_FRACTION ? Number(process.env.REC_USER_FRACTION) : null,
+  // false when the commit needed changesNotSentForReview=true (the change is
+  // not submitted); true otherwise; null for a draft, which starts no review.
+  sentForReview: process.env.REC_SENT_FOR_REVIEW
+    ? process.env.REC_SENT_FOR_REVIEW === 'true'
+    : null,
   versionCode: process.env.REC_VERSION_CODE,
   sha: process.env.REC_SHA,
   branch: process.env.REC_BRANCH,

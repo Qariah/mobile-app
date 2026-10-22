@@ -1,6 +1,5 @@
 import React, {useCallback, useMemo, useRef} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
-import {Feather} from '@expo/vector-icons';
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {usePlayerStore} from '@/services/player/store/playerStore';
@@ -9,10 +8,17 @@ import {PlayIcon, PauseIcon} from '@/components/Icons';
 import {LoadingIndicator} from '@/components/LoadingIndicator';
 import {ReciterImage} from '@/components/ReciterImage';
 import Color from 'color';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {getTrackDisplayTitle, getTrackArtistDisplay} from '@/i18n/format';
+import {appLayoutDirection} from '@/utils/rtl';
+// @ai-end
 
+// @ai-start
 function MiniPlayerInner() {
   const {theme} = useTheme();
-  const {play, pause, stop} = usePlayerActions();
+  const {t} = useTranslation(['player', 'common']);
+  const {play, pause} = usePlayerActions();
   const playbackState = usePlayerStore(state => state.playback.state);
   const queueTracks = usePlayerStore(state => state.queue.tracks);
   const currentIndex = usePlayerStore(state => state.queue.currentIndex);
@@ -45,28 +51,24 @@ function MiniPlayerInner() {
     expandPlayerSheet();
   }, []);
 
-  const handleDismiss = useCallback(() => {
-    stop();
-  }, [stop]);
-
   if (stateRestoring || !currentTrack) return null;
 
   const textColor = theme.colors.text;
 
   return (
     // #179 / #401 a11y -- plain View row (not a grouping Pressable) so the
-    // play/pause control and the x are INDIVIDUALLY focusable. A Pressable is
+    // play/pause control is INDIVIDUALLY focusable. A Pressable is
     // `accessible` by default, and on iOS an accessible container ABSORBS its
-    // children into one composed label ("Ad-Dukhan, <reciter>, Close player")
-    // -- which is why neither VoiceOver nor Maestro could reach the x on its
-    // own. The expand action lives on the inner body only.
-    <View style={styles.row} testID="mini-player-bar">
+    // children into one composed label -- which is why neither VoiceOver nor
+    // Maestro could reach a control on its own. The expand action lives on
+    // the inner body only.
+    <View style={[styles.row, appLayoutDirection]} testID="mini-player-bar">
       <Pressable
         onPress={handlePress}
         style={styles.body}
         accessibilityRole="button"
-        accessibilityLabel={`${currentTrack.title}, ${currentTrack.artist}`}
-        accessibilityHint="Opens the full player"
+        accessibilityLabel={`${getTrackDisplayTitle(currentTrack)}, ${getTrackArtistDisplay(currentTrack)}`}
+        accessibilityHint={t('a11y.openPlayer')}
         testID="mini-player-expand">
         <ReciterImage
           reciterName={currentTrack.reciterName}
@@ -75,7 +77,7 @@ function MiniPlayerInner() {
 
         <View style={styles.trackInfo}>
           <Text style={[styles.title, {color: textColor}]} numberOfLines={1}>
-            {currentTrack.title}
+            {getTrackDisplayTitle(currentTrack)}
           </Text>
           <Text
             style={[
@@ -83,7 +85,7 @@ function MiniPlayerInner() {
               {color: Color(textColor).alpha(0.5).toString()},
             ]}
             numberOfLines={1}>
-            {currentTrack.artist}
+            {getTrackArtistDisplay(currentTrack)}
           </Text>
         </View>
       </Pressable>
@@ -93,7 +95,11 @@ function MiniPlayerInner() {
         style={styles.playButton}
         hitSlop={10}
         accessibilityRole="button"
-        accessibilityLabel={playbackState === 'playing' ? 'Pause' : 'Play'}
+        accessibilityLabel={t(
+          playbackState === 'playing'
+            ? 'common:actions.pause'
+            : 'common:actions.play',
+        )}
         accessibilityState={{busy: isLoadingNewTrack}}
         testID="mini-player-play-pause">
         {isLoadingNewTrack ? (
@@ -104,31 +110,19 @@ function MiniPlayerInner() {
           <PlayIcon color={textColor} size={22} />
         )}
       </Pressable>
-
-      <Pressable
-        onPress={handleDismiss}
-        style={styles.closeButton}
-        hitSlop={10}
-        accessibilityRole="button"
-        accessibilityLabel="Close player"
-        testID="mini-player-close">
-        <Feather
-          name="x"
-          size={18}
-          color={Color(textColor).alpha(0.5).toString()}
-        />
-      </Pressable>
     </View>
   );
 }
+// @ai-end
 
 export const MiniPlayer: React.FC = React.memo(MiniPlayerInner);
 
+// @ai-start
 const styles = StyleSheet.create({
   row: {
-    // #270 — symmetric horizontal insets (was 14) so the artwork and the
-    // play/close cluster sit the same distance from each pill edge (the play
-    // control read cramped against the right edge), even 12px rhythm between
+    // #270 — symmetric horizontal insets (was 14) so the artwork and the play
+    // control sit the same distance from each pill edge (the play control read
+    // cramped against the right edge), even 12px rhythm between
     // every element, and balanced top/bottom padding (was 8/20) so the content
     // is vertically centred in the native BottomAccessory (see #421 below for
     // why the row must fill the accessory frame).
@@ -173,10 +167,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
+    textAlign: 'left',
     fontSize: 13,
     fontFamily: 'Manrope-SemiBold',
   },
   subtitle: {
+    textAlign: 'left',
     fontSize: 11,
     fontFamily: 'Manrope-Medium',
   },
@@ -187,11 +183,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  closeButton: {
-    width: 32,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
 });
+// @ai-end

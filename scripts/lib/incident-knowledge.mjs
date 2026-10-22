@@ -216,7 +216,8 @@ export const INCIDENTS = [
     note:
       'QF user-state sync noise — best-effort, local-first, non-fatal (posts/notes restore, ' +
       'community-reflections feed 403/502). Correctly classed as noise; the app-side ' +
-      '`beforeSend` drop (app/_layout.tsx) should suppress it. Any issue here is a candidate ' +
+      '`beforeSend` drop (services/diagnostics/qariahSentryOptions.ts) should suppress it. ' +
+      'Any issue here is a candidate ' +
       'for closing as noise, not a real bug.',
   },
   {

@@ -1,8 +1,8 @@
-# J4 — System-playlist detail. WIP (tagged `wip`, excluded from the green regression gate).
+# SRC-03 (matrix J4) — System-playlist detail. WIP (tagged `wip`, excluded from the green regression gate).
 #
 # Finding (2026-06-30, on-device): tapping a curated playlist card ("Stories of the Prophets")
 # does NOT open a titled detail screen — the tap completes and the app lands on the Mushaf
-# surah grid (hierarchy showed "SURAH OF THE DAY", not a playlist header). So J4's real
+# surah grid (hierarchy showed "SURAH OF THE DAY", not a playlist header). So SRC-03's real
 # interaction model is tap→navigate/play, not tap→detail. Confirm the intended target + add a
 # stable `testID` on the playlist card and its destination before promoting this to `regression`.
 appId: com.qariah.app

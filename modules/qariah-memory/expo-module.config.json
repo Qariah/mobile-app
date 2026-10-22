@@ -1,7 +1,7 @@
 {
   "platforms": ["apple", "android", "web"],
   "apple": {
-    "modules": ["QariahMemoryModule"]
+    "modules": ["QariahMemoryModule", "QariahAppLanguageModule"]
   },
   "android": {
     "modules": ["expo.modules.qariahmemory.QariahMemoryModule"]

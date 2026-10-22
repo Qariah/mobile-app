@@ -7,7 +7,8 @@ import {guardedJSONStorage} from '@/services/storage/hydrationGuardedStorage';
  *
  * The audio pipeline calls `recordKill` when it observes an INVOLUNTARY
  * background stop: a prior-launch mid-playback process death (the MMKV
- * playback sentinel, consumed in `app/_layout.tsx`) or a silent player death
+ * playback sentinel, consumed in `components/QariahRootEffects.tsx`) or a
+ * silent player death
  * caught on foreground (`ExpoAudioProvider`). That is the OEM
  * battery-restriction path (Samsung "Sleeping apps" → the system stops the
  * media foreground service "due to app idle" — see

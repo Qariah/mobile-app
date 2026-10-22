@@ -52,7 +52,7 @@ export interface ActivePlayback {
 // Stash-then-clear runs at most once per launch, on the FIRST touch of this
 // module (whichever of mark/consume happens first). This makes the record from
 // the previous process safe even if the user hits play before the reporter
-// (AnalyticsConnector's posthog-gated effect) has consumed it.
+// (QariahRootEffects' posthog-gated effect) has consumed it.
 let stashed = false;
 let killedFromLastLaunch: ActivePlayback | null = null;
 function stashPrevious(): void {
@@ -143,7 +143,7 @@ export function peekActivePlayback(): ActivePlayback | null {
 
 /**
  * Read + clear the previous launch's mid-playback death record (returns it at
- * most once). Reported by AnalyticsConnector once PostHog is connected.
+ * most once). Reported by QariahRootEffects once PostHog is connected.
  */
 export function consumeKilledPlayback(): ActivePlayback | null {
   stashPrevious();

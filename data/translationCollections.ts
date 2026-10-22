@@ -17,6 +17,7 @@
  */
 
 import {RECITERS, type Reciter} from '@/data/reciterData';
+import {getTranslationLanguageName} from '@/i18n/qariahCatalog';
 
 export interface TranslationInfo {
   /** Kebab-case slug — e.g. "english", "urdu". Matches the URL param. */
@@ -51,6 +52,17 @@ function slugifyLanguage(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, '-');
 }
 
+/** True when the reciter's `translation` has this slug. The Browse filter uses it. */
+export function reciterMatchesTranslation(
+  reciter: Reciter,
+  languageSlug: string,
+): boolean {
+  return (
+    !!reciter.translation &&
+    slugifyLanguage(reciter.translation) === languageSlug
+  );
+}
+
 /**
  * All translation languages present in the active catalog, with their
  * reciter counts. Empty when no reciter has `Reciter.translation` set.
@@ -73,7 +85,8 @@ export function getAllTranslations(): TranslationInfo[] {
   return Array.from(counts.entries())
     .map(([slug, {name, count}]) => ({
       id: slug,
-      name,
+      // Qariah (TECH_DEBT #304): the name in the UI language.
+      name: getTranslationLanguageName(name),
       languageCode: LANGUAGE_CODE_MAP[slug] ?? slug,
       itemCount: count,
     }))

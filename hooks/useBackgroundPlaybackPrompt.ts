@@ -2,6 +2,7 @@ import {useEffect, useRef} from 'react';
 import {Alert, Linking, Platform} from 'react-native';
 import {useBackgroundPlaybackStore} from '@/store/backgroundPlaybackStore';
 import branding from '@/config/branding';
+import i18n from '@/i18n';
 
 /** Re-prompt only after a NEW kill at least this long after the last prompt. */
 const REPROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,13 +16,14 @@ const MAX_PROMPTS = 3;
  */
 export function showBackgroundPlaybackGuide(): void {
   Alert.alert(
-    'Keep audio playing in the background',
-    `On some phones the system stops ${branding.appName}’s audio when the ` +
-      'screen is off or the app is in the background. To fix it, open ' +
-      `Settings and set ${branding.appName}’s Battery usage to “Unrestricted”.`,
+    i18n.t('qariah:battery.title'),
+    i18n.t('qariah:battery.body', {appName: branding.appName}),
     [
-      {text: 'Not now', style: 'cancel'},
-      {text: 'Open Settings', onPress: () => void Linking.openSettings()},
+      {text: i18n.t('qariah:common.notNow'), style: 'cancel'},
+      {
+        text: i18n.t('qariah:common.openSettings'),
+        onPress: () => void Linking.openSettings(),
+      },
     ],
   );
 }
@@ -31,7 +33,8 @@ export function showBackgroundPlaybackGuide(): void {
  * prompt. Shown only to users who actually hit an OEM background-audio kill:
  * the audio pipeline records kills in `backgroundPlaybackStore` from the
  * reliably-caught process-death path (`playback-killed-in-background`,
- * consumed in `app/_layout.tsx`) and the best-effort silent player-death path
+ * consumed in `components/QariahRootEffects.tsx`) and the best-effort silent
+ * player-death path
  * (`ExpoAudioProvider`). Root cause + repro:
  * planning/background-audio-kill-diagnosis-2026-06-10.md.
  *
@@ -81,14 +84,14 @@ export function useBackgroundPlaybackPrompt(): void {
  */
 export function showNotificationsBlockedGuide(): void {
   Alert.alert(
-    'Allow notifications to play in the background',
-    `${branding.appName} uses a playback notification to keep audio running ` +
-      'when the screen is off or the app is in the background. Notifications ' +
-      'are currently blocked, so background audio may stop. Open Settings to ' +
-      'allow notifications.',
+    i18n.t('qariah:notifications.title'),
+    i18n.t('qariah:notifications.body', {appName: branding.appName}),
     [
-      {text: 'Not now', style: 'cancel'},
-      {text: 'Open Settings', onPress: () => void Linking.openSettings()},
+      {text: i18n.t('qariah:common.notNow'), style: 'cancel'},
+      {
+        text: i18n.t('qariah:common.openSettings'),
+        onPress: () => void Linking.openSettings(),
+      },
     ],
   );
 }

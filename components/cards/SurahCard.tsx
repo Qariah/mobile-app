@@ -37,11 +37,22 @@ import {
   useIsDownloaded,
   useIsDownloadedWithRewayat,
 } from '@/services/player/store/downloadSelectors';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {SURAHS} from '@/data/surahData';
+import {useTranslation} from 'react-i18next';
+import {
+  getSurahDisplayName,
+  getSurahMeaning,
+  localizeDigits,
+} from '@/i18n/format';
+// @ai-end
 
 interface SurahCardProps {
   id: number;
   name: string;
   translatedName: string;
+  versesCount: number;
   revelationPlace: string;
   color: string;
   onPress: () => void;
@@ -50,6 +61,7 @@ interface SurahCardProps {
   style?: StyleProp<ViewStyle>;
   isLoved?: boolean;
   isDownloaded?: boolean;
+  isLoading?: boolean;
   enableHaptics?: boolean;
   enableAnimation?: boolean;
   reciterId?: string;
@@ -60,10 +72,12 @@ interface SurahCardProps {
 const AnimatedTouchableOpacity =
   Animated.createAnimatedComponent(TouchableOpacity);
 
+// @ai-start
 export const SurahCard: React.FC<SurahCardProps> = ({
   id,
   name,
   translatedName,
+  versesCount,
   revelationPlace,
   color,
   onPress,
@@ -79,6 +93,12 @@ export const SurahCard: React.FC<SurahCardProps> = ({
   mushafLink = false,
 }) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['home', 'common']);
+  const displayName = getSurahDisplayName({
+    name,
+    name_arabic: SURAHS[id - 1]?.name_arabic ?? name,
+  });
+  const meaning = getSurahMeaning({translated_name_english: translatedName});
 
   // Get download state
   const isDownloadedBase = useIsDownloaded(
@@ -98,14 +118,14 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       : isDownloadedBase
     : isDownloaded; // Fallback to prop if no reciterId
 
-  // #173 — mirror the S41.2 SurahItem fix (b1e3b3f2): derive this card's
-  // current/playing state with NARROW scalar-boolean selectors instead of
-  // subscribing to the whole `queue.tracks` array + `currentIndex` and
-  // recomputing in a useMemo. `updateQueue(...)` assigns a NEW tracks array on
-  // every play, so an array-reference subscription re-renders every mounted
-  // card on each play (the QARIAHV2-J freeze class if a card-mode list ever
-  // grows large/unvirtualized). With boolean selectors, zustand's Object.is
-  // equality only re-renders a card when ITS OWN current/playing state flips.
+  // Derive this card's current/playing state with NARROW scalar-boolean
+  // selectors instead of subscribing to the whole `queue.tracks` array +
+  // `currentIndex` and recomputing in a useMemo. `updateQueue(...)` assigns a
+  // NEW tracks array on every play, so an array-reference subscription
+  // re-renders every mounted card on each play (a jank/freeze risk if a
+  // card-mode list ever grows large/unvirtualized). With boolean selectors,
+  // zustand's Object.is equality only re-renders a card when ITS OWN
+  // current/playing state flips.
   const isCurrentTrack = usePlayerStore(state => {
     const idx = state.queue.currentIndex;
     const currentTrack =
@@ -193,6 +213,13 @@ export const SurahCard: React.FC<SurahCardProps> = ({
     const md = getSurahMetadataSync(reciterId, rewayatId, id);
     return md ? formatAyahRange(md) : undefined;
   }, [reciterId, rewayatId, id, recitersInitialized]);
+  // @ai Qariah ayah range (Sprint 20) after upstream's meaning line.
+  // formatAyahRange returns the translated label.
+  const baseSecondary =
+    meaning ?? t('common:counts.ayahs', {count: versesCount});
+  const secondaryText = ayahRangeLabel
+    ? `${baseSecondary} · ${localizeDigits(ayahRangeLabel)}`
+    : baseSecondary;
   const styles = StyleSheet.create({
     container: {
       width: moderateScale(120),
@@ -229,7 +256,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       fontFamily: 'Manrope-Bold',
       color: theme.colors.text,
       textAlign: 'center',
-      letterSpacing: 0.2,
+      letterSpacing: latinLetterSpacing(0.2),
     },
     translatedName: {
       fontSize: moderateScale(9),
@@ -237,7 +264,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       color: theme.colors.textSecondary,
       textAlign: 'center',
       opacity: 0.9,
-      letterSpacing: 0.1,
+      letterSpacing: latinLetterSpacing(0.1),
     },
     placeIcon: {
       position: 'absolute',
@@ -366,7 +393,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
         )}
       </View>
       <View style={styles.numberBadge}>
-        <Text style={styles.numberText}>{id}</Text>
+        <Text style={styles.numberText}>{localizeDigits(id)}</Text>
       </View>
       <View style={styles.content}>
         <Text style={styles.arabicName}>{surahGlyphMap[id]}</Text>
@@ -375,20 +402,18 @@ export const SurahCard: React.FC<SurahCardProps> = ({
           <View style={styles.textBlock}>
             {isCurrentTrack ? (
               <GradientText style={styles.name} surahId={id}>
-                {name}
+                {displayName}
               </GradientText>
             ) : (
               <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
-                {name}
+                {displayName}
               </Text>
             )}
             <Text
               style={styles.translatedName}
               numberOfLines={1}
               ellipsizeMode="tail">
-              {ayahRangeLabel
-                ? `${translatedName} · ${ayahRangeLabel}`
-                : translatedName}
+              {secondaryText}
             </Text>
           </View>
         </View>
@@ -513,3 +538,4 @@ export const SurahCard: React.FC<SurahCardProps> = ({
     </TouchableComponent>
   );
 };
+// @ai-end

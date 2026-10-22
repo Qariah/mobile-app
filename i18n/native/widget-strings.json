@@ -1,0 +1,14 @@
+{
+  "ar": {
+    "bayaan_widget_now_label": "قارئة الآن",
+    "bayaan_widget_now_desc": "ما يناسب هذه اللحظة: الاستماع أو وقت النوم.",
+    "bayaan_widget_continue_listening_label": "متابعة الاستماع",
+    "bayaan_widget_continue_listening_desc": "استأنف تلاوتك واعرف ما سيُشغَّل بعدها.",
+    "bayaan_widget_continue_reading_label": "متابعة القراءة",
+    "bayaan_widget_continue_reading_desc": "عُد إلى الصفحة التي كنت تقرؤها.",
+    "bayaan_widget_quick_surah_label": "سورة سريعة",
+    "bayaan_widget_quick_surah_desc": "شغّل سورتك المفضلة بلمسة واحدة.",
+    "bayaan_widget_ayah_label": "آية اليوم",
+    "bayaan_widget_ayah_desc": "آية جديدة كل يوم، بخط Digital Khatt."
+  }
+}

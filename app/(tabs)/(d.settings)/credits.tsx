@@ -6,6 +6,14 @@ import {Feather} from '@expo/vector-icons';
 import Color from 'color';
 import {Theme} from '@/utils/themeUtils';
 import branding from '@/config/branding';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+import type {TFunction} from 'i18next';
+import i18n from '@/i18n';
+import {qariahAppName} from '@/i18n/qariahAppName';
+import {isolate} from '@/i18n/qariahBidi'; // @ai Qariah (#310)
+// @ai-end
 
 interface Credit {
   title: string;
@@ -20,123 +28,173 @@ interface Credit {
  * top-level const arrays evaluate before any `branding` resolution,
  * baking the upstream brand name into the bundle.
  */
-function getCredits(): {section: string; items: Credit[]}[] {
+// @ai-start
+function getCredits(
+  t: TFunction<'settings'>,
+): {section: string; items: Credit[]}[] {
+  const appName = branding.appName;
   return [
     {
-      section: 'Built on',
+      // @ai Qariah credit (the qariah namespace, through `i18n.t`).
+      section: i18n.t('qariah:credits.builtOn'),
       items: [
         {
-          title: 'Bayaan',
-          description: `${branding.appName} is rebuilt on top of Bayaan, the open-source Quran app by @OKKHALIL3 and contributors. AGPL-3.0.`,
+          title: i18n.t('qariah:credits.bayaanTitle'),
+          // Only the app-name post-processor: the digit one turned
+          // "@OKKHALIL3" and "AGPL-3.0" into "@OKKHALIL٣" and "٣.٠-AGPL".
+          // The handle and the licence go in isolates, so Arabic text keeps
+          // their Latin order (TECH_DEBT #310).
+          description: i18n.t('qariah:credits.bayaanDesc', {
+            appName,
+            handle: isolate('@OKKHALIL3'),
+            licence: isolate('AGPL-3.0'),
+            postProcess: [qariahAppName.name],
+          }),
           link: 'https://github.com/thebayaan/Bayaan',
         },
       ],
     },
     {
-      section: 'Quran Data',
+      section: t('credits.sections.quranData'),
       items: [
         {
           title: 'Quranic Universal Library',
-          description:
-            'Advanced Quranic data and word-level information by Tarteel',
+          description: t('credits.items.qul'),
           link: 'https://qul.tarteel.ai',
         },
         {
           title: 'Quran Foundation API',
-          description: 'Comprehensive Quran API services by Quran.com',
+          description: t('credits.items.quranFoundation'),
           link: 'https://api-docs.quran.foundation',
         },
       ],
     },
     {
-      section: 'Audio Sources',
+      section: t('credits.sections.audioSources'),
       items: [
         {
           title: 'MP3Quran',
-          description: 'Comprehensive reciter collection',
+          description: t('credits.items.mp3quran'),
           link: 'https://mp3quran.net',
+        },
+        {
+          title: t('credits.items.alafasyTitle'),
+          description: t('credits.items.alafasy'),
+          link: 'http://www.alafasy.tv',
+        },
+        {
+          title: t('credits.items.duraihimTitle'),
+          description: t('credits.items.duraihim'),
+          link: 'https://islamhouse.com',
+        },
+        {
+          title: t('credits.items.removalTitle'),
+          description: t('credits.items.removal', {
+            supportUrl: branding.supportUrl,
+          }),
+          link: branding.supportUrl,
         },
       ],
     },
     {
-      section: 'Design Resources',
+      section: t('credits.sections.adhkarSources'),
+      items: [
+        {
+          title: 'hisnmuslim.com',
+          description: t('credits.items.hisnmuslim'),
+          link: 'https://www.hisnmuslim.com',
+        },
+        {
+          title: 'Tanzil',
+          description: t('credits.items.tanzil'),
+          link: 'https://tanzil.net/trans/',
+        },
+        {
+          title: 'Wikipedia contributors',
+          // @ai Qariah: no digit post-processing, so the licence reads
+          // "CC BY-SA 4.0" in Arabic, not "CC BY-SA ٤.٠".
+          description: t('credits.items.wikipediaNames', {postProcess: []}),
+          link: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        },
+        {
+          title: 'fitrahive/dua-dhikr',
+          description: t('credits.items.fitrahive'),
+          link: 'https://github.com/fitrahive/dua-dhikr',
+        },
+      ],
+    },
+    {
+      section: t('credits.sections.designResources'),
       items: [
         {
           title: 'SVGRepo',
-          description: 'Beautiful open source icons and illustrations',
+          description: t('credits.items.svgrepo'),
           link: 'https://www.svgrepo.com',
         },
         {
-          title: 'Manrope Font',
-          description: 'Modern geometric sans-serif font family',
+          title: t('credits.items.manropeTitle'),
+          description: t('credits.items.manrope'),
           link: 'https://fonts.google.com/specimen/Manrope',
         },
         {
-          title: 'Uthmani Font',
-          description: 'Beautiful Quranic font from Arabic Fonts',
+          title: t('credits.items.uthmaniTitle'),
+          description: t('credits.items.uthmani'),
           link: 'https://arabicfonts.net',
         },
         {
-          title: 'Quran.com Resources',
-          description: 'Surah name SVGs and icons',
+          title: t('credits.items.quranComTitle'),
+          description: t('credits.items.quranCom'),
           link: 'https://api-docs.quran.foundation',
         },
       ],
     },
     {
-      section: 'Open Source Libraries',
+      section: t('credits.sections.openSource'),
       items: [
         {
           title: 'React Native',
-          description: 'Core framework',
+          description: t('credits.items.reactNative'),
           link: 'https://reactnative.dev',
         },
         {
           title: 'Expo',
-          description: 'Development platform',
+          description: t('credits.items.expo'),
           link: 'https://expo.dev',
         },
         {
           title: 'React Native Reanimated',
-          description: 'Animations library',
+          description: t('credits.items.reanimated'),
           link: 'https://docs.swmansion.com/react-native-reanimated/',
         },
       ],
     },
     {
-      section: 'Special Thanks',
+      section: t('credits.sections.specialThanks'),
       items: [
         {
-          title: 'Our Contributors',
-          description: `Everyone who helped make ${branding.appName} better`,
+          title: t('credits.items.contributorsTitle'),
+          description: t('credits.items.contributors', {appName}),
         },
         {
-          title: 'Beta Testers',
-          description: 'For their valuable feedback and suggestions',
+          title: t('credits.items.betaTestersTitle'),
+          description: t('credits.items.betaTesters'),
         },
         {
-          title: 'Muslim Community',
-          description: 'For their continuous support and guidance',
-        },
-      ],
-    },
-    {
-      section: 'Design & Art',
-      items: [
-        {
-          title: 'Dr. Naoki Yamamoto',
-          description: 'Custom designed splash screen calligraphy',
-          link: 'https://twitter.com/NaokiQYamamoto',
+          title: t('credits.items.communityTitle'),
+          description: t('credits.items.community'),
         },
       ],
     },
   ];
 }
+// @ai-end
 
+// @ai-start
 export default function CreditsScreen() {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const credits = useMemo(() => getCredits(), []);
+  const {t} = useTranslation('settings');
+  const credits = useMemo(() => getCredits(t), [t]);
 
   const linkIconColor = Color(theme.colors.text).alpha(0.35).toString();
   const pressedBg = Color(theme.colors.text).alpha(0.06).toString();
@@ -156,10 +214,7 @@ export default function CreditsScreen() {
         showsVerticalScrollIndicator={false}>
         <View>
           <Text style={styles.introText}>
-            {branding.appName} wouldn&apos;t be possible without the incredible
-            work of these projects, organizations, and individuals. We&apos;re
-            deeply grateful for their contributions to the Muslim community and
-            the tech world.
+            {t('credits.intro', {appName: branding.appName})}
           </Text>
 
           {credits.map(section => (
@@ -201,14 +256,16 @@ export default function CreditsScreen() {
           ))}
 
           <Text style={styles.footerText}>
-            Made with ❤️ by the {branding.appName} team
+            {t('credits.footer', {appName: branding.appName})}
           </Text>
         </View>
       </ScrollView>
     </View>
   );
 }
+// @ai-end
 
+// @ai-start
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({
     container: {
@@ -238,7 +295,7 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(10.5),
       fontFamily: 'Manrope-SemiBold',
       color: Color(theme.colors.textSecondary).alpha(0.5).toString(),
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2),
       textTransform: 'uppercase',
       marginBottom: moderateScale(6),
       marginLeft: moderateScale(2),
@@ -284,3 +341,4 @@ const createStyles = (theme: Theme) =>
       marginTop: moderateScale(24),
     },
   });
+// @ai-end

@@ -1,0 +1,406 @@
+{
+  "tabs": {
+    "listen": "Listen",
+    "mushaf": "Mushaf"
+  },
+  "brand": {
+    "sidebar": "Qariah"
+  },
+  "settings": {
+    "screens": {
+      "signIn": "Sign in",
+      "yourData": "Your Data",
+      "notifications": "Notifications"
+    },
+    "backgroundPlayback": "Background Playback",
+    "backgroundPlaybackDesc": "Keep audio playing when the screen is off",
+    "githubDesc": "{{appName}} is open source. Star, report issues, or submit a PR",
+    "notifications": {
+      "rowDesc": "Choose the notifications you get",
+      "typesSection": "Notification types",
+      "followedRecitation": "New from reciters you follow",
+      "followedRecitationDesc": "When one of your favorite reciters adds a recitation",
+      "newRecitation": "New recitations",
+      "newRecitationDesc": "When {{appName}} adds a new recitation",
+      "kahfFriday": "Friday Al-Kahf reminder",
+      "kahfFridayDesc": "Each Friday morning, a reminder to listen to Surah Al-Kahf",
+      "continueListening": "Continue listening",
+      "continueListeningDesc": "A few days after you last listened, a reminder to continue where you stopped",
+      "whatsNew": "New features",
+      "whatsNewDesc": "When an update brings new features",
+      "permissionOff": "Notifications are off for {{appName}} in your phone settings.",
+      "allow": "Allow notifications",
+      "readFailed": "We could not read your notification choices. Try again later."
+    }
+  },
+  "a11y": {
+    "openNotes": "Open Notes",
+    "sharePage": "Share page",
+    "removeFromQueue": "Remove from queue",
+    "playRecitation": "Play {{surah}} by {{reciter}}",
+    "playRecitationRange": "Play {{surah}}, {{range}}, by {{reciter}}"
+  },
+  "listenTop": {
+    "eyebrow": "START LISTENING",
+    "title": "Browse by",
+    "reciters": "Reciters",
+    "surahs": "Surahs",
+    "shuffle": "Shuffle",
+    "finding": "Finding random recitations from different reciters..."
+  },
+  "recent": {
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}}m ago",
+    "minutesAgo_other": "{{count}}m ago",
+    "hoursAgo_one": "{{count}}h ago",
+    "hoursAgo_other": "{{count}}h ago",
+    "yesterday": "yesterday",
+    "daysAgo_one": "{{count}}d ago",
+    "daysAgo_other": "{{count}}d ago",
+    "weeksAgo_one": "{{count}}w ago",
+    "weeksAgo_other": "{{count}}w ago",
+    "longAgo": "a while ago"
+  },
+  "homeRows": {
+    "rewayat": "Browse by Rewaya",
+    "country": "Browse by Country",
+    "translation": "Browse by Translation",
+    "honored": "Honored Reciters",
+    "paradise": "Paradise Reciters",
+    "newlyAdded": "Newly Added",
+    "fullQuran": "Full Quran",
+    "trending": "Trending This Week",
+    "mostPlayed": "Most Played by You",
+    "newlyAddedRecitations": "Newly Added Recitations"
+  },
+  "countryCard": {
+    "reciters_one": "{{count}} reciter",
+    "reciters_other": "{{count}} reciters"
+  },
+  "translationCard": {
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items"
+  },
+  "browse": {
+    "translationTitle": "{{language}} translation",
+    "recitationsFound_one": "{{count}} recitation found with current filters",
+    "recitationsFound_other": "{{count}} recitations found with current filters",
+    "recitersFound_one": "{{count}} reciter found with current filters",
+    "recitersFound_other": "{{count}} reciters found with current filters"
+  },
+  "reciter": {
+    "translationChip": "{{language}} translation",
+    "recitations_one": "{{count}} recitation",
+    "recitations_other": "{{count}} recitations",
+    "collapseBio": "Collapse bio",
+    "expandBio": "Expand bio",
+    "readMore": "Read more",
+    "downloadAllA11y": "Download all surahs",
+    "cancelDownloadAllA11y": "Cancel downloading all surahs",
+    "allDownloadedA11y": "All surahs downloaded"
+  },
+  "ayahRange": {
+    "single": "ayah {{from}}",
+    "range": "ayahs {{from}}–{{to}}"
+  },
+  "notes": {
+    "personalNotes": "Personal Notes",
+    "noPersonalNotes": "No personal notes yet",
+    "reflections": "Reflections",
+    "noReflections": "No reflections yet",
+    "countNotes_one": "{{count}} note",
+    "countNotes_other": "{{count}} notes",
+    "countReflections_one": "{{count}} reflection",
+    "countReflections_other": "{{count}} reflections",
+    "reflectionsHint": "Publish reflections from a verse long-press to share them on QuranReflect.",
+    "personalHint": "Add personal notes to verses to see them here."
+  },
+  "verseActions": {
+    "addPersonalNote": "Add Personal Note",
+    "editPersonalNote": "Edit Personal Note",
+    "removePersonalNote": "Remove Personal Note",
+    "publishReflection": "Publish Reflection",
+    "editReflection": "Edit Reflection",
+    "removeReflection": "Remove Reflection",
+    "signInToPublishTitle": "Sign in to publish",
+    "signInToPublishBody": "Reflections publish to the QuranReflect community under your name. Sign in with your Quran Foundation account to continue, or save a personal note instead (no sign-in needed).",
+    "signInButton": "Sign in"
+  },
+  "note": {
+    "publishingHint": "Publishing to QuranReflect — visible on QF community surfaces under your name.",
+    "saving": "Saving…",
+    "updateReflection": "Update Reflection"
+  },
+  "reflections": {
+    "viewMoreA11y_one": "View {{count}} more reflection on QuranReflect",
+    "viewMoreA11y_other": "View {{count}} more reflections on QuranReflect",
+    "viewMore_one": "View {{count}} more on QuranReflect",
+    "viewMore_other": "View {{count}} more on QuranReflect",
+    "anonymous": "Anonymous"
+  },
+  "links": {
+    "openFailedTitle": "Couldn't open link",
+    "openFailedBody": "Your device wasn't able to open {{destination}}. Please try again, or open it in your browser.",
+    "thisLink": "this link",
+    "quranReflect": "QuranReflect",
+    "thisReflectionOnQR": "this reflection on QuranReflect",
+    "thisReflection": "this reflection"
+  },
+  "account": {
+    "section": "ACCOUNT",
+    "signedIn": "Signed in",
+    "qfAccount": "Quran Foundation account",
+    "yourData": "Your data",
+    "yourDataDesc": "Export, import, or restore favorites from the original Qariah app",
+    "signOut": "Sign out",
+    "signOutDesc": "Your data stays on this device",
+    "signInTitle": "Sign in to Qariah",
+    "signInDesc": "Restore your favorites from the original Qariah app"
+  },
+  "signIn": {
+    "settingsBody": "Sign in with your Quran Foundation account to restore your favorites from the original Qariah app. We'll only ask for this once.",
+    "withQF": "Sign in with Quran Foundation",
+    "cancelA11y": "Cancel sign-in",
+    "onboardingTitle": "Sign in to sync your reading",
+    "onboardingBody": "Sign in with your Quran Foundation account to keep your favorites, last-played, and bookmarks across devices. You can skip this for now — you can always sign in later from Settings.",
+    "skipA11y": "Skip sign-in for now"
+  },
+  "common": {
+    "skipForNow": "Skip for now",
+    "notNow": "Not now",
+    "openSettings": "Open Settings"
+  },
+  "signOut": {
+    "title": "Sign out of Qariah?",
+    "body": "Your favorites, listening history, and downloads will stay on this device. You can sign back in any time from Settings.",
+    "cancelA11y": "Cancel sign-out"
+  },
+  "data": {
+    "intro": "Your favorites and listening history live on this device. Use Export to save a backup or move data to another device, and Import to load a backup.",
+    "backupSection": "BACKUP",
+    "restoreSection": "RESTORE",
+    "export": "Export my data",
+    "exportDesc": "Save a JSON backup of your favorites, last-played, and preferences",
+    "import": "Import from file",
+    "importDesc": "Load a backup, or restore data sent to you by Qariah support",
+    "recheckV1": "Re-check Qariah v1 account",
+    "restoreV1": "Restore from Qariah v1 account",
+    "recheckV1Desc": "Pull favorites from the original Qariah app again",
+    "restoreV1Desc": "Check the original Qariah app for your saved favorites",
+    "exportReady": "Export ready",
+    "exportFailed": "Couldn't export",
+    "invalidFile": "Invalid file",
+    "notQariahExport": "This doesn't look like a Qariah export",
+    "cannotRead": "Could not read the file",
+    "cannotOpen": "Couldn't open file",
+    "unknownError": "Unknown error",
+    "surahFavoritesNotSaved": "Couldn't save your surah favorites",
+    "outOfStorageRetry": "Your device may be out of storage. Free up space and try again",
+    "importComplete": "Import complete",
+    "importAdded": "{{reciters}}, {{recitations}}, {{surahs}} added",
+    "nothingNew": "Nothing new to add",
+    "importFailed": "Couldn't import",
+    "v1CheckFailed": "Couldn't check for v1 data",
+    "tryLater": "Try again later",
+    "shareDialogTitle": "Save your Qariah data",
+    "genericError": "Something went wrong. Please try again."
+  },
+  "import": {
+    "title_one": "Import {{count}} item?",
+    "title_other": "Import {{count}} items?",
+    "from": "From {{source}} · exported {{date}}",
+    "sourceV1": "original Qariah app",
+    "sourceExport": "a Qariah export",
+    "sourceServer": "Qariah server",
+    "mergeNote": "These will be merged with your existing favorites — nothing will be deleted.",
+    "importing": "Importing…",
+    "confirm": "Import"
+  },
+  "v1": {
+    "welcomeBack": "Welcome back!",
+    "foundHistory": "Found your Qariah history",
+    "nothingFound": "We found your account but no saved favorites from the original Qariah app. You're starting fresh — explore freely.",
+    "foundList": "We found {{list}} from your original Qariah account. Restore them now?",
+    "skippedNote_one": "Note: {{count}} recitation references a reciter that isn't available in the new app yet — it will be skipped.",
+    "skippedNote_other": "Note: {{count}} recitations reference a reciter that isn't available in the new app yet — these will be skipped.",
+    "restoring": "Restoring…",
+    "restoreFavorites": "Restore favorites",
+    "favoritesRestored": "Favorites restored",
+    "notesRestored": "Personal notes restored",
+    "outOfStorage": "Your device may be out of storage. Free up space, then retry from Settings → Your Data",
+    "restoreComplete": "Restore complete",
+    "noMatches": "Your account had no items that match the new app yet",
+    "restoreFailed": "Couldn't restore favorites",
+    "retryFromSettings": "Try again from Settings → Your Data"
+  },
+  "battery": {
+    "title": "Keep audio playing in the background",
+    "body": "On some phones the system stops {{appName}}’s audio when the screen is off or the app is in the background. To fix it, open Settings and set {{appName}}’s Battery usage to “Unrestricted”."
+  },
+  "notifications": {
+    "title": "Allow notifications to play in the background",
+    "body": "{{appName}} uses a playback notification to keep audio running when the screen is off or the app is in the background. Notifications are currently blocked, so background audio may stop. Open Settings to allow notifications.",
+    "followedRecitation": {
+      "title": "New from {{reciterName}}",
+      "body": "Surah {{surahName}} is ready to listen.",
+      "bodyRange": "Surah {{surahName}}, ayahs {{from}}–{{to}}, is ready to listen."
+    },
+    "followedRecitationSummary": {
+      "title": "New from your favorite reciters",
+      "body_one": "{{count}} new recitation, including {{reciterName}}.",
+      "body_other": "{{count}} new recitations, including {{reciterName}}."
+    },
+    "newRecitation": {
+      "title": "New recitation",
+      "body": "Surah {{surahName}} by {{reciterName}}.",
+      "bodyRange": "Surah {{surahName}}, ayahs {{from}}–{{to}}, by {{reciterName}}."
+    },
+    "newRecitationSummary": {
+      "title": "New recitations",
+      "body_one": "{{count}} new recitation on {{appName}}.",
+      "body_other": "{{count}} new recitations on {{appName}}."
+    },
+    "kahfFriday": {
+      "title": "It's Friday",
+      "body": "Listen to Surah Al-Kahf."
+    },
+    "continueListening": {
+      "title": "Continue listening",
+      "body": "Surah {{surahName}} by {{reciterName}} is waiting for you."
+    },
+    "channels": {
+      "followedRecitation": "New from reciters you follow",
+      "newRecitation": "New recitations",
+      "kahfFriday": "Friday Al-Kahf reminder",
+      "continueListening": "Continue listening",
+      "whatsNew": "New features"
+    },
+    "softPrompt": {
+      "allow": "Allow",
+      "title": "Notifications from {{appName}}",
+      "footer": "You choose which ones you get in Settings.",
+      "choose": "Choose notifications"
+    }
+  },
+  "storage": {
+    "outOfSpaceTitle": "Your device is out of storage",
+    "outOfSpaceMessage": "Changes aren't being saved. Free up space."
+  },
+  "errorBoundary": {
+    "first": "Qariah hit an unexpected error on this screen. Your downloads and saved items are safe.",
+    "repeat": "Qariah hit the same error again. Please close the app fully and open it once more.",
+    "reference": "Reference {{id}}"
+  },
+  "support": {
+    "emailUsTitle": "Email us",
+    "emailUsBody": "Please reach us at {{email}}",
+    "emailSubjectSupport": "Qariah support",
+    "emailSubjectFeatureRequest": "Qariah feature request"
+  },
+  "debug": {
+    "copied": "Debug ID copied",
+    "title": "Debug ID",
+    "copy": "Copy debug ID"
+  },
+  "about": {
+    "versionA11y": "App version (tap 5 times for diagnostics)",
+    "alhamdulillahBody": "All praise belongs to Allah, who revealed His Book and made it easy to remember. Qariah was built out of love for the Qur'an and for the women whose voices carry it. We ask Allah to accept this small effort and make it a source of good for our daughters and for the whole Ummah.",
+    "missionBody": "Qariah celebrates the recitation of the Holy Qur'an by women — contemporary and historical, gathered from across the world and across many narrations. We've brought over 60 reciters into one calm, beautiful space, so that every listener — and especially the next generation of girls — can hear the Qur'an in a voice that feels like their own.",
+    "commitmentBody": "We're committed to honoring these reciters, and the Book they recite, with the care it deserves. Qariah will stay a respectful, thoughtfully curated home for the Qur'an, and we'll keep adding reciters and refining the experience, insha'Allah. Thank you for being part of this journey. May Allah accept it from us all.",
+    "highQualityAudioDesc": "Crystal clear recitations from the world's best Qaris with optimized streaming"
+  },
+  "credits": {
+    "builtOn": "Built on",
+    "bayaanTitle": "Bayaan",
+    "bayaanDesc": "{{appName}} is rebuilt on top of Bayaan, the open-source Quran app by {{handle}} and contributors. {{licence}}."
+  },
+  "onboarding": {
+    "welcomeTitle": "Welcome to Qariah",
+    "tagline": "Hear the Qurʾan in her voice",
+    "welcomeBody": "The first Qurʾan app celebrating contemporary and historical women reciters — bringing voices long unheard to a global audience.",
+    "catalogTitle": "A Curated Catalog",
+    "catalogBody": "Curated with over 60 women reciters across the world and across several narrations. And more on the way.",
+    "followAlongBody": "Each ayah highlights in sync with the recitation so you never lose your place. Available for Zaynab Talha, expanding soon insha Allah.",
+    "memorizeBody": "Repeat a single ayah, play a range of verses, or loop an entire page. Built for hifdh and review.",
+    "getStarted": "Get started",
+    "welcomeHeadline": "Hear the Qurʾan in her voice.",
+    "release_3_3": {
+      "arabicTitle": "Qariah in Arabic",
+      "arabicBody": "Most of the app is now in Arabic, with a right-to-left layout and the reciters' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language.",
+      "widgetsTitle": "Home Screen Widgets",
+      "widgetsBody": "Add Qariah widgets to your Home Screen on iPhone and Android: continue listening or reading, play a surah, and see the ayah of the day.",
+      "recitationsTitle": "New Recitations",
+      "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the reciter and the range of a partial recitation."
+    }
+  },
+  "counts": {
+    "reciters_one": "{{count}} reciter",
+    "reciters_other": "{{count}} reciters",
+    "recitations_one": "{{count}} recitation",
+    "recitations_other": "{{count}} recitations",
+    "surahs_one": "{{count}} surah",
+    "surahs_other": "{{count}} surahs",
+    "personalNotes_one": "{{count}} personal note",
+    "personalNotes_other": "{{count}} personal notes",
+    "reciterFavorites_one": "{{count}} reciter favorite",
+    "reciterFavorites_other": "{{count}} reciter favorites",
+    "recitationFavorites_one": "{{count}} recitation favorite",
+    "recitationFavorites_other": "{{count}} recitation favorites",
+    "surahFavorites_one": "{{count}} surah favorite",
+    "surahFavorites_other": "{{count}} surah favorites"
+  },
+  "auth": {
+    "signInFailed": "Sign-in failed. Please try again."
+  },
+  "list": {
+    "two": "{{first}} and {{second}}",
+    "more": "{{first}}, {{second}}",
+    "last": "{{items}}, and {{last}}"
+  },
+  "languages": {
+    "english": "English",
+    "spanish": "Spanish",
+    "russian": "Russian"
+  },
+  "announcement": {
+    "2026-10-sprint48": {
+      "title": "New in this update",
+      "body": "Arabic, Home Screen widgets and new recitations. Tap to see what's new."
+    }
+  },
+  "countries": {
+    "DZ": "Algeria",
+    "AU": "Australia",
+    "CM": "Cameroon",
+    "CA": "Canada",
+    "EG": "Egypt",
+    "FI": "Finland",
+    "GN": "Guinea",
+    "ID": "Indonesia",
+    "JO": "Jordan",
+    "KE": "Kenya",
+    "MY": "Malaysia",
+    "MR": "Mauritania",
+    "MA": "Morocco",
+    "NG": "Nigeria",
+    "PK": "Pakistan",
+    "PS": "Palestine",
+    "PH": "Philippines",
+    "RU": "Russia",
+    "SG": "Singapore",
+    "SO": "Somalia",
+    "ES": "Spain",
+    "TZ": "Tanzania",
+    "GM": "The Gambia",
+    "TN": "Tunisia",
+    "US": "United States of America",
+    "YE": "Yemen",
+    "XJ": "East Turkistan"
+  },
+  "rewayat": {
+    "al-kisai": "Al-Kisa'i",
+    "english-translation": "English Translation",
+    "spanish-translation": "Spanish Translation",
+    "russian-translation": "Russian Translation"
+  }
+}

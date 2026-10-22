@@ -8,9 +8,10 @@
 // posts. Three subcommands, one file, so the approval seam is visible:
 //
 //   list  [--json]                      review issues that still need a draft
-//   draft --issue=<n> --text=<s> | --text-file=<path>
+//   draft --issue=<n> --text=<s> | --text-file=<path> [--dry-run]
 //                                       post the draft as an issue comment
-//                                       (<!-- reply-draft --> marker) + label `reply-draft`
+//                                       (<!-- reply-draft --> marker) + label `reply-draft`;
+//                                       --dry-run (or shadow mode) prints it only
 //   post  --issue=<n> [--dry-run]       POST the latest draft comment to the store,
 //                                       swap labels reply-draft → replied, audit-log
 //
@@ -30,12 +31,19 @@
 // (path) or ~/.android/play-service-account.json; ANDROID_PACKAGE · App Store:
 // APP_STORE_CONNECT_API_KEY_ID / _ISSUER_ID / (_API_KEY_P8_B64 or the .p8 file).
 
-import {execFileSync} from 'node:child_process';
 import {appendFileSync, mkdirSync, readFileSync} from 'node:fs';
-import {homedir} from 'node:os';
-import crypto from 'node:crypto';
-import {Buffer} from 'node:buffer';
+import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
 import {ascJwt, ascPost} from './lib/asc-client.mjs';
+import {getPlayAccessToken} from './lib/google-play-auth.mjs';
+import {
+  addIssueLabels,
+  commentOnIssue,
+  getIssue,
+  isCloudSession,
+  isShadowRun,
+  listIssues,
+  removeIssueLabel,
+} from './lib/triage-common.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map(a => {
@@ -44,27 +52,18 @@ const args = Object.fromEntries(
   }),
 );
 const cmd = process.argv.slice(2).find(a => !a.startsWith('--'));
-const REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
-const PACKAGE = process.env.ANDROID_PACKAGE || 'com.qariah.app';
-const DRY = !!args['dry-run'];
+const PACKAGE = process.env.ANDROID_PACKAGE || ANDROID_PACKAGE_NAME;
+// Shadow mode (scripts/run-start.sh triage --shadow) forces a dry run.
+const DRY = !!args['dry-run'] || isShadowRun();
 const MARK = '<!-- reply-draft -->';
 const LIMITS = {'play-store': 350, 'app-store': 5970};
 
 const usage = () => {
   console.error(
-    'usage:\n  review-reply.mjs list [--json]\n  review-reply.mjs draft --issue=<n> (--text=<s> | --text-file=<path>)\n  review-reply.mjs post --issue=<n> [--dry-run]',
+    'usage:\n  review-reply.mjs list [--json]\n  review-reply.mjs draft --issue=<n> (--text=<s> | --text-file=<path>) [--dry-run]\n  review-reply.mjs post --issue=<n> [--dry-run]',
   );
   process.exit(2);
 };
-
-function gh(a, {input} = {}) {
-  return execFileSync('gh', [...a, '-R', REPO], {
-    encoding: 'utf8',
-    input,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  }).trim();
-}
-const ghJson = a => JSON.parse(gh(a));
 
 function platformOf(labels) {
   const names = labels.map(l => (typeof l === 'string' ? l : l.name));
@@ -93,18 +92,7 @@ function ratingOf(body) {
 
 // ---------------------------------------------------------------- list
 function list() {
-  const rows = ghJson([
-    'issue',
-    'list',
-    '--state',
-    'open',
-    '--label',
-    'user-review',
-    '--limit',
-    '100',
-    '--json',
-    'number,title,labels,body,url',
-  ]);
+  const rows = listIssues({state: 'open', labels: 'user-review', limit: 100});
   const need = rows
     .filter(
       r =>
@@ -143,7 +131,7 @@ function draft() {
     ? readFileSync(args['text-file'], 'utf8').trim()
     : String(args.text || '').trim();
   if (!text) usage();
-  const issue = ghJson(['issue', 'view', String(n), '--json', 'labels,body']);
+  const issue = getIssue(n);
   const platform = platformOf(issue.labels);
   if (!platform) throw new Error(`#${n} has no play-store/app-store label`);
   const limit = LIMITS[platform];
@@ -153,52 +141,20 @@ function draft() {
     );
   if (/https?:\/\//i.test(text)) throw new Error('no links in a store reply');
   const comment = `${MARK}\n**Reply draft** — ${platform}, ${text.length}/${limit} chars. Edit this comment to change the wording; \`post\` reads the latest draft. Posting needs the owner's go from the daily card.\n\n${text}`;
-  gh(['issue', 'comment', String(n), '--body', comment]);
-  gh(['issue', 'edit', String(n), '--add-label', 'reply-draft']);
+  if (DRY) {
+    console.log(
+      `· DRY RUN — would post this draft on #${n} and add label reply-draft:\n---\n${comment}\n---`,
+    );
+    return;
+  }
+  commentOnIssue(n, comment);
+  addIssueLabels(n, ['reply-draft']);
   console.log(`✓ draft posted on #${n} (${platform}, ${text.length} chars)`);
 }
 
 // ---------------------------------------------------------------- post
-function loadPlaySA() {
-  const raw = process.env.GOOGLE_PLAY_SA_JSON;
-  if (raw) return JSON.parse(raw);
-  const path =
-    process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.replace(/^~/, homedir()) ||
-    `${homedir()}/.android/play-service-account.json`;
-  return JSON.parse(readFileSync(path, 'utf8'));
-}
-const b64u = o =>
-  Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString(
-    'base64url',
-  );
-async function playToken(sa) {
-  // Same JWT-bearer mint as scripts/play-reviews-triage.mjs; androidpublisher
-  // scope covers reviews.reply. Duplicated because the lane runs main() on import.
-  const now = Math.floor(Date.now() / 1000);
-  const unsigned = `${b64u({alg: 'RS256', typ: 'JWT'})}.${b64u({iss: sa.client_email, scope: 'https://www.googleapis.com/auth/androidpublisher', aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now})}`;
-  const sig = crypto
-    .createSign('RSA-SHA256')
-    .update(unsigned)
-    .sign(sa.private_key)
-    .toString('base64url');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: `${unsigned}.${sig}`,
-    }),
-  });
-  const tok = await res.json().catch(() => null);
-  if (!tok?.access_token)
-    throw new Error(
-      `Play token mint failed (${tok?.error_description || tok?.error || res.status})`,
-    );
-  return tok.access_token;
-}
-
 async function postPlay(reviewId, text) {
-  const token = await playToken(loadPlaySA());
+  const token = await getPlayAccessToken({scope: 'publisher'});
   const res = await fetch(
     `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE}/reviews/${encodeURIComponent(reviewId)}:reply`,
     {
@@ -239,13 +195,7 @@ async function postAppStore(reviewId, text) {
 async function post() {
   const n = Number(args.issue);
   if (!n) usage();
-  const issue = ghJson([
-    'issue',
-    'view',
-    String(n),
-    '--json',
-    'labels,body,comments,url',
-  ]);
+  const issue = getIssue(n, {comments: true});
   const platform = platformOf(issue.labels);
   if (!platform) throw new Error(`#${n} has no play-store/app-store label`);
   if (!issue.labels.some(l => l.name === 'reply-draft'))
@@ -278,34 +228,26 @@ async function post() {
       ? await postPlay(reviewId, text)
       : await postAppStore(reviewId, text);
   const at = new Date().toISOString();
-  gh([
-    'issue',
-    'edit',
-    String(n),
-    '--remove-label',
-    'reply-draft',
-    '--add-label',
-    'replied',
-  ]);
-  gh([
-    'issue',
-    'comment',
-    String(n),
-    '--body',
+  removeIssueLabel(n, 'reply-draft');
+  addIssueLabels(n, ['replied']);
+  commentOnIssue(
+    n,
     `Reply posted to ${platform === 'play-store' ? 'Google Play' : 'App Store Connect'} at ${at} by \`scripts/review-reply.mjs\` (${result}).`,
-  ]);
-  mkdirSync('build', {recursive: true});
-  appendFileSync(
-    'build/review-replies.ndjson',
-    JSON.stringify({
-      at,
-      issue: n,
-      platform,
-      reviewId,
-      chars: text.length,
-      result,
-    }) + '\n',
   );
+  if (!isCloudSession()) {
+    mkdirSync('build', {recursive: true});
+    appendFileSync(
+      'build/review-replies.ndjson',
+      JSON.stringify({
+        at,
+        issue: n,
+        platform,
+        reviewId,
+        chars: text.length,
+        result,
+      }) + '\n',
+    );
+  }
   console.log(`✓ posted — ${result}`);
 }
 

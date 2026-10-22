@@ -1,13 +1,27 @@
-import React, {useState, useCallback} from 'react';
+import React, {useMemo, useState, useCallback} from 'react';
 import {View, Text, Pressable} from 'react-native';
 import {moderateScale} from 'react-native-size-matters';
 import {ScaledSheet} from 'react-native-size-matters';
+import {useTranslation} from 'react-i18next';
 import {Theme} from '@/utils/themeUtils';
 import {useTheme} from '@/hooks/useTheme';
 import {ReciterImage} from '@/components/ReciterImage';
 import {ReciterHeaderProps} from '@/components/reciter-profile/types';
 import {Link} from 'expo-router';
 import {USE_GLASS} from '@/hooks/useGlassProps';
+import {Reciter} from '@/data/reciterData';
+// @ai-start
+import {getReciterDisplayName} from '@/i18n/format';
+import {
+  getCountryDisplayName,
+  getReciterBio,
+  getTranslationLanguageName,
+} from '@/i18n/qariahCatalog';
+import {
+  qariahNarrationLine,
+  qariahRecitationsCount,
+} from '@/components/reciter-profile/qariahHeaderMeta';
+// @ai-end
 
 /**
  * Bio paragraph length above which the "Read more" toggle appears.
@@ -15,34 +29,61 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
  */
 const BIO_TRUNCATE_CHARS = 240;
 
+function countUniqueSurahs(reciter: Reciter): number {
+  const ids = new Set<number>();
+  for (const rewayah of reciter.rewayat) {
+    for (const id of rewayah.surah_list) {
+      if (id != null) ids.add(id);
+    }
+  }
+  return ids.size;
+}
+
+// @ai-start
 export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
   reciter,
   showSearch,
   insets,
 }) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['player', 'common', 'sheets', 'qariah']);
   const styles = createStyles(theme);
 
-  const topPadding = showSearch
-    ? moderateScale(15)
-    : USE_GLASS
-      ? moderateScale(10)
-      : insets.top + moderateScale(50);
+  const surahCount = useMemo(() => countUniqueSurahs(reciter), [reciter]);
+  const rewayatCount = reciter.rewayat.length;
+  const metaParts: string[] = [];
+  if (surahCount > 0) {
+    metaParts.push(t('reciterProfile.surahCount', {count: surahCount}));
+  }
+  if (rewayatCount > 0) {
+    metaParts.push(t('reciterProfile.rewayatCount', {count: rewayatCount}));
+  }
 
-  // Sprint 6 — surface post-filter recitations count + narration tag line.
-  // Optional fields, hidden when missing.
-  const recitationsCount = reciter.recitationsCount ?? null;
-  const narrationLabels = reciter.rewayat
-    .map(r => r.name)
-    .filter((n): n is string => Boolean(n));
-  // Show narration tag line only if there's >1 narration to disambiguate.
-  const narrationTagLine =
-    narrationLabels.length > 1 ? narrationLabels.join(' · ') : null;
+  // @ai-start Qariah (Sprint 6, Sprint 15 S15.5): recitations count,
+  // narration tag line, country / translation chips and the bio, shown with
+  // upstream's editorial header (#378). The text is in the qariah namespace.
+  // Sprint 47 (Pass C): the catalog names, the country and the bio are in
+  // Arabic when the app shows Arabic (i18n/qariahCatalog.ts).
+  // TECH_DEBT #306: the recitation count and the narration names go into
+  // upstream's meta row beside the photo, so the header shows each count once.
+  // The recitation count shows only when it differs from the surah count.
+  const extraRecitations = qariahRecitationsCount(
+    reciter.recitationsCount,
+    surahCount,
+  );
+  if (extraRecitations !== null) {
+    metaParts.push(t('qariah:reciter.recitations', {count: extraRecitations}));
+  }
+  const narrationTagLine = qariahNarrationLine(reciter.rewayat);
 
   // Sprint 15 (S15.5) — bio + country + translation surfaces.
-  const country = reciter.country?.trim() || null;
-  const translation = reciter.translation?.trim() || null;
-  const bioRaw = reciter.bio_en?.trim() || null;
+  const countryValue = reciter.country?.trim() || null;
+  const country = countryValue ? getCountryDisplayName(countryValue) : null;
+  const translationValue = reciter.translation?.trim() || null;
+  const translation = translationValue
+    ? getTranslationLanguageName(translationValue)
+    : null;
+  const bioRaw = getReciterBio(reciter);
 
   // Bio expand/collapse toggle. Default collapsed; long bios truncate.
   const [bioExpanded, setBioExpanded] = useState(false);
@@ -54,47 +95,52 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
     : !bioNeedsTruncation || bioExpanded
       ? bioRaw
       : bioRaw.slice(0, BIO_TRUNCATE_CHARS).trimEnd() + '…';
+  // @ai-end
+
+  const topPadding = showSearch
+    ? moderateScale(15)
+    : USE_GLASS
+      ? moderateScale(8)
+      : insets.top + moderateScale(50);
+
+  const image = (
+    <View>
+      <ReciterImage
+        reciterName={reciter.name}
+        imageUrl={reciter.image_url || undefined}
+        style={styles.reciterImage}
+        profileIconSize={moderateScale(24)}
+      />
+    </View>
+  );
 
   return (
     <View style={[styles.container, {paddingTop: topPadding}]}>
-      {USE_GLASS ? (
-        <Link.AppleZoomTarget>
-          <View>
-            <ReciterImage
-              reciterName={reciter.name}
-              imageUrl={reciter.image_url || undefined}
-              style={styles.reciterImage}
-              profileIconSize={moderateScale(48)}
-            />
-          </View>
-        </Link.AppleZoomTarget>
-      ) : (
-        <View>
-          <ReciterImage
-            reciterName={reciter.name}
-            imageUrl={reciter.image_url || undefined}
-            style={styles.reciterImage}
-            profileIconSize={moderateScale(48)}
-          />
+      <View style={styles.metaRow}>
+        {USE_GLASS ? (
+          <Link.AppleZoomTarget>{image}</Link.AppleZoomTarget>
+        ) : (
+          image
+        )}
+        {/* @ai Qariah (TECH_DEBT #306): the narration names sit under
+         * upstream's counts, beside the photo. */}
+        <View style={styles.metaColumn}>
+          {metaParts.length > 0 ? (
+            <Text style={styles.meta} numberOfLines={1}>
+              {metaParts.join(' · ')}
+            </Text>
+          ) : null}
+          {narrationTagLine ? (
+            <Text style={styles.reciterNarrations} numberOfLines={2}>
+              {narrationTagLine}
+            </Text>
+          ) : null}
         </View>
-      )}
-      <Text style={styles.reciterName} numberOfLines={2}>
-        {reciter.name}
+      </View>
+      <Text style={styles.reciterName} numberOfLines={3}>
+        {getReciterDisplayName(reciter)}
       </Text>
-      {recitationsCount !== null && recitationsCount > 0 ? (
-        <Text style={styles.reciterMeta} numberOfLines={1}>
-          {recitationsCount === 1
-            ? '1 recitation'
-            : `${recitationsCount} recitations`}
-        </Text>
-      ) : null}
-      {narrationTagLine ? (
-        <Text style={styles.reciterNarrations} numberOfLines={1}>
-          {narrationTagLine}
-        </Text>
-      ) : null}
-
-      {/* Sprint 15 (S15.5) — country + translation chip row. */}
+      {/* @ai-start Qariah (Sprint 15 S15.5) */}
       {(country || translation) && (
         <View style={styles.chipRow}>
           {country ? (
@@ -107,14 +153,14 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
           {translation ? (
             <View style={styles.chipEmphasis}>
               <Text style={styles.chipEmphasisText} numberOfLines={1}>
-                {translation} translation
+                {t('qariah:reciter.translationChip', {language: translation})}
               </Text>
             </View>
           ) : null}
         </View>
       )}
 
-      {/* Sprint 15 (S15.5) — bio (collapsed by default; expand on tap when long). */}
+      {/* Bio: collapsed by default; expand on tap when long. */}
       {bioDisplayed ? (
         <Pressable
           onPress={bioNeedsTruncation ? handleToggleBio : undefined}
@@ -123,67 +169,79 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
           accessibilityHint={
             bioNeedsTruncation
               ? bioExpanded
-                ? 'Collapse bio'
-                : 'Expand bio'
+                ? t('qariah:reciter.collapseBio')
+                : t('qariah:reciter.expandBio')
               : undefined
           }>
           <Text style={styles.bioText}>
             {bioDisplayed}
             {bioNeedsTruncation ? (
               <Text style={styles.bioToggle}>
-                {bioExpanded ? '  Show less' : '  Read more'}
+                {'  '}
+                {bioExpanded
+                  ? t('common:actions.showLess')
+                  : t('qariah:reciter.readMore')}
               </Text>
             ) : null}
           </Text>
         </Pressable>
       ) : null}
+      {/* @ai-end */}
     </View>
   );
 };
+// @ai-end
 
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({
     container: {
-      alignItems: 'center',
+      alignItems: 'flex-start',
       paddingHorizontal: moderateScale(20),
-      paddingBottom: moderateScale(6),
+      paddingBottom: moderateScale(4),
       backgroundColor: theme.colors.background,
     },
+    metaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: moderateScale(10),
+    },
     reciterImage: {
-      width: moderateScale(110),
-      height: moderateScale(110),
-      borderRadius: moderateScale(14),
+      width: moderateScale(48),
+      height: moderateScale(48),
+      borderRadius: moderateScale(12),
+    },
+    meta: {
+      flexShrink: 1,
+      fontSize: moderateScale(12),
+      fontFamily: 'Manrope-SemiBold',
+      color: theme.colors.textSecondary,
     },
     reciterName: {
-      fontSize: moderateScale(20),
-      fontFamily: 'Manrope-SemiBold',
+      fontSize: moderateScale(32),
+      fontFamily: 'Manrope-ExtraBold',
       color: theme.colors.text,
-      textAlign: 'center',
-      marginTop: moderateScale(10),
-      lineHeight: moderateScale(26),
+      lineHeight: moderateScale(38),
+      letterSpacing: -0.5,
+      marginTop: moderateScale(14),
     },
-    reciterMeta: {
-      fontSize: moderateScale(13),
-      fontFamily: 'Manrope-Medium',
-      color: theme.colors.textSecondary ?? theme.colors.text,
-      opacity: 0.7,
-      textAlign: 'center',
-      marginTop: moderateScale(4),
-      lineHeight: moderateScale(18),
+    // @ai-start Qariah (Sprint 6, Sprint 15 S15.5). Start-aligned to follow
+    // upstream's editorial header (#378); the Qariah rows were centred before.
+    // TECH_DEBT #306: the narration names sit in the meta column.
+    metaColumn: {
+      flexShrink: 1,
     },
     reciterNarrations: {
       fontSize: moderateScale(12),
       fontFamily: 'Manrope-Regular',
       color: theme.colors.textSecondary ?? theme.colors.text,
-      opacity: 0.55,
-      textAlign: 'center',
+      opacity: 0.75,
       marginTop: moderateScale(2),
       lineHeight: moderateScale(16),
     },
     chipRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
       gap: moderateScale(6),
       marginTop: moderateScale(10),
     },
@@ -218,14 +276,12 @@ const createStyles = (theme: Theme) =>
     },
     bioContainer: {
       marginTop: moderateScale(12),
-      paddingHorizontal: moderateScale(4),
     },
     bioText: {
       fontSize: moderateScale(13),
       fontFamily: 'Manrope-Regular',
       color: theme.colors.text,
       opacity: 0.78,
-      textAlign: 'center',
       lineHeight: moderateScale(19),
     },
     bioToggle: {
@@ -234,4 +290,5 @@ const createStyles = (theme: Theme) =>
       color: theme.colors.primary ?? theme.colors.text,
       opacity: 1,
     },
+    // @ai-end
   });

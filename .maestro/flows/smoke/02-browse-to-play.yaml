@@ -13,10 +13,11 @@ tags:
 - tapOn: "Reciters"
 - tapOn:
     point: 50%,32%
-# reciter profile header loaded ("N recitation(s)"). Maestro text = full-match
-# regex, so wildcard to match the node "5 recitations".
+# reciter profile header loaded: upstream's meta row beside the photo
+# ("45 surahs · 1 rewayah"; TECH_DEBT #306 removed the Qariah "N recitations"
+# line). Maestro text = full-match regex, so wildcard the node.
 - extendedWaitUntil:
-    visible: ".*recitation.*"
+    visible: ".*[0-9]+ surahs? · [0-9]+ rewaya.*"
     timeout: 6000
 # #114 — the surah list rendered (a "JUZ N" divider is present), not the skeleton shimmer.
 - extendedWaitUntil:

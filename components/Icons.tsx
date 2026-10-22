@@ -1,25 +1,3 @@
-/* eslint-disable react/no-unused-prop-types --
- *
- * This file's IconProps interface intentionally declares optional props
- * (`filled`, `isDarkMode`, `secondaryColor`) that callers may pass to ANY
- * icon, but most individual icon components only consume `color` + `size`.
- * The shared interface is the contract — opt-in destructure per icon is the
- * convention. Each "unused" prop here is a stylistic choice, not a silent
- * bug like the ReciterImage prop drop (TECH_DEBT #31) that motivated
- * enabling react/no-unused-prop-types in the first place.
- *
- * 195 of 236 inherited findings live here (Sprint 8 S8.5 audit, TECH_DEBT
- * #35). Fixing each individually would mean either (a) duplicating the
- * IconProps declaration 195+ times with per-icon narrowing, or (b) 195+
- * line-level eslint-disable directives. Both clutter without value.
- *
- * If a specific icon DOES use `filled` etc., it destructures it normally
- * and the rule never trips. The danger this rule guards against — a caller
- * passing a prop the component silently drops — only matters when the
- * prop carries data; the Icons.tsx props are styling switches that are
- * safe to ignore.
- */
-
 import React from 'react';
 import Svg, {Path, G, Circle, Rect, Line} from 'react-native-svg';
 import {Feather} from '@expo/vector-icons';

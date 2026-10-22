@@ -38,6 +38,12 @@ interface UseTrendingRecitersOptions {
   limit?: number;
   /** Force a network fetch even if cache is fresh. */
   forceRefresh?: boolean;
+  /**
+   * Qariah (Sprint 48): when false, the hook does no cache read and no
+   * fetch, and returns an empty list. Default `true`. The Listen row is off
+   * since 2026-10-18, so `RecitersView` passes the row's config flag.
+   */
+  enabled?: boolean;
 }
 
 interface UseTrendingRecitersResult {
@@ -86,16 +92,21 @@ function joinToReciters(
 export function useTrendingReciters(
   options: UseTrendingRecitersOptions = {},
 ): UseTrendingRecitersResult {
-  const {limit = 10, forceRefresh = false} = options;
+  const {limit = 10, forceRefresh = false, enabled = true} = options;
   const [payload, setPayload] = useState<TopRecitersPayload | null>(() =>
-    readCachedPayload(),
+    enabled ? readCachedPayload() : null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (!forceRefresh && isCacheFresh()) return;
+    if (!enabled) return;
+    if (!forceRefresh && isCacheFresh()) {
+      // Cover a switch from disabled to enabled: the first state is empty.
+      setPayload(prev => prev ?? readCachedPayload());
+      return;
+    }
 
     const url = branding.stats?.topRecitersUrl;
     if (!url) {
@@ -136,8 +147,8 @@ export function useTrendingReciters(
     return () => {
       cancelled = true;
     };
-  }, [forceRefresh]);
+  }, [forceRefresh, enabled]);
 
-  const {reciters, plays} = joinToReciters(payload, limit);
+  const {reciters, plays} = joinToReciters(enabled ? payload : null, limit);
   return {reciters, playsByReciterId: plays, loading, error};
 }

@@ -12,11 +12,17 @@ import {GRADIENT_COLORS} from '@/utils/gradientColors';
 import {Feather} from '@expo/vector-icons';
 import {useSettings} from '@/hooks/useSettings';
 import {useBottomInset} from '@/hooks/useBottomInset';
-import {getJuzForSurah, getJuzName} from '@/data/juzData';
+// @ai-start
+import {getJuzForSurah} from '@/data/juzData';
+// @ai-end
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ContinueReadingHero} from '@/components/hero/ContinueReadingHero';
 import {isFeatureEnabled} from '@/config/featureFlags';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+// @ai-end
 
 interface SurahsViewProps {
   onSurahPress: (surah: Surah) => void;
@@ -42,11 +48,13 @@ function groupSurahsIntoPairs(surahs: Surah[]): Surah[][] {
   return pairs;
 }
 
+// @ai-start
 export default function SurahsView({
   onSurahPress,
   onSurahLongPress,
 }: SurahsViewProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['home', 'common', 'qariah']);
   const bottomInset = useBottomInset();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -100,7 +108,10 @@ export default function SurahsView({
           stickies.push(items.length);
           items.push({
             type: 'juz-header',
-            juzName: getJuzName(juz),
+            juzName:
+              juz === 30
+                ? t('juz.amma')
+                : t('common:labels.juzNumber', {number: juz}),
             key: `juz-${juz}`,
           });
         }
@@ -121,7 +132,7 @@ export default function SurahsView({
     }
 
     return {data: items, stickyIndices: stickies};
-  }, [displaySurahs, viewMode, sortOption]);
+  }, [displaySurahs, viewMode, sortOption, t]);
 
   const getColorForSurah = useCallback((id: number): string => {
     return GRADIENT_COLORS[id % GRADIENT_COLORS.length];
@@ -168,6 +179,7 @@ export default function SurahsView({
                 id={surah.id}
                 name={surah.name}
                 translatedName={surah.translated_name_english}
+                versesCount={surah.verses_count}
                 revelationPlace={surah.revelation_place}
                 color={getColorForSurah(surah.id)}
                 onPress={() => onSurahPress(surah)}
@@ -218,7 +230,11 @@ export default function SurahsView({
                     ? 'arrow-down'
                     : 'calendar';
               const label =
-                option === 'asc' ? 'Asc' : option === 'desc' ? 'Desc' : 'Rev';
+                option === 'asc'
+                  ? t('sort.asc')
+                  : option === 'desc'
+                    ? t('sort.desc')
+                    : t('sort.revelation');
               return (
                 <Pressable
                   key={option}
@@ -259,7 +275,7 @@ export default function SurahsView({
               <Pressable
                 style={styles.viewModeButton}
                 onPress={handleOpenNotes}
-                accessibilityLabel="Open Notes">
+                accessibilityLabel={t('qariah:a11y.openNotes')}>
                 <Feather
                   name="edit-3"
                   size={moderateScale(16)}
@@ -286,6 +302,7 @@ export default function SurahsView({
       changeSortOption,
       toggleViewMode,
       handleOpenNotes,
+      t,
     ],
   );
 
@@ -316,7 +333,9 @@ export default function SurahsView({
     </View>
   );
 }
+// @ai-end
 
+// @ai-start
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -375,6 +394,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     fontFamily: 'Manrope-SemiBold',
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    letterSpacing: latinLetterSpacing(0.8),
   },
 });
+// @ai-end

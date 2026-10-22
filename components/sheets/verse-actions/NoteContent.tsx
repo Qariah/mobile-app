@@ -10,99 +10,86 @@ import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
 import {Feather} from '@expo/vector-icons';
 import Color from 'color';
-import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
-import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
-import {useAuth} from '@/services/auth/AuthContext';
-import {pushLocalNoteToQf} from '@/services/userState/notesSync';
 import SkiaVersePreview from '@/components/share/SkiaVersePreview';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {
+  selectionPreviewProps,
+  type ReadyVerseSelection,
+} from '@/components/share/rewayahVerseSelection';
+import {addSelectionNote} from './selectionAnnotations';
+// @ai-end
+import {useAuthStatus} from '@/services/auth/AuthContext';
+import {pushLocalNoteToQf} from '@/services/userState/notesSync';
 
 interface NoteContentProps {
-  verseKey: string;
-  surahNumber: number;
-  ayahNumber: number;
-  verseKeys?: string[];
-  rewayah?: import('@/store/mushafSettingsStore').RewayahId;
+  // @ai-start
   /**
-   * Initial value for the "Publish to QuranReflect" toggle. Sprint 21
-   * round-3 — the long-press menu surfaces two entry points (Add
-   * Personal Note vs Add Reflection); they share this component but
-   * differ on the toggle's default. The toggle remains user-changeable
-   * post-mount so an "Add Personal Note → publish anyway" path stays
-   * available.
+   * The selected verses in their rewayah's own numbering (decision 3; see
+   * components/share/rewayahVerseSelection.ts). The note is stored by Hafs
+   * anchors (verse-units contract section 3): verse_key = the first verse's
+   * anchor, verse_keys = every verse's anchor for a range, with the
+   * selection's rewayah. Hafs: the Hafs keys, exactly as before.
+   */
+  selection: ReadyVerseSelection;
+  // @ai-end
+  /**
+   * Qariah (Sprint 21 round-3): the long-press menu has two entry points
+   * (Add Personal Note, Publish Reflection) that share this component. True
+   * publishes the saved note to QuranReflect.
    */
   defaultPublish?: boolean;
   onDone: () => void;
 }
 
+// @ai-start
 export const NoteContent: React.FC<NoteContentProps> = ({
-  verseKey,
-  surahNumber,
-  ayahNumber,
-  verseKeys,
-  rewayah,
+  selection, // @ai
   defaultPublish = false,
   onDone,
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const isRange = verseKeys && verseKeys.length > 1;
+  const {t} = useTranslation(['sheets', 'qariah']);
+  // @ai-start
+  const {rewayah} = selection;
+  const isRange = selection.anchors.length > 1;
+  // @ai-end
   const [noteText, setNoteText] = useState('');
-  // Sprint 21 round-4 — publish state is fixed for the lifetime of this
-  // editor instance. The long-press entry-point sets it via the
-  // `defaultPublish` prop and there's no in-editor toggle anymore.
+  // Qariah (Sprint 21 round-4): the entry point fixes the publish state for
+  // this editor; there is no in-editor toggle.
   const publish = defaultPublish;
   const [saving, setSaving] = useState(false);
 
-  const {status: authStatus} = useAuth();
+  const authStatus = useAuthStatus();
   const signedIn = authStatus === 'authenticated';
 
   const handleSave = useCallback(async () => {
     if (!noteText.trim() || saving) return;
+
+    // @ai-start
+    if (selection.anchors.length === 0) return;
     setSaving(true);
-
-    const allKeys = isRange ? verseKeys! : [verseKey];
-    const localNote = await verseAnnotationService.addNote(
-      verseKey,
-      surahNumber,
-      ayahNumber,
-      noteText.trim(),
-      isRange ? verseKeys : undefined,
-      rewayah,
-    );
-    const store = useVerseAnnotationsStore.getState();
-    for (const vk of allKeys) {
-      store.addNote(vk);
+    let localNote;
+    try {
+      localNote = await addSelectionNote(selection, noteText.trim());
+    } finally {
+      setSaving(false);
     }
+    // @ai-end
 
-    // Fire-and-forget QF push (signed-in users only). The user's note is
-    // already saved locally — QF failures don't block the UI close. Errors
-    // are logged for triage but not surfaced to the user.
-    // Sprint 21 round-5.4 — QF Hydra's publish endpoint takes ~15-20s
-    // to return. Don't block the sheet on the full round-trip; the
-    // pushLocalNoteToQf helper writes a `pending:` placeholder qfPostId
-    // synchronously so the Reflections collection updates immediately,
-    // then completes the real publish in the background.
-    if (signedIn) {
+    // Qariah: fire-and-forget QF push (signed-in users only). The note is
+    // already saved locally, so a QF failure does not block the close.
+    // pushLocalNoteToQf writes a `pending:` qfPostId placeholder at once,
+    // so the Reflections collection updates before QF's slow (15-20 s)
+    // publish returns (Sprint 21 round-5.4).
+    if (signedIn && localNote) {
       pushLocalNoteToQf(localNote, {publish}).catch(err => {
         if (__DEV__) console.warn('[NoteContent] QF push failed', err);
       });
     }
-
-    setSaving(false);
     onDone();
-  }, [
-    verseKey,
-    verseKeys,
-    isRange,
-    surahNumber,
-    ayahNumber,
-    noteText,
-    onDone,
-    rewayah,
-    signedIn,
-    publish,
-    saving,
-  ]);
+  }, [selection, noteText, onDone, signedIn, publish, saving]); // @ai
 
   const canSave = noteText.trim().length > 0 && !saving;
 
@@ -111,9 +98,9 @@ export const NoteContent: React.FC<NoteContentProps> = ({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}>
       <View style={styles.previewCard}>
+        {/* @ai: the selected verses, each with its own marker */}
         <SkiaVersePreview
-          verseKey={verseKey}
-          verseKeys={verseKeys}
+          {...selectionPreviewProps(selection)}
           numberOfLines={isRange ? 3 : 2}
           rewayah={rewayah}
         />
@@ -123,7 +110,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
         style={styles.textInput}
         value={noteText}
         onChangeText={setNoteText}
-        placeholder="Write your note here..."
+        placeholder={t('note.placeholder')}
         placeholderTextColor={Color(theme.colors.textSecondary)
           .alpha(0.5)
           .toString()}
@@ -132,10 +119,9 @@ export const NoteContent: React.FC<NoteContentProps> = ({
         autoFocus
       />
 
-      {/* Sprint 21 round-4 — drop the in-editor publish toggle. The
-          entry-point on the long-press menu (Personal Note vs Publish
-          Reflection) defines the type now. For the Reflection path keep
-          a static info row so the user knows the save will publish. */}
+      {/* Qariah (Sprint 21 round-4) — the long-press entry point (Personal
+          Note vs Publish Reflection) defines the type. The Reflection path
+          shows a static row so the reader knows the save will publish. */}
       {publish && signedIn ? (
         <View style={styles.publishHint}>
           <Feather
@@ -144,8 +130,7 @@ export const NoteContent: React.FC<NoteContentProps> = ({
             color={theme.colors.textSecondary}
           />
           <Text style={styles.publishHintText}>
-            Publishing to QuranReflect — visible on QF community surfaces under
-            your name.
+            {t('qariah:note.publishingHint')}
           </Text>
         </View>
       ) : null}
@@ -164,16 +149,18 @@ export const NoteContent: React.FC<NoteContentProps> = ({
           color={theme.colors.text}
         />
         <Text style={styles.saveButtonText}>
+          {/* @ai Qariah (QF sync). */}
           {saving
-            ? 'Saving…'
+            ? t('qariah:note.saving')
             : publish && signedIn
-              ? 'Publish Reflection'
-              : 'Save Note'}
+              ? t('qariah:verseActions.publishReflection')
+              : t('note.save')}
         </Text>
       </Pressable>
     </ScrollView>
   );
 };
+// @ai-end
 
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({

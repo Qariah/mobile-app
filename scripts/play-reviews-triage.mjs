@@ -25,9 +25,8 @@
 //        GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (path) OR ~/.android/play-service-account.json
 //        ANDROID_PACKAGE (default com.qariah.app)
 
-import crypto from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {homedir} from 'node:os';
+import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
+import {getPlayAccessToken} from './lib/google-play-auth.mjs';
 import {
   existingMarkers,
   fileIssues,
@@ -47,7 +46,7 @@ if (args.help) {
   process.exit(0);
 }
 
-const PACKAGE = process.env.ANDROID_PACKAGE || 'com.qariah.app';
+const PACKAGE = process.env.ANDROID_PACKAGE || ANDROID_PACKAGE_NAME;
 const MARKER = 'play-review-id:';
 const LABEL = 'play-store';
 
@@ -58,73 +57,6 @@ const LABEL = 'play-store';
 // with NO version metadata are kept (don't silently drop real v2 reviews).
 // Mirrors the Play-vitals lane's MIN_VERSION_CODE floor (TECH_DEBT v1-attribution).
 const MIN_VERSION_CODE = Number(process.env.MIN_VERSION_CODE) || 500;
-
-function loadServiceAccount() {
-  const raw = process.env.GOOGLE_PLAY_SA_JSON;
-  if (raw) {
-    try {
-      return JSON.parse(raw);
-    } catch (e) {
-      throw new Error(
-        `GOOGLE_PLAY_SA_JSON is set but is not valid JSON: ${e.message}`,
-      );
-    }
-  }
-  const path =
-    process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.replace(/^~/, homedir()) ||
-    `${homedir()}/.android/play-service-account.json`;
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (e) {
-    throw new Error(
-      `No service account: set GOOGLE_PLAY_SA_JSON (JSON string) or ` +
-        `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (path), or place the file at ${path}. (${e.message})`,
-    );
-  }
-}
-
-const b64u = o =>
-  Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString(
-    'base64url',
-  );
-
-async function mintToken(sa) {
-  const now = Math.floor(Date.now() / 1000);
-  const unsigned =
-    b64u({alg: 'RS256', typ: 'JWT'}) +
-    '.' +
-    b64u({
-      iss: sa.client_email,
-      scope: 'https://www.googleapis.com/auth/androidpublisher',
-      aud: 'https://oauth2.googleapis.com/token',
-      exp: now + 3600,
-      iat: now,
-    });
-  const sig = crypto
-    .createSign('RSA-SHA256')
-    .update(unsigned)
-    .sign(sa.private_key)
-    .toString('base64url');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: `${unsigned}.${sig}`,
-    }),
-  });
-  const tok = await res.json().catch(() => null);
-  if (!tok || !tok.access_token) {
-    const why =
-      tok && (tok.error_description || tok.error)
-        ? `${tok.error || ''} ${tok.error_description || ''}`.trim()
-        : `HTTP ${res.status}`;
-    throw new Error(
-      `Failed to mint androidpublisher token (${why}). Check the service-account's review permissions in Play Console.`,
-    );
-  }
-  return tok.access_token;
-}
 
 function fmtBody({
   id,
@@ -171,8 +103,15 @@ async function main() {
       args.dryRun ? '  (DRY RUN)' : ''
     }`,
   );
-  const sa = loadServiceAccount();
-  const token = await mintToken(sa);
+  let token;
+  try {
+    token = await getPlayAccessToken({scope: 'publisher'});
+  } catch (e) {
+    if (e.code !== 'token-mint-failed') throw e;
+    throw new Error(
+      `Failed to mint androidpublisher token (${e.detail}). Check the service-account's review permissions in Play Console.`,
+    );
+  }
 
   const res = await fetch(
     `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE}/reviews?maxResults=100`,

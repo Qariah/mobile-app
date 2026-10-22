@@ -1,5 +1,6 @@
 package expo.modules.qariahbootsplash
 
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -26,10 +27,37 @@ class QariahBootSplashModule : Module() {
       )
     }
 
+    // @ai A transient off (failed or quota-limited flag request): deletes
+    // only the flag marker; the crash-guard state stays.
+    Function("setOffForNextLaunchKeepGuard") {
+      QariahBootSplash.setOffForNextLaunchKeepGuard(
+        appContext.reactContext ?: appContext.currentActivity
+      )
+    }
+
     // The mode this process uses: control | treatment | fallback |
     // lab-control | lab-treatment | lab-treatment-c1b.
     Function("getMode") {
       QariahBootSplash.getMode()
+    }
+
+    // @ai Mark this device as a boot risk (permanent marker file).
+    Function("setBootRisk") {
+      QariahBootSplash.setBootRisk(appContext.reactContext ?: appContext.currentActivity)
+    }
+
+    // @ai True when the boot-risk marker is set.
+    Function("getBootRisk") {
+      QariahBootSplash.getBootRisk(appContext.reactContext ?: appContext.currentActivity)
+    }
+
+    // @ai The record of the previous main-activity process, or null.
+    AsyncFunction("getPreviousProcessInfo") { promise: Promise ->
+      QariahBootSplash.getPreviousProcessInfo(
+        appContext.reactContext ?: appContext.currentActivity
+      ) { info ->
+        if (info == null) promise.resolve(null) else promise.resolve(info)
+      }
     }
   }
 }

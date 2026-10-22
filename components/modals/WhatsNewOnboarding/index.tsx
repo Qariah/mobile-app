@@ -33,6 +33,10 @@ import {
 import {getOnboardingPages, OnboardingPage} from '@/data/onboardingPages';
 import OnboardingPageComponent from './OnboardingPage';
 import DotIndicator, {DOT_INDICATOR_HEIGHT} from './DotIndicator';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {appLayoutDirection, isRTL} from '@/utils/rtl';
+// @ai-end
 
 // Card chrome, shared by the styles below and by the height budget that keeps
 // the footer inside the card. Keep the styles reading from these constants —
@@ -57,8 +61,10 @@ export interface WhatsNewModalRef {
   show: () => void;
 }
 
+// @ai-start
 export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['settings', 'common']);
   const [visible, setVisible] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [pages, setPages] = useState<OnboardingPage[]>(getOnboardingPages());
@@ -125,10 +131,16 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
+  // @ai Pass C: scrollToIndex, not scrollToOffset — the list runs in the app's
+  // direction, and in RTL a raw offset counts from the last page. scrollX is
+  // the distance from page one in both directions (see scrollHandler).
   useEffect(() => {
-    const offset = currentPageRef.current * pageWidth;
-    flatListRef.current?.scrollToOffset({offset, animated: false});
-    scrollX.value = offset;
+    const index = currentPageRef.current;
+    if (pages.length > 0) {
+      flatListRef.current?.scrollToIndex({index, animated: false});
+    }
+    scrollX.value = index * pageWidth;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-anchor only on resize
   }, [pageWidth, scrollX]);
 
   function handleClose() {
@@ -159,7 +171,13 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: event => {
-      scrollX.value = event.contentOffset.x;
+      // A right-to-left scroll view reports its offset from the left edge,
+      // where the last page sits. The dots need the distance from page one.
+      scrollX.value = isRTL
+        ? event.contentSize.width -
+          event.layoutMeasurement.width -
+          event.contentOffset.x
+        : event.contentOffset.x;
     },
   });
 
@@ -211,15 +229,18 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
             hitSlop={12}>
             <Text
               style={[styles.skipText, {color: theme.colors.textSecondary}]}>
-              Skip
+              {t('onboarding.skip')}
             </Text>
           </Pressable>
 
           {/* Pages — the only shrinkable row, so the footer below can never be
               pushed out of the card when the window is short. */}
           <View style={[styles.pagesContainer, {minHeight: pagesMinHeight}]}>
+            {/* Runs in the app's direction: the list's index math follows
+                the native direction, so forcing LTR here breaks Next in RTL. */}
             <Animated.FlatList
               ref={flatListRef as any}
+              style={appLayoutDirection}
               data={pages}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
@@ -246,10 +267,14 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
             ]}
             onPress={handleNext}
             accessibilityRole="button"
-            accessibilityLabel={isLastPage ? 'Get Started' : 'Next'}>
+            accessibilityLabel={
+              isLastPage ? t('onboarding.getStarted') : t('common:actions.next')
+            }>
             <Text
               style={[styles.buttonText, {color: theme.colors.textSecondary}]}>
-              {isLastPage ? 'Get Started' : 'Next'}
+              {isLastPage
+                ? t('onboarding.getStarted')
+                : t('common:actions.next')}
             </Text>
           </Pressable>
 
@@ -264,6 +289,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
     </Modal>
   );
 });
+// @ai-end
 
 WhatsNewModal.displayName = 'WhatsNewModal';
 

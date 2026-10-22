@@ -20,6 +20,7 @@ const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 interface NowPlayingIndicatorProps {
   isPlaying: boolean;
+  color?: string;
   barCount?: number;
   gap?: number;
   barWidth?: number;

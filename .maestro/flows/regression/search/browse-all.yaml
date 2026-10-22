@@ -1,4 +1,4 @@
-# C4 — Browse All: the full reciter grid renders and scrolls.
+# LST-04 (matrix C4) — Browse All: the full reciter grid renders and scrolls.
 appId: com.qariah.app
 tags:
   - regression
@@ -7,8 +7,8 @@ tags:
 - launchApp:
     clearState: true
 - runFlow: ../../../subflows/skip-onboarding.yaml
-- tapOn: 'Search'
-- tapOn: 'Browse All'
+- tapOn: '.*Search'
+- tapOn: 'Browse All.*'
 # grid mounted — a "N reciters" count header (full-match regex → wildcard)
 - extendedWaitUntil:
     visible: '.*reciters.*'

@@ -64,9 +64,25 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useAdhkarStore} from '@/store/adhkarStore';
 import {AdhkarBentoCard} from '@/components/adhkar/AdhkarBentoCard';
+import {
+  ADHKAR_TILE_GAP,
+  ADHKAR_TILE_WIDTH,
+  AdhkarNowPlayingCard,
+  useHasAdhkarSession,
+} from '@/components/adhkar/AdhkarNowPlayingCard';
 import {SuperCategory} from '@/types/adhkar';
 import {isFeatureEnabled} from '@/config/featureFlags';
 import branding, {type HomeRow, type HomeRowId} from '@/config/branding';
+// Qariah (Sprint 48): the "Newly Added" row of recitations.
+import {NewlyAddedRecitationsRow} from '@/components/listen/NewlyAddedRecitationsRow';
+// Qariah (TECH_DEBT #314): the rows start at their first card in Arabic on
+// iOS, and their item layout is the real one.
+import {RtlRowFlatList} from '@/components/listen/RtlRowFlatList';
+import {rowItemLayout} from '@/components/listen/rowItemLayout';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
+// @ai-end
 
 /**
  * Fallback row order used when `branding.homeRowConfig` is undefined.
@@ -90,6 +106,12 @@ const DEFAULT_HOME_ROW_CONFIG: readonly HomeRow[] = [
   {id: 'collection', enabled: true},
 ];
 
+// Qariah (Sprint 48): true only when the config turns the trending row on.
+// The owner turned the row off on 2026-10-18, so the R2 fetch must not run.
+const TRENDING_ROW_ENABLED = (
+  branding.homeRowConfig ?? DEFAULT_HOME_ROW_CONFIG
+).some(row => row.id === 'trending' && row.enabled);
+
 interface RecitersViewProps {
   onReciterPress: (reciter: Reciter) => void;
 }
@@ -112,6 +134,7 @@ const MemoizedFlatList = React.memo(
     onPlaylistPress,
     onCountryPress,
     onTranslationPress,
+    showAdhkarTile,
   }: {
     data: SectionItem[];
     variant:
@@ -128,8 +151,10 @@ const MemoizedFlatList = React.memo(
     onPlaylistPress?: (playlist: UserPlaylist) => void;
     onCountryPress?: (country: CountryInfo) => void;
     onTranslationPress?: (translation: TranslationInfo) => void;
+    showAdhkarTile?: boolean;
+    theme: Theme;
   }) => (
-    <FlatList
+    <RtlRowFlatList
       data={data}
       renderItem={({item, index}) => (
         <RenderSectionItem
@@ -161,27 +186,27 @@ const MemoizedFlatList = React.memo(
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.sectionContent}
+      ListHeaderComponent={
+        showAdhkarTile ? (
+          <View style={{flex: 1}}>
+            <AdhkarNowPlayingCard variant="tile" />
+          </View>
+        ) : null
+      }
       removeClippedSubviews={true}
       maxToRenderPerBatch={5}
       windowSize={3}
       initialNumToRender={5}
-      getItemLayout={(_, index) => {
-        const length =
-          variant === 'circular'
-            ? 80
-            : variant === 'recent'
-              ? 200
-              : variant === 'featured'
-                ? 140
-                : variant === 'rewayat' ||
-                    variant === 'country' ||
-                    variant === 'translation'
-                  ? 130
-                  : variant === 'playlist'
-                    ? 120
-                    : 140;
-        return {length, offset: length * index, index};
-      }}
+      // Qariah (TECH_DEBT #314): the real card width and gap (rowItemLayout.ts).
+      getItemLayout={(_, index) =>
+        rowItemLayout(
+          variant,
+          index,
+          showAdhkarTile && variant === 'recent'
+            ? ADHKAR_TILE_WIDTH + ADHKAR_TILE_GAP
+            : 0,
+        )
+      }
     />
   ),
   (prevProps, nextProps) =>
@@ -191,11 +216,14 @@ const MemoizedFlatList = React.memo(
     prevProps.onRewayatPress === nextProps.onRewayatPress &&
     prevProps.onPlaylistPress === nextProps.onPlaylistPress &&
     prevProps.onCountryPress === nextProps.onCountryPress &&
-    prevProps.onTranslationPress === nextProps.onTranslationPress,
+    prevProps.onTranslationPress === nextProps.onTranslationPress &&
+    prevProps.showAdhkarTile === nextProps.showAdhkarTile &&
+    prevProps.theme === nextProps.theme,
 );
 
 MemoizedFlatList.displayName = 'MemoizedFlatList';
 
+// @ai-start
 const RenderSectionItem = React.memo(
   ({
     item,
@@ -225,6 +253,7 @@ const RenderSectionItem = React.memo(
     onTranslationPress?: (translation: TranslationInfo) => void;
   }) => {
     const {theme} = useTheme();
+    const {t} = useTranslation(['home', 'common']);
 
     // Derive reciter ID for follow-along badge
     const reciterId =
@@ -244,8 +273,8 @@ const RenderSectionItem = React.memo(
                 ? (item.reciter?.image_url ?? undefined)
                 : undefined
             }
-            reciterName={item.uploadArtist || 'My Recitations'}
-            surahName={item.uploadTitle || 'Upload'}
+            reciterName={item.uploadArtist || t('home.myRecitations')}
+            surahName={item.uploadTitle || t('home.upload')}
             trackId={`upload:${item.userRecitationId}`}
             reciterId={item.reciter?.id || '__uploads__'}
             surahId={item.surah?.id || 0}
@@ -265,8 +294,8 @@ const RenderSectionItem = React.memo(
       return (
         <RecentReciterCard
           imageUrl={item.reciter.image_url ?? undefined}
-          reciterName={item.reciter.name}
-          surahName={item.surah.name}
+          reciterName={getReciterDisplayName(item.reciter)}
+          surahName={getSurahDisplayName(item.surah)}
           trackId={`${item.reciter.id}:${item.surah.id}`}
           reciterId={item.reciter.id}
           surahId={item.surah.id}
@@ -283,7 +312,7 @@ const RenderSectionItem = React.memo(
       return (
         <CircularReciterCard
           imageUrl={reciter.image_url ?? undefined}
-          name={reciter.name}
+          name={getReciterDisplayName(reciter)}
           onPress={() => onReciterPress(reciter)}
           showFollowAlong={showFollowAlong}
         />
@@ -372,10 +401,12 @@ const RenderSectionItem = React.memo(
     );
   },
 );
+// @ai-end
 
 RenderSectionItem.displayName = 'RenderSectionItem';
 
 // Memoize the section component
+// @ai-start
 const Section = React.memo(
   ({
     title,
@@ -387,6 +418,7 @@ const Section = React.memo(
     onCountryPress,
     onTranslationPress,
     onClear,
+    showAdhkarTile,
     theme,
   }: {
     title: string;
@@ -406,9 +438,11 @@ const Section = React.memo(
     onCountryPress?: (country: CountryInfo) => void;
     onTranslationPress?: (translation: TranslationInfo) => void;
     onClear?: () => void;
+    showAdhkarTile?: boolean;
     theme: Theme;
   }) => {
-    if (!data.length) return null;
+    const {t} = useTranslation(['home', 'common']);
+    if (!data.length && !showAdhkarTile) return null;
 
     return (
       <View style={styles.section}>
@@ -416,7 +450,7 @@ const Section = React.memo(
           <Text style={[styles.sectionTitle, {color: theme.colors.text}]}>
             {title}
           </Text>
-          {onClear && (
+          {onClear && data.length > 0 && (
             <Pressable onPress={onClear} hitSlop={8}>
               <Text
                 style={[
@@ -427,7 +461,7 @@ const Section = React.memo(
                       .toString(),
                   },
                 ]}>
-                Clear
+                {t('common:actions.clear')}
               </Text>
             </Pressable>
           )}
@@ -440,6 +474,8 @@ const Section = React.memo(
           onPlaylistPress={onPlaylistPress}
           onCountryPress={onCountryPress}
           onTranslationPress={onTranslationPress}
+          showAdhkarTile={showAdhkarTile}
+          theme={theme}
         />
       </View>
     );
@@ -453,8 +489,10 @@ const Section = React.memo(
     prevProps.onCountryPress === nextProps.onCountryPress &&
     prevProps.onTranslationPress === nextProps.onTranslationPress &&
     prevProps.onClear === nextProps.onClear &&
+    prevProps.showAdhkarTile === nextProps.showAdhkarTile &&
     prevProps.theme === nextProps.theme,
 );
+// @ai-end
 
 Section.displayName = 'Section';
 
@@ -476,12 +514,15 @@ function seededShuffle<T>(array: T[], seed: number): T[] {
   return shuffled;
 }
 
+// @ai-start
 function RecitersView({onReciterPress}: RecitersViewProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['home', 'common', 'qariah']);
   const bottomInset = useBottomInset();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const recentTracks = useRecentlyPlayedStore(s => s.recentTracks);
+  const showAdhkarTile = useHasAdhkarSession();
   const {favoriteReciters} = useFavoriteReciters();
   const {lovedTracks} = useLoved();
   const downloads = useDownloadStore(state => state.downloads);
@@ -594,26 +635,15 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
   // Recording is algorithmic (catalog flag) — both return non-empty data
   // today and render whenever data exists.
   const honoredReciters = useMemo(
-    () =>
-      isFeatureEnabled('qariahHonoredRecitersRow')
-        ? seededShuffle(getHonoredReciters(), sessionSeed + 10)
-        : [],
+    () => seededShuffle(getHonoredReciters(), sessionSeed + 10),
     [sessionSeed],
   );
   const paradiseReciters = useMemo(
-    () =>
-      isFeatureEnabled('qariahParadiseRecitersRow')
-        ? seededShuffle(getParadiseReciters(), sessionSeed + 11)
-        : [],
+    () => seededShuffle(getParadiseReciters(), sessionSeed + 11),
     [sessionSeed],
   );
-  const newlyAddedReciters = useMemo(
-    () =>
-      isFeatureEnabled('qariahNewlyAddedRow') ? getNewlyAddedReciters(30) : [],
-    [],
-  );
+  const newlyAddedReciters = useMemo(() => getNewlyAddedReciters(30), []);
   const fullRecordingReciters = useMemo(() => {
-    if (!isFeatureEnabled('qariahFullRecordingRow')) return [];
     // Sprint 26 user-feedback — Translation reciters (e.g. Maryam from
     // Elgo Academy, Spanish) satisfy the 114-surah `getFullRecordingReciters`
     // filter because their translation tracks span the whole Quran. Anchor
@@ -634,20 +664,17 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
   // point.
 
   // Sprint 8 — feedback-driven home rows.
-  // Country + translation rows live behind feature flags; their data is
-  // computed once per session (cheap, no network). Most-played is hooked
-  // from MMKV daily aggregates and recomputes on listening events.
-  const countries = useMemo(
-    () => (isFeatureEnabled('qariahCountryRow') ? getAllCountries() : []),
-    [],
-  );
-  const translations = useMemo(
-    () =>
-      isFeatureEnabled('qariahTranslationsRow') ? getAllTranslations() : [],
-    [],
-  );
+  // Country + translation row data is computed once per session (cheap, no
+  // network); `branding.homeRowConfig` decides if each row shows. Most-played
+  // is hooked from MMKV daily aggregates and recomputes on listening events.
+  const countries = useMemo(() => getAllCountries(), []);
+  const translations = useMemo(() => getAllTranslations(), []);
   const mostPlayedReciters = useMostPlayedReciters({windowDays: 30, limit: 10});
-  const {reciters: trendingReciters} = useTrendingReciters({limit: 10});
+  // Qariah (Sprint 48): no fetch while the trending row is off.
+  const {reciters: trendingReciters} = useTrendingReciters({
+    limit: 10,
+    enabled: TRENDING_ROW_ENABLED,
+  });
 
   // Handler for country card press — routes to the existing reciter browse
   // screen with a `country` param. The browse screen accepts arbitrary
@@ -742,20 +769,19 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
    * Sprint 15 — Row order + visibility driven entirely by
    * `branding.homeRowConfig` (XF-NNN RFC, upstream PR #260). Each row's
    * data-empty check stays inline; `enabled: false` rows are registered
-   * but skipped at the `.filter()` step below. The legacy `qariah*Row`
-   * flag-gates were superseded by `enabled` and removed from this file
-   * (the flags themselves stay in featureFlags.ts as deprecation
-   * telegraphs for one sprint).
+   * but skipped at the `.filter()` step below. `enabled` is the only
+   * switch: Sprint 45 (TECH_DEBT #230) removed the last `qariah*Row` flags.
    */
   const rowNodes: Record<HomeRowId, React.ReactNode> = {
     'continue-listening':
-      validRecentTracks.length > 0 ? (
+      validRecentTracks.length > 0 || showAdhkarTile ? (
         <Section
-          title="Continue Listening"
+          title={t('home.continueListening')}
           data={validRecentTracks}
           variant="recent"
           onReciterPress={onReciterPress}
           onClear={handleClearRecentTracks}
+          showAdhkarTile={showAdhkarTile}
           theme={theme}
         />
       ) : null,
@@ -763,7 +789,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     'new-to-quran':
       showNewToQuran && beginnerFriendlyReciters.length > 0 ? (
         <Section
-          title="New to Quran? Start Here"
+          title={t('home.newToQuran')}
           data={beginnerFriendlyReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -774,7 +800,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     favorites:
       favoriteRecitersSection.length > 0 ? (
         <Section
-          title="Your Favorites"
+          title={t('home.yourFavorites')}
           data={favoriteRecitersSection}
           variant="circular"
           onReciterPress={onReciterPress}
@@ -785,7 +811,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     featured:
       featuredReciters.length > 0 ? (
         <Section
-          title="Featured Reciters"
+          title={t('home.featuredReciters')}
           data={featuredReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -800,7 +826,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, {color: theme.colors.text}]}>
-              Adhkar
+              {t('common:terms.adhkar')}
             </Text>
             <Pressable
               onPress={() => router.push('/(tabs)/(a.home)/adhkar')}
@@ -814,7 +840,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
                       .toString(),
                   },
                 ]}>
-                See More
+                {t('home.seeMore')}
               </Text>
             </Pressable>
           </View>
@@ -832,7 +858,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     'follow-along':
       followAlongReciters.length > 0 ? (
         <Section
-          title="Follow Along"
+          title={t('home.followAlong')}
           data={followAlongReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -843,7 +869,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     playlists:
       playlists.length > 0 ? (
         <Section
-          title="Your Playlists"
+          title={t('home.yourPlaylists')}
           data={seededShuffle(playlists, sessionSeed + 8).slice(0, 10)}
           variant="playlist"
           onReciterPress={onReciterPress}
@@ -855,7 +881,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     exclusives:
       bayaanOriginalsReciters.length > 0 ? (
         <Section
-          title="Exclusives"
+          title={t('home.exclusives')}
           data={bayaanOriginalsReciters}
           variant="featured"
           onReciterPress={onReciterPress}
@@ -866,7 +892,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     tajweed:
       tajweedReciters.length > 0 ? (
         <Section
-          title="Best for Tajweed"
+          title={t('home.bestForTajweed')}
           data={tajweedReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -877,7 +903,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     memorization:
       memorizationReciters.length > 0 ? (
         <Section
-          title="Best for Memorization"
+          title={t('home.bestForMemorization')}
           data={memorizationReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -888,10 +914,13 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     // Bayaan titles this row "Explore by Rewayah"; Qariah uses
     // "Browse by Rewaya" (no trailing h, "Browse" not "Explore" for
     // header consistency with Country / Translation / Surahs).
+    // @ai Pass C: upstream's key is kept. The Qariah wording comes from the
+    // override bundle (i18n/overrides/en.json "Browse by Rewaya"; the Arabic
+    // in i18n/overrides/ar.json is qariah:homeRows.rewayat).
     rewayat:
       rewayatTypes.length > 0 ? (
         <Section
-          title="Browse by Rewaya"
+          title={t('home.exploreByRewayah')}
           data={rewayatTypes}
           variant="rewayat"
           onReciterPress={onReciterPress}
@@ -903,7 +932,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     collection:
       collectionReciters.length > 0 ? (
         <Section
-          title="From your Collection"
+          title={t('home.fromYourCollection')}
           data={collectionReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -915,7 +944,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     country:
       countries.length > 0 ? (
         <Section
-          title="Browse by Country"
+          title={t('qariah:homeRows.country')}
           data={countries}
           variant="country"
           onReciterPress={onReciterPress}
@@ -927,7 +956,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     translations:
       translations.length > 0 ? (
         <Section
-          title="Browse by Translation"
+          title={t('qariah:homeRows.translation')}
           data={translations}
           variant="translation"
           onReciterPress={onReciterPress}
@@ -939,7 +968,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     honored:
       honoredReciters.length > 0 ? (
         <Section
-          title="Honored Reciters"
+          title={t('qariah:homeRows.honored')}
           data={honoredReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -950,7 +979,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     paradise:
       paradiseReciters.length > 0 ? (
         <Section
-          title="Paradise Reciters"
+          title={t('qariah:homeRows.paradise')}
           data={paradiseReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -961,7 +990,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     'newly-added':
       newlyAddedReciters.length > 0 ? (
         <Section
-          title="Newly Added"
+          title={t('qariah:homeRows.newlyAdded')}
           data={newlyAddedReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -969,10 +998,15 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         />
       ) : null,
 
+    // Qariah (Sprint 48): recitations, not reciters. The row renders nothing
+    // when the catalog has no dated recitations, and recomputes on each
+    // catalog refill (components/listen/NewlyAddedRecitationsRow.tsx).
+    'newly-added-recitations': <NewlyAddedRecitationsRow />,
+
     'full-recording':
       fullRecordingReciters.length > 0 ? (
         <Section
-          title="Full Quran"
+          title={t('qariah:homeRows.fullQuran')}
           data={fullRecordingReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -983,7 +1017,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     trending:
       trendingReciters.length > 0 ? (
         <Section
-          title="Trending This Week"
+          title={t('qariah:homeRows.trending')}
           data={trendingReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -994,7 +1028,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     'most-played':
       mostPlayedReciters.length > 0 ? (
         <Section
-          title="Most Played by You"
+          title={t('qariah:homeRows.mostPlayed')}
           data={mostPlayedReciters}
           variant="default"
           onReciterPress={onReciterPress}
@@ -1046,6 +1080,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     </ScrollView>
   );
 }
+// @ai-end
 
 // Module-level helpers to keep the renderItem/keyExtractor references
 // stable across renders (avoids react/no-unstable-nested-components).

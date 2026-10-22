@@ -13,7 +13,11 @@ import {SurahListProps} from '@/components/reciter-profile/types';
 import {SurahItem} from '@/components/SurahItem';
 import {SurahCard} from '@/components/cards/SurahCard';
 import {Surah} from '@/data/surahData';
-import {getJuzForSurah, getJuzName} from '@/data/juzData';
+// @ai-start
+import {getJuzForSurah} from '@/data/juzData';
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+// @ai-end
 
 // Define types matching useSettings and ReciterProfile
 type ReciterProfileViewMode = 'card' | 'list';
@@ -46,6 +50,7 @@ ItemSeparator.displayName = 'ItemSeparator';
  *
  * Displays surahs in either a list or grid view.
  */
+// @ai-start
 export const SurahList = React.forwardRef<
   FlashListRef<FlatItem>,
   UpdatedSurahListProps
@@ -71,6 +76,7 @@ export const SurahList = React.forwardRef<
     ref,
   ) => {
     const {theme} = useTheme();
+    const {t} = useTranslation(['player', 'common']);
     const styles = createStyles(theme);
 
     // Build flat data array + sticky header indices
@@ -100,7 +106,10 @@ export const SurahList = React.forwardRef<
             stickies.push(items.length);
             items.push({
               type: 'juz-header',
-              juzName: getJuzName(juz),
+              juzName:
+                juz === 30
+                  ? t('reciterProfile.juzAmma')
+                  : t('common:labels.juzNumber', {number: juz}),
               key: `juz-${juz}`,
             });
           }
@@ -121,16 +130,16 @@ export const SurahList = React.forwardRef<
       }
 
       return {data: items, stickyIndices: stickies};
-    }, [surahs, viewMode, sortOption]);
+    }, [surahs, viewMode, sortOption, t]);
 
     // Render a card item (used by inline mode)
     const renderCardItem = React.useCallback(
-      // eslint-disable-next-line react/no-unused-prop-types -- inline `{item: Surah}` destructure is mis-flagged; called manually with partial shape from `visibleSurahs.map` below
       ({item}: {item: Surah}) => (
         <SurahCard
           id={item.id}
           name={item.name}
           translatedName={item.translated_name_english}
+          versesCount={item.verses_count}
           revelationPlace={item.revelation_place}
           color={getColorForSurah(item.id)}
           onPress={() => onSurahPress(item)}
@@ -185,6 +194,7 @@ export const SurahList = React.forwardRef<
                   id={surah.id}
                   name={surah.name}
                   translatedName={surah.translated_name_english}
+                  versesCount={surah.verses_count}
                   revelationPlace={surah.revelation_place}
                   color={getColorForSurah(surah.id)}
                   onPress={() => onSurahPress(surah)}
@@ -297,7 +307,9 @@ export const SurahList = React.forwardRef<
         return (
           <View style={styles.surahsContainer}>
             {surahs.length === 0 ? (
-              <Text style={styles.emptyText}>No surahs available</Text>
+              <Text style={styles.emptyText}>
+                {t('reciterProfile.noSurahsAvailable')}
+              </Text>
             ) : (
               <View style={styles.cardGrid}>
                 {visibleSurahs.map(surah => (
@@ -317,7 +329,9 @@ export const SurahList = React.forwardRef<
       return (
         <View style={styles.surahsContainer}>
           {data.length === 0 ? (
-            <Text style={styles.emptyText}>No surahs available</Text>
+            <Text style={styles.emptyText}>
+              {t('reciterProfile.noSurahsAvailable')}
+            </Text>
           ) : (
             visibleData.map((item, index) => (
               <React.Fragment key={item.key}>
@@ -348,17 +362,21 @@ export const SurahList = React.forwardRef<
           }
           drawDistance={moderateScale(300)}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No surahs available</Text>
+            <Text style={styles.emptyText}>
+              {t('reciterProfile.noSurahsAvailable')}
+            </Text>
           }
         />
       </View>
     );
   },
 );
+// @ai-end
 
 // Add display name
 SurahList.displayName = 'SurahList';
 
+// @ai-start
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({
     surahsContainer: {
@@ -399,6 +417,7 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(12),
       fontFamily: 'Manrope-SemiBold',
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: latinLetterSpacing(0.8),
     },
   });
+// @ai-end

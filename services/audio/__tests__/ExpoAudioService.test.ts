@@ -28,8 +28,11 @@ jest.mock('@/services/diagnostics/playbackHealth', () => ({
 }));
 
 import {setAudioModeAsync} from 'expo-audio';
-import {notePlaybackLoad} from '@/services/diagnostics/playbackHealth';
-import {ExpoAudioService} from '../ExpoAudioService';
+import {
+  notePlaybackLoad,
+  notePlaybackPlayRequested,
+} from '@/services/diagnostics/playbackHealth';
+import {ExpoAudioService, PLAYER_WAIT_MS} from '../ExpoAudioService';
 import type {ExpoAudioServiceState} from '../ExpoAudioService';
 
 /**
@@ -358,6 +361,125 @@ describe('ExpoAudioService — Group A characterization', () => {
     expect(service.getPlaybackState()).toBe('ready');
   });
 
+  // @ai Early tap (third review of PR #422, 2026-09-13). ExpoAudioProvider
+  // renders the UI before it calls setPlayer(). A play() in that window
+  // returned at once with no error, so playerStore wrote 'playing' and the
+  // user saw Pause with no audio. play() must wait for the player, as
+  // loadTrack() does.
+  it('P1: play() before setPlayer() waits for the player, then plays', async () => {
+    const service = ExpoAudioService.getInstance();
+    service.reset();
+
+    const play = service.play();
+    const settled = jest.fn();
+    play.then(settled, settled);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+    // No playback-health attempt for a play that has no player yet.
+    expect(notePlaybackPlayRequested).not.toHaveBeenCalled();
+
+    const player = new FakeAudioPlayer();
+    service.setPlayer(
+      player as unknown as Parameters<typeof service.setPlayer>[0],
+    );
+    await expect(play).resolves.toBe(true);
+
+    expect(player.play).toHaveBeenCalledTimes(1);
+    expect(service.getPlaybackState()).toBe('playing');
+    expect(notePlaybackPlayRequested).toHaveBeenCalledTimes(1);
+  });
+
+  it('P2: play() with no player within the wait resolves false after the wait, does not throw, and starts no attempt', async () => {
+    jest.useFakeTimers();
+    try {
+      const service = ExpoAudioService.getInstance();
+      service.reset();
+
+      const play = service.play();
+      const settled = jest.fn();
+      play.then(settled, settled);
+
+      await jest.advanceTimersByTimeAsync(PLAYER_WAIT_MS - 1);
+      expect(settled).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(play).resolves.toBe(false);
+      expect(service.getPlaybackState()).not.toBe('playing');
+      expect(notePlaybackPlayRequested).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // Safety tests (not regressions): they pass on the unfixed code too, where
+  // play() never waits. They prove the wait cannot start audio that a pause,
+  // a cleanup or a newer load cancelled.
+  it('P3 (safety): pause() during the player wait -> no play() when the player arrives', async () => {
+    const service = ExpoAudioService.getInstance();
+    service.reset();
+
+    const play = service.play();
+    await Promise.resolve();
+    // playerStore.pause() and playerStore.cleanup() call pause().
+    await service.pause();
+
+    const player = new FakeAudioPlayer();
+    service.setPlayer(
+      player as unknown as Parameters<typeof service.setPlayer>[0],
+    );
+    await play;
+
+    expect(player.play).not.toHaveBeenCalled();
+    expect(service.getPlaybackState()).not.toBe('playing');
+    expect(notePlaybackPlayRequested).not.toHaveBeenCalled();
+  });
+
+  it('P4 (safety): cleanup() during the player wait -> no play() when the player arrives', async () => {
+    const service = ExpoAudioService.getInstance();
+    service.reset();
+
+    const play = service.play();
+    await Promise.resolve();
+    service.cleanup();
+
+    const player = new FakeAudioPlayer();
+    service.setPlayer(
+      player as unknown as Parameters<typeof service.setPlayer>[0],
+    );
+    await play;
+
+    expect(player.play).not.toHaveBeenCalled();
+    expect(service.getPlaybackState()).not.toBe('playing');
+  });
+
+  it('P5 (safety): a newer loadTrack() during the player wait -> the stale play() does not start the new source', async () => {
+    const service = ExpoAudioService.getInstance();
+    service.reset();
+
+    const play = service.play();
+    await Promise.resolve();
+    const load = service.loadTrack('https://cdn.example.test/newer.mp3');
+
+    const player = new FakeAudioPlayer();
+    player.replace.mockImplementation(async () => {
+      player.isLoaded = false;
+      player.simulateLoaded(60);
+    });
+    service.setPlayer(
+      player as unknown as Parameters<typeof service.setPlayer>[0],
+    );
+    await Promise.all([play, load]);
+
+    expect(player.replace).toHaveBeenCalledTimes(1);
+    expect(player.replace).toHaveBeenCalledWith({
+      uri: 'https://cdn.example.test/newer.mp3',
+    });
+    expect(player.play).not.toHaveBeenCalled();
+    expect(service.getPlaybackState()).toBe('ready');
+  });
+
   // ---------------------------------------------------------------- A3 ---
   it('A3: loadTrack(url) happy path — state idle → loading → ready', async () => {
     const {service, player} = makeService();
@@ -395,13 +517,25 @@ describe('ExpoAudioService — Group A characterization', () => {
     const networkErr = new Error('network down');
     player.replace.mockRejectedValueOnce(networkErr);
 
-    await expect(
-      service.loadTrack('https://example.test/track.mp3'),
-    ).rejects.toThrow('network down');
+    try {
+      await expect(
+        service.loadTrack('https://example.test/track.mp3'),
+      ).rejects.toThrow('network down');
 
-    expect(service.getPlaybackState()).toBe('error');
-    expect(service.getLastError()).toBe(networkErr);
-    expect(states[states.length - 1]).toBe('error');
+      expect(service.getPlaybackState()).toBe('error');
+      expect(service.getLastError()).toBe(networkErr);
+      expect(states[states.length - 1]).toBe('error');
+    } finally {
+      // @ai loadTrack() arms waitForLoaded() BEFORE replace(), so a rejected
+      // replace() leaves that wait (a listener and a 5 s timer) running. End
+      // it here, also when an assertion fails. Otherwise the timer fires after
+      // the suite, Jest reports "Cannot log after tests are done", and CI
+      // fails a run whose tests all passed. The release line ends the wait in
+      // loadTrack() itself (`wait?.cancel()`, ab5624d1). qariah-main reverted
+      // the readiness-wait changes on purpose (c23b8dab; TECH_DEBT #207, owner
+      // decision 2026-09-13), so it accepts the 5 s wait after a failed load.
+      player.simulateLoaded(0);
+    }
   });
 
   // ---------------------------------------------------------------- A5 ---

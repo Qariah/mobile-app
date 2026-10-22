@@ -24,8 +24,7 @@ export interface Reciter {
    * snapshots predating Sprint 8. Source-of-truth lives in
    * `planning/reciter-bios-template.csv`; gets baked into `catalog.json`
    * via `scripts/generate-catalog.mjs`. Drives the "Browse by Country" home
-   * row when populated for enough reciters (gated on the
-   * `qariahCountryRow` feature flag).
+   * row (the `country` entry in `branding.homeRowConfig`).
    */
   country?: string | null;
   /**
@@ -37,6 +36,19 @@ export interface Reciter {
    * placement and i18n model.
    */
   bio_en?: string | null;
+  /**
+   * Sprint 47 (Pass C) — the Arabic name. Upstream's field:
+   * `getReciterDisplayName` (i18n/format.ts) shows it when the app language
+   * shows Arabic names. Written into the catalog from the review pack by
+   * `scripts/catalog-arabic-names.mjs`.
+   */
+  name_arabic?: string | null;
+  /**
+   * Sprint 47 (Pass C) — the Arabic bio, a Qariah field. The reciter header
+   * shows it instead of `bio_en` in Arabic (`getReciterBio`,
+   * i18n/qariahCatalog.ts). Written by `scripts/catalog-arabic-names.mjs`.
+   */
+  bio_ar?: string | null;
   /**
    * Sprint 14 — translation tag (e.g. "English", "French"). Empty for
    * the entire catalog as of Sprint 14 — the column is a placeholder
@@ -85,14 +97,62 @@ export interface Rewayat {
    */
   has_timestamps?: boolean;
   timestamps_surah_list?: number[];
+  /**
+   * Qariah — the Arabic rewayah name that qariah-ops-console writes on the
+   * rewayat it creates. `getCatalogRewayahLabel` (i18n/qariahCatalog.ts)
+   * uses it in Arabic when neither the review pack nor upstream knows the
+   * catalog name.
+   */
+  name_ar?: string | null;
 }
 
 export interface SurahMetadata {
   surah: number;
   is_full: boolean;
   range?: {from: number; to: number};
+  // Qariah (Sprint 48): `YYYY-MM-DD` (UTC date) when this recitation first
+  // appeared in the catalog. The ops console and the Sprint 48 backfill
+  // (`scripts/catalog-added-at.mjs`) write it. Treat a missing value as "unknown".
+  added_at?: string;
 }
 
 // Mutable array — populated in-place by dataService after API fetch.
 // Do NOT reassign this variable; mutate it with splice() to preserve references.
 export const RECITERS: Reciter[] = [];
+
+// @ai-start
+// Bumped whenever RECITERS is repopulated, so caches derived from it (the
+// search index) rebuild even when a refresh keeps the same length and ids.
+let recitersVersion = 0;
+
+export function markRecitersUpdated(): void {
+  recitersVersion += 1;
+  notifyRecitersUpdated(); // Qariah (Sprint 48)
+}
+
+export function getRecitersVersion(): number {
+  return recitersVersion;
+}
+// @ai-end
+
+// @ai-start
+// Qariah (Sprint 48): a subscriber list on the version above, so a component
+// can re-render when `RECITERS` is filled again. `populateReciters` refills
+// the array in place on each catalog load (cache, bundled seed, background
+// refresh, version poll), and `isInitialized` changes only on the first one.
+// Read it with `useRecitersVersion` (hooks/useRecitersVersion.ts).
+const recitersListeners = new Set<() => void>();
+
+export function subscribeRecitersUpdated(listener: () => void): () => void {
+  recitersListeners.add(listener);
+  return () => {
+    recitersListeners.delete(listener);
+  };
+}
+
+function notifyRecitersUpdated(): void {
+  for (const listener of [...recitersListeners]) {
+    listener();
+  }
+}
+// @ai-end

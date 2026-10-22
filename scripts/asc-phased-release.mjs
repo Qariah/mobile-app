@@ -20,13 +20,16 @@
 //
 // Env (from .env.local): APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_ISSUER_ID,
 //   and ~/.appstoreconnect/private_keys/AuthKey_<KID>.p8
-//   Optional for the Play half: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON.
+//   Optional for the Play half: GOOGLE_PLAY_SA_JSON (JSON text) or
+//   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (path); scripts/lib/google-play-auth.mjs reads both.
 
 import {readFileSync} from 'node:fs';
 import {createSign} from 'node:crypto';
+import {ANDROID_PACKAGE_NAME, APP_STORE_ID} from './lib/app-ids.mjs';
+import {loadServiceAccount, mintPlayToken} from './lib/google-play-auth.mjs';
 
-const APP_ID = '1594917787'; // com.qariah.app
-const PKG = 'com.qariah.app';
+const APP_ID = APP_STORE_ID;
+const PKG = ANDROID_PACKAGE_NAME;
 
 const cmd = process.argv[2] || 'status';
 if (!['status', 'pause', 'resume', 'complete'].includes(cmd)) {
@@ -168,30 +171,62 @@ async function setState(next) {
 }
 
 // ── Google Play (status only — advancing is android-upload-play.sh) ──────
+const ROLLOUT_FILE = 'docs/operations/active-rollout.json';
+
+// The Android line when the key cannot open an edit. When the rollout file
+// says the rollout is finished (`active: false`), it adds the recorded
+// production build and state, so the card still has an Android value.
+function readOnlyPlayLine(cfg = readRolloutFile()) {
+  let line = `Android: rollout not readable with this key (read-only key cannot open an edit) — see ${ROLLOUT_FILE}`;
+  if (cfg && cfg.active === false) {
+    const parts = [`production vc${cfg.build ?? '?'}`];
+    if (cfg.release) parts[0] += ` (${cfg.release})`;
+    parts.push(
+      `rollout complete${cfg.completedAt ? ` since ${cfg.completedAt}` : ''} (active:false)`,
+    );
+    line += ` — the file records: ${parts.join(', ')}`;
+  }
+  return line;
+}
+
+function readRolloutFile() {
+  try {
+    return JSON.parse(
+      readFileSync(new URL(`../${ROLLOUT_FILE}`, import.meta.url), 'utf8'),
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function reportPlay() {
-  const saPath = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON || `${process.env.HOME}/.android/play-service-account.json`;
   let sa;
   try {
-    sa = JSON.parse(readFileSync(saPath, 'utf8'));
+    sa = loadServiceAccount();
   } catch {
     console.log('Play  (service account not readable — skipping)');
     return;
   }
-  const claim = {iss: sa.client_email, scope: 'https://www.googleapis.com/auth/androidpublisher', aud: 'https://oauth2.googleapis.com/token', exp: now + 3600, iat: now};
-  const u = `${b64({alg: 'RS256', typ: 'JWT'})}.${b64(claim)}`;
-  const s = createSign('RSA-SHA256').update(u).sign(sa.private_key, 'base64url');
-  const tok = await (await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'content-type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${u}.${s}`}),
-  })).json();
-  if (!tok.access_token) {
+  let accessToken;
+  try {
+    accessToken = await mintPlayToken(sa, {scope: 'publisher'});
+  } catch (e) {
+    if (e.name !== 'PlayAuthError') throw e;
     console.log('Play  (auth failed — skipping)');
     return;
   }
   const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PKG}`;
-  const A = {authorization: `Bearer ${tok.access_token}`};
-  const edit = await (await fetch(`${API}/edits`, {method: 'POST', headers: A})).json();
+  const A = {authorization: `Bearer ${accessToken}`};
+  const editRes = await fetch(`${API}/edits`, {method: 'POST', headers: A});
+  // The cloud's Play key is view-only by design (it must never be able to
+  // publish), and Play reads a track only inside an edit. So opening the edit
+  // is refused there with 401/403. Say so in one plain line, and give what the
+  // rollout file records, instead of printing nothing (first cloud run, 2026-09-27).
+  if (editRes.status === 401 || editRes.status === 403) {
+    console.log(readOnlyPlayLine());
+    return;
+  }
+  const edit = await editRes.json();
   const tr = await (await fetch(`${API}/edits/${edit.id}/tracks/production`, {headers: A})).json();
   for (const rel of tr.releases ?? []) {
     const frac = rel.userFraction != null ? `${(rel.userFraction * 100).toFixed(0)}%` : rel.status === 'completed' ? '100%' : '—';

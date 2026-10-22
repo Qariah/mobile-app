@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {moderateScale} from 'react-native-size-matters';
-import {getMultipleRandomTracks} from '@/utils/randomRecitation';
+import {pickRandomRecitations} from '@/utils/randomRecitation';
 import * as Haptics from 'expo-haptics';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {createTracksForReciter} from '@/utils/track';
@@ -27,6 +27,11 @@ import {
 // Sprint 13 — COPY_VARIANTS intentionally retained in
 // `./random-recitation/types` for fork-discipline (don't delete upstream
 // data). We bypass it here and render a single "Shuffle" title.
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
+// @ai-end
 
 function showToast(message: string) {
   if (Platform.OS === 'android') {
@@ -42,11 +47,13 @@ interface RandomRecitationHeroProps {
 const SECTION_HEIGHT = moderateScale(150);
 const RANDOM_HERO_HEIGHT = SECTION_HEIGHT / 2;
 
+// @ai-start
 export function RandomRecitationHero({
   style,
   isCompact = false,
 }: RandomRecitationHeroProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['home', 'common']);
   const {updateQueue, play} = usePlayerActions();
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
 
@@ -66,53 +73,37 @@ export function RandomRecitationHero({
   const handleRandomPlay = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      showToast('Finding random recitations from different reciters...');
+      showToast(t('randomHero.finding'));
 
-      const randomTracks = await getMultipleRandomTracks(15, false);
-      if (randomTracks.length === 0) {
-        showToast('Failed to find random recitations. Please try again.');
+      const picks = pickRandomRecitations(15);
+      if (picks.length === 0) {
+        showToast(t('randomHero.findFailed'));
         return;
       }
 
-      const {reciter, surah} = randomTracks[0];
-      showToast(`Playing ${surah.name} by ${reciter.name}`);
+      const {reciter, surah, rewayatId} = picks[0];
+      showToast(
+        t('randomHero.playing', {
+          surah: getSurahDisplayName(surah),
+          reciter: getReciterDisplayName(reciter),
+        }),
+      );
 
-      const trackPromises = randomTracks.map(item => {
-        const availableRewayat = item.reciter.rewayat.filter(r =>
-          r.surah_list.includes(item.surah.id),
-        );
-        const rewayahToUse =
-          availableRewayat.length > 0
-            ? availableRewayat[
-                Math.floor(Math.random() * availableRewayat.length)
-              ]
-            : item.reciter.rewayat.reduce(
-                (prev, current) =>
-                  current.surah_total > prev.surah_total ? current : prev,
-                item.reciter.rewayat[0],
-              );
-        return createTracksForReciter(
-          item.reciter,
-          [item.surah],
-          rewayahToUse.id,
-        );
-      });
-
-      const trackBatches = await Promise.all(trackPromises);
+      const trackBatches = await Promise.all(
+        picks.map(item =>
+          createTracksForReciter(item.reciter, [item.surah], item.rewayatId),
+        ),
+      );
       const tracks = trackBatches.flat();
       await updateQueue(tracks, 0);
       await play();
 
-      const firstRewayah =
-        randomTracks[0].reciter.rewayat.filter(r =>
-          r.surah_list.includes(randomTracks[0].surah.id),
-        )[0] || randomTracks[0].reciter.rewayat[0];
-      await startNewChain(reciter, surah, 0, 0, firstRewayah.id);
+      await startNewChain(reciter, surah, 0, 0, rewayatId);
     } catch (error) {
       console.error('Error playing random recitation:', error);
-      showToast('Failed to play random recitation. Please try again.');
+      showToast(t('randomHero.playFailed'));
     }
-  }, [updateQueue, play, startNewChain]);
+  }, [updateQueue, play, startNewChain, t]);
 
   const containerHeight = useMemo(
     () => ({height: isCompact ? moderateScale(75) : RANDOM_HERO_HEIGHT}),
@@ -137,7 +128,7 @@ export function RandomRecitationHero({
         <View style={styles.content}>
           <View style={styles.textContainer}>
             <Text style={[styles.title, {color: textColors.labelColor}]}>
-              Shuffle
+              {t('common:actions.shuffle')}
             </Text>
           </View>
         </View>
@@ -145,7 +136,9 @@ export function RandomRecitationHero({
     </Animated.View>
   );
 }
+// @ai-end
 
+// @ai-start
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
     container: {
@@ -163,9 +156,11 @@ const createStyles = (theme: Theme) =>
       justifyContent: 'center',
     },
     title: {
+      textAlign: 'left',
       fontFamily: 'Manrope-Bold',
       fontSize: moderateScale(13),
-      letterSpacing: moderateScale(0.3),
+      letterSpacing: latinLetterSpacing(moderateScale(0.3)),
       textTransform: 'uppercase',
     },
   });
+// @ai-end

@@ -21,15 +21,14 @@
 // added in app/_layout.tsx prevents the sync noise from recurring; this script
 // clears the existing backlog. Safe + idempotent — re-running is a no-op.
 
+import {createSentryClient, sentryConfig} from './lib/sentry-client.mjs';
+
 const argv = process.argv.slice(2);
 const DRY_RUN = argv.includes('--dry-run');
-const TOKEN = process.env.SENTRY_WRITE_TOKEN || process.env.SENTRY_READ_TOKEN;
-const ORG = process.env.SENTRY_ORG || 'qariah';
-const PROJECT = process.env.SENTRY_PROJECT || 'qariahv2';
-const HOST = (process.env.SENTRY_REGION_HOST || 'https://de.sentry.io').replace(
-  /\/$/,
-  '',
-);
+const SENTRY = sentryConfig({
+  tokenVars: ['SENTRY_WRITE_TOKEN', 'SENTRY_READ_TOKEN'],
+});
+const {token: TOKEN, org: ORG, project: PROJECT} = SENTRY;
 
 if (!TOKEN) {
   console.error('❌ Set SENTRY_WRITE_TOKEN (event:read + event:write).');
@@ -55,22 +54,7 @@ const IGNORE = {
     'iOS simulator-only SIGABRT (swift_abortRetainUnowned) — dev artifact, hard-rule #13',
 };
 
-async function sentry(path, init) {
-  const res = await fetch(`${HOST}/api/0${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Sentry ${res.status} ${init?.method || 'GET'} ${path}: ${(await res.text()).slice(0, 200)}`,
-    );
-  }
-  return res.status === 204 ? null : res.json();
-}
+const sentry = createSentryClient(SENTRY);
 
 async function main() {
   console.log(

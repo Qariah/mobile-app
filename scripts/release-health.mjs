@@ -12,8 +12,8 @@
 // nothing. This lane reads crash-free SESSIONS + crash-free USERS per release
 // from the Sentry Sessions API, files a `release-health` issue when a release
 // with real traffic falls below the documented thresholds, and emits a
-// `GITHUB_OUTPUT health_ok=true/false` so `promote-beta-to-prod.yml` can BLOCK
-// a promotion on a regression.
+// `GITHUB_OUTPUT health_ok=true/false`. No workflow has ever read it; PR #529
+// deleted `promote-beta-to-prod.yml`, which never used it either.
 //
 // Documented thresholds (§3):
 //   crash-free sessions >= 99.5%
@@ -23,9 +23,19 @@
 //   node scripts/release-health.mjs --dry-run             # print the table, file nothing
 //   node scripts/release-health.mjs                       # file issues for failing releases
 //   node scripts/release-health.mjs --release=3.1.8+1318  # gate ONE release (promote check)
+//   node scripts/release-health.mjs --json                # the evaluation as JSON, file nothing
 //
 // Flags:
 //   --dry-run                 query + evaluate + print, but DO NOT create issues
+//   --json                    print the evaluation as one JSON object on stdout (the
+//                             log lines go to stderr). It implies --dry-run, and it
+//                             returns before the filing step: no issue, no label, no
+//                             GitHub read, no GITHUB_OUTPUT. The signals snapshot
+//                             reads it (scripts/signals/sections/health.mjs). Shape:
+//                             {window, minSessions, minVersionCode, thresholds:
+//                             {session, user}, releases: [{release, versionCode,
+//                             sessions, users, cfSession, cfUser, small, sessionOk,
+//                             userOk, ok}], failing, healthOk}
 //   --window=14d              Sentry stats window
 //   --min-sessions=50         ignore a release with fewer sessions (too small to trust)
 //   --session-threshold=0.995 crash-free-session gate (0.995 = 99.5%)
@@ -38,10 +48,9 @@
 // Env:  SENTRY_READ_TOKEN (org:read + project:read), SENTRY_ORG, SENTRY_PROJECT,
 //       SENTRY_REGION_HOST, GH_REPO, GH_TOKEN
 
-import {execFileSync} from 'node:child_process';
-import {writeFileSync, mkdtempSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {writeFileSync} from 'node:fs';
+import {createSentryClient, sentryConfig} from './lib/sentry-client.mjs';
+import {createIssue, listIssues, upsertLabel} from './lib/triage-common.mjs';
 
 const argv = process.argv.slice(2);
 const flag = n => argv.includes(`--${n}`);
@@ -55,7 +64,7 @@ if (flag('help')) {
     [
       'Usage: node scripts/release-health.mjs [--dry-run] [--window=14d] [--min-sessions=50]',
       '                                       [--session-threshold=0.995] [--user-threshold=0.99]',
-      '                                       [--release=VER+BUILD] [--max=10]',
+      '                                       [--release=VER+BUILD] [--max=10] [--json]',
       '',
       'Reads Sentry crash-free sessions/users per release, files a release-health issue',
       'for failing releases, and emits GITHUB_OUTPUT health_ok for the promote gate.',
@@ -65,16 +74,15 @@ if (flag('help')) {
   process.exit(0);
 }
 
-const TOKEN = process.env.SENTRY_READ_TOKEN;
-const ORG = process.env.SENTRY_ORG || 'qariah';
-const PROJECT = process.env.SENTRY_PROJECT || 'qariahv2';
-const HOST = (process.env.SENTRY_REGION_HOST || 'https://de.sentry.io').replace(
-  /\/$/,
-  '',
-);
-const GH_REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
+const SENTRY = sentryConfig();
+const {token: TOKEN, org: ORG, project: PROJECT} = SENTRY;
 
-const DRY_RUN = flag('dry-run');
+// --json files nothing. It sets DRY_RUN, and main() also returns before the
+// filing step, so both guards must fail before a JSON run can write.
+const JSON_OUT = flag('json');
+const DRY_RUN = flag('dry-run') || JSON_OUT;
+// In JSON mode stdout carries the JSON only, so every log line goes to stderr.
+const log = (...a) => (JSON_OUT ? console.error(...a) : console.log(...a));
 const SENTRY_WINDOWS = ['', '24h', '14d', '90d'];
 const WINDOW_RAW = opt('window', '14d');
 const WINDOW = SENTRY_WINDOWS.includes(WINDOW_RAW) ? WINDOW_RAW : '14d';
@@ -95,32 +103,7 @@ if (!TOKEN) {
 const MARKER_PREFIX = 'release-health-id:';
 const LABEL = 'release-health';
 
-function gh(args, {input} = {}) {
-  try {
-    return execFileSync('gh', args, {
-      encoding: 'utf8',
-      input,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (e) {
-    const msg = (e.stderr || e.stdout || e.message || '').toString();
-    throw new Error(`gh ${args.join(' ')} failed: ${msg.slice(0, 400)}`);
-  }
-}
-
-async function sentry(path) {
-  const res = await fetch(`${HOST}/api/0${path}`, {
-    headers: {Authorization: `Bearer ${TOKEN}`},
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(
-      `Sentry ${res.status} on ${path.split('?')[0]}: ${body.slice(0, 300)}`,
-    );
-  }
-  return res.json();
-}
+const sentry = createSentryClient(SENTRY);
 
 // Recover the versionCode from a release id "com.qariah.app@3.1.8+1318".
 function versionCodeOf(release) {
@@ -139,16 +122,7 @@ function ensureLabels(labels) {
   };
   for (const l of labels) {
     try {
-      gh([
-        'label',
-        'create',
-        l,
-        '--repo',
-        GH_REPO,
-        '--color',
-        palette[l] || 'ededed',
-        '--force',
-      ]);
+      upsertLabel(l, palette[l] || 'ededed');
     } catch {
       /* exists / race — fine */
     }
@@ -192,17 +166,19 @@ those specific crashes.
 }
 
 async function main() {
-  console.log(
+  log(
     `▶ release-health  org=${ORG} project=${PROJECT} window=${WINDOW} ` +
       `gates=[sess≥${fpct(SESSION_THRESHOLD)}, user≥${fpct(USER_THRESHOLD)}]` +
       `${ONLY_RELEASE ? ` release=${ONLY_RELEASE}` : ''}${DRY_RUN ? '  (DRY RUN)' : ''}`,
   );
 
-  // 1. Pull crash-free sessions + users per release.
+  // 1. Pull crash-free sessions + users per release. --json also reads the
+  //    distinct users of each release (the snapshot's denominator).
   const data = await sentry(
     `/organizations/${ORG}/sessions/?field=${encodeURIComponent('crash_free_rate(session)')}` +
       `&field=${encodeURIComponent('crash_free_rate(user)')}` +
       `&field=${encodeURIComponent('sum(session)')}` +
+      (JSON_OUT ? `&field=${encodeURIComponent('count_unique(user)')}` : '') +
       `&groupBy=release&statsPeriod=${WINDOW}&project=-1`,
   );
   const groups = data.groups || [];
@@ -212,13 +188,15 @@ async function main() {
       cfSession: g.totals['crash_free_rate(session)'],
       cfUser: g.totals['crash_free_rate(user)'],
       sessions: g.totals['sum(session)'] || 0,
+      users: g.totals['count_unique(user)'] ?? null,
     }))
     .filter(r => r.release);
-  console.log(`  scanned ${releases.length} release(s)`);
+  log(`  scanned ${releases.length} release(s)`);
 
   // 2. Evaluate. Skip legacy v1 (versionCode < floor) + low-sample releases.
   //    When --release is set, evaluate ONLY that one (the promote gate).
   const failing = [];
+  const evaluated = [];
   let gatedRelease = null;
   for (const r of releases) {
     if (ONLY_RELEASE && !r.release.includes(ONLY_RELEASE)) continue;
@@ -230,9 +208,21 @@ async function main() {
     const userOk = r.cfUser == null || r.cfUser >= USER_THRESHOLD;
     const ok = sessOk && userOk;
     const tag = small ? '(small sample)' : ok ? 'OK' : '❌ BELOW GATE';
-    console.log(
+    log(
       `   • ${r.release.padEnd(28)} sess=${fpct(r.cfSession)} user=${fpct(r.cfUser)} n=${r.sessions} ${tag}`,
     );
+    evaluated.push({
+      release: r.release,
+      versionCode: Number.isFinite(vc) ? vc : null,
+      sessions: r.sessions,
+      users: r.users,
+      cfSession: r.cfSession ?? null,
+      cfUser: r.cfUser ?? null,
+      small,
+      sessionOk: sessOk,
+      userOk,
+      ok,
+    });
     // File only when a real-traffic release fails. Small-sample failures are
     // printed but not filed (one crashy session on a 5-session build is noise).
     if (!ok && !small) failing.push(r);
@@ -243,7 +233,7 @@ async function main() {
   let healthOk;
   if (ONLY_RELEASE) {
     if (!gatedRelease) {
-      console.log(
+      log(
         `  ⚠ release ${ONLY_RELEASE} not found in the window — treating as UNKNOWN (health_ok=false to be safe).`,
       );
       healthOk = false;
@@ -260,27 +250,33 @@ async function main() {
     healthOk = failing.length === 0;
   }
 
+  // --json: print the evaluation and stop. Nothing below this line runs, so a
+  // JSON run cannot list, label or file an issue, or write GITHUB_OUTPUT.
+  if (JSON_OUT) {
+    console.log(
+      JSON.stringify(
+        {
+          window: WINDOW,
+          minSessions: MIN_SESSIONS,
+          minVersionCode: MIN_VERSION_CODE,
+          thresholds: {session: SESSION_THRESHOLD, user: USER_THRESHOLD},
+          releases: evaluated,
+          failing: failing.length,
+          healthOk,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
   // 3. Dedup + file (skip when only gating one release for the promote check —
   //    --release is a read-only gate, not a filing run, unless it's failing).
   if (!DRY_RUN) ensureLabels([LABEL]);
   let alreadyFiled = new Set();
   try {
-    const existing = JSON.parse(
-      gh([
-        'issue',
-        'list',
-        '--repo',
-        GH_REPO,
-        '--label',
-        LABEL,
-        '--state',
-        'open',
-        '--limit',
-        '200',
-        '--json',
-        'body',
-      ]),
-    );
+    const existing = listIssues({state: 'open', labels: LABEL, limit: 200});
     for (const e of existing) {
       const m = (e.body || '').match(
         new RegExp(`${MARKER_PREFIX}([^\\s>]+)`, 'g'),
@@ -300,7 +296,6 @@ async function main() {
   );
 
   let filed = 0;
-  const tmp = DRY_RUN ? null : mkdtempSync(join(tmpdir(), 'release-health-'));
   for (const r of fresh) {
     const userOk = r.cfUser == null || r.cfUser >= USER_THRESHOLD;
     const severity = !userOk && r.cfUser < 0.95 ? 'critical' : 'high';
@@ -321,19 +316,7 @@ async function main() {
       continue;
     }
     ensureLabels(labels);
-    const bodyFile = join(tmp, `${r.release.replace(/[^\w.+-]/g, '_')}.md`);
-    writeFileSync(bodyFile, body);
-    const url = gh([
-      'issue',
-      'create',
-      '--repo',
-      GH_REPO,
-      '--title',
-      title.slice(0, 140),
-      '--body-file',
-      bodyFile,
-      ...labels.flatMap(l => ['--label', l]),
-    ]);
+    const {url} = createIssue({title: title.slice(0, 140), body, labels});
     console.log(`  ✅ filed ${r.release} → ${url}`);
     filed++;
   }

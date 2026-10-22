@@ -1,16 +1,18 @@
 /**
- * Sprint 27 follow-up (2026-05-28) — popup screen inside VerseActionsSheet
- * that shows the FULL list of community reflections for an ayah. Triggered
- * by the "Community Reflections" row in the EXPLORE group of the action
- * sheet (long-press an ayah).
+ * RFC-018 — fullscreen community-reflections popup inside VerseActionsSheet.
  *
- * Companion to the inline `AyahCommunityReflections.tsx` (Mushaf list view,
- * which only renders the top reflection). Both consume the same provider
- * `branding.communityReflectionsProvider` which in Qariah resolves to
- * `listCommunityReflectionsByAyah` over QF prelive/prod.
+ * Opened by the "Community Reflections" row in the action sheet's EXPLORE
+ * group (long-press an ayah). Unlike the inline slot
+ * (`branding.ayahCommunityReflectionsComponent`, which a fork renders with
+ * its own card styling), this popup is a GENERIC upstream list driven only by
+ * the existing `branding.communityReflectionsProvider` field — no extra seam
+ * (per RFC-018 §4). It renders the typed `CommunityReflection[]` directly.
  *
- * No sign-in needed (reads use a client_credentials token — see
- * `services/auth/qfClientCredentials.ts`).
+ * The action-sheet row is gated on `branding.communityReflectionsProvider`,
+ * so Bayaan (no provider) never reaches this screen; the early-return below
+ * is purely defensive.
+ *
+ * See docs/rfcs/018-community-reflections-provider.md.
  */
 
 import React, {useState, useMemo, useEffect, useCallback} from 'react';
@@ -21,6 +23,8 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+// Qariah: a bare Linking.openURL rejects unhandled when the OS declines the
+// URL (Sentry QARIAHV2-1Y); openExternalUrl catches it and tells the reader.
 import {openExternalUrl} from '@/utils/openExternalUrl';
 import {
   ScaledSheet,
@@ -29,36 +33,35 @@ import {
 } from 'react-native-size-matters';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
-import * as Sentry from '@sentry/react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
-import SkiaVersePreview from '@/components/share/SkiaVersePreview';
 import branding from '@/config/branding';
-import {
-  authorLabel,
-  type AyahReflection,
-} from '@/services/userState/communityReflections';
+import type {CommunityReflection} from '@/types/CommunityReflection';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {latinLetterSpacing} from '@/utils/rtl';
+// @ai-end
 
 interface CommunityReflectionsContentProps {
   surahNumber: number;
   ayahNumber: number;
-  rewayah?: import('@/store/mushafSettingsStore').RewayahId;
-  onBack: () => void;
+  // @ai-start
+  /** The verse's label in the shown rewayah's numbering (the provider is
+   *  asked for the Hafs verse surahNumber:ayahNumber). Default "S:A". */
+  label?: string;
+  // @ai-end
 }
 
 type FetchState =
   | {kind: 'loading'}
-  | {kind: 'loaded'; data: AyahReflection[]}
+  | {kind: 'loaded'; data: CommunityReflection[]}
   | {kind: 'error'};
-
-function quranReflectVerseUrl(chapterId: number, verseNumber: number): string {
-  return `https://quranreflect.com/?reference=${chapterId}:${verseNumber}`;
-}
 
 export const CommunityReflectionsContent: React.FC<
   CommunityReflectionsContentProps
-> = ({surahNumber, ayahNumber, rewayah}) => {
+> = ({surahNumber, ayahNumber, label}) => {
   const {theme} = useTheme();
+  const {t} = useTranslation('sheets'); // @ai
   const styles = useMemo(() => createStyles(theme), [theme]);
   const verseKey = `${surahNumber}:${ayahNumber}`;
   const [state, setState] = useState<FetchState>({kind: 'loading'});
@@ -66,34 +69,29 @@ export const CommunityReflectionsContent: React.FC<
   useEffect(() => {
     const provider = branding.communityReflectionsProvider;
     if (!provider) {
-      // Non-Qariah forks won't reach this screen (the row is gated on the
-      // provider being defined), but be defensive.
+      // Bayaan (no provider) never reaches this screen — the EXPLORE row is
+      // gated — but stay defensive.
       setState({kind: 'loaded', data: []});
       return;
     }
     let cancelled = false;
     setState({kind: 'loading'});
-    provider(surahNumber, ayahNumber, 'en')
+    // `locale` is intentionally omitted: stock Bayaan has no reliable BCP-47
+    // source (translation-edition ids don't map to language tags), so we lean
+    // on the contract's `undefined → provider's own default`.
+    provider(surahNumber, ayahNumber)
       .then(data => {
         if (cancelled) return;
         setState({kind: 'loaded', data});
       })
-      .catch(err => {
+      .catch(() => {
         if (cancelled) return;
         setState({kind: 'error'});
-        Sentry.captureException(err, {
-          tags: {
-            source: 'CommunityReflectionsContent',
-            verseKey,
-          },
-        });
       });
     return () => {
       cancelled = true;
     };
-  }, [surahNumber, ayahNumber, verseKey]);
-
-  const verseUrl = quranReflectVerseUrl(surahNumber, ayahNumber);
+  }, [surahNumber, ayahNumber]);
 
   return (
     <View style={styles.container}>
@@ -102,25 +100,18 @@ export const CommunityReflectionsContent: React.FC<
         contentContainerStyle={styles.scrollInner}
         showsVerticalScrollIndicator={false}
         bounces={true}>
-        {/* Verse badge */}
         <View style={styles.verseBadge}>
-          <Text style={styles.verseBadgeText}>{verseKey}</Text>
+          {/* @ai: the rewayah's own label when given */}
+          <Text style={styles.verseBadgeText}>{label ?? verseKey}</Text>
         </View>
 
-        {/* Arabic text */}
-        <SkiaVersePreview verseKey={verseKey} rewayah={rewayah} />
-
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* Content */}
         {state.kind === 'loading' ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={theme.colors.text} />
           </View>
         ) : state.kind === 'error' ? (
           <Text style={styles.emptyText}>
-            Couldn’t load reflections. Try again later.
+            {t('communityReflections.loadFailed')}
           </Text>
         ) : state.data.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -129,21 +120,19 @@ export const CommunityReflectionsContent: React.FC<
               size={moderateScale(28)}
               color={Color(theme.colors.text).alpha(0.2).toString()}
             />
-            <Text style={styles.emptyTitle}>No reflections yet</Text>
-            <Text style={styles.emptyText}>
-              Be the first to publish a reflection on this verse.
+            <Text style={styles.emptyTitle}>
+              {t('communityReflections.empty')}
             </Text>
           </View>
         ) : (
           <>
             <Text style={styles.sectionLabel}>
-              {state.data.length}{' '}
-              {state.data.length === 1 ? 'REFLECTION' : 'REFLECTIONS'}
+              {t('communityReflections.count', {count: state.data.length})}
             </Text>
             <View style={styles.reflectionList}>
               {state.data.map(r => (
                 <ReflectionRow
-                  key={String(r.id)}
+                  key={r.id}
                   reflection={r}
                   styles={styles}
                   theme={theme}
@@ -153,52 +142,34 @@ export const CommunityReflectionsContent: React.FC<
           </>
         )}
       </ScrollView>
-
-      {/* Footer — link to QR verse-feed page */}
-      {state.kind === 'loaded' && state.data.length > 0 && (
-        <View style={[styles.footer, {paddingBottom: verticalScale(16)}]}>
-          <Pressable
-            style={({pressed}) => [
-              styles.footerLink,
-              pressed && {opacity: 0.6},
-            ]}
-            onPress={() => openExternalUrl(verseUrl, 'QuranReflect')}
-            accessibilityRole="link"
-            accessibilityLabel="View all reflections on QuranReflect">
-            <Text style={styles.footerLinkText}>View all on QuranReflect</Text>
-            <Feather
-              name="external-link"
-              size={moderateScale(14)}
-              color={theme.colors.text}
-            />
-          </Pressable>
-        </View>
-      )}
     </View>
   );
 };
 
 interface ReflectionRowProps {
-  reflection: AyahReflection;
+  reflection: CommunityReflection;
   styles: ReturnType<typeof createStyles>;
   theme: Theme;
 }
 
 function ReflectionRow({reflection, styles, theme}: ReflectionRowProps) {
-  const author = useMemo(
-    () =>
-      authorLabel(reflection as unknown as Parameters<typeof authorLabel>[0]),
-    [reflection],
-  );
+  const {t} = useTranslation(['sheets', 'qariah']); // @ai
+  // Community-authored URL supplied by a fork's provider — only web schemes
+  // may reach Linking.openURL (blocks intent://, javascript:, file:, …).
+  const isWebUrl = /^https?:\/\//i.test(reflection.url);
   const handleOpen = useCallback(() => {
-    openExternalUrl(
-      `https://quranreflect.com/posts/${reflection.id}`,
-      'this reflection on QuranReflect',
-    );
-  }, [reflection.id]);
+    // Qariah: the label names the link in the "couldn't open" alert.
+    if (isWebUrl)
+      openExternalUrl(reflection.url, t('qariah:links.thisReflection'));
+  }, [isWebUrl, reflection.url, t]);
 
   return (
     <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={t('communityReflections.openLabel', {
+        author: reflection.author.name,
+      })}
+      disabled={!isWebUrl}
       style={({pressed}) => [
         styles.reflectionCard,
         pressed && styles.reflectionCardPressed,
@@ -206,13 +177,13 @@ function ReflectionRow({reflection, styles, theme}: ReflectionRowProps) {
       onPress={handleOpen}>
       <View style={styles.reflectionHeader}>
         <Text style={styles.authorName} numberOfLines={1}>
-          {author}
+          {reflection.author.name}
         </Text>
         {reflection.author.verified && (
           <Feather
             name="check-circle"
             size={moderateScale(12)}
-            color={theme.colors.primary}
+            color={Color(theme.colors.text).alpha(0.6).toString()}
           />
         )}
       </View>
@@ -269,11 +240,6 @@ const createStyles = (theme: Theme) =>
       color: Color(theme.colors.textSecondary).alpha(0.7).toString(),
       letterSpacing: 0.3,
     },
-    divider: {
-      height: 1,
-      backgroundColor: Color(theme.colors.text).alpha(0.06).toString(),
-      marginVertical: verticalScale(12),
-    },
     loadingContainer: {
       paddingVertical: verticalScale(40),
       alignItems: 'center',
@@ -296,12 +262,13 @@ const createStyles = (theme: Theme) =>
       color: Color(theme.colors.textSecondary).alpha(0.55).toString(),
       textAlign: 'center',
       lineHeight: moderateScale(19),
+      paddingVertical: verticalScale(40),
     },
     sectionLabel: {
       fontSize: moderateScale(10.5),
       fontFamily: 'Manrope-SemiBold',
       color: Color(theme.colors.textSecondary).alpha(0.5).toString(),
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2), // @ai
       textTransform: 'uppercase',
       marginBottom: verticalScale(10),
       paddingHorizontal: moderateScale(16),
@@ -353,24 +320,5 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(11.5),
       color: theme.colors.textSecondary,
       fontFamily: 'Manrope-Regular',
-    },
-    footer: {
-      paddingHorizontal: moderateScale(16),
-      paddingTop: verticalScale(10),
-      borderTopWidth: 1,
-      borderTopColor: Color(theme.colors.text).alpha(0.06).toString(),
-      alignItems: 'center',
-    },
-    footerLink: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: moderateScale(6),
-      paddingVertical: verticalScale(8),
-      paddingHorizontal: moderateScale(14),
-    },
-    footerLinkText: {
-      fontSize: moderateScale(13),
-      fontFamily: 'Manrope-SemiBold',
-      color: theme.colors.text,
     },
   });

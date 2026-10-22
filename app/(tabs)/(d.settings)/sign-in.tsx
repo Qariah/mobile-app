@@ -22,9 +22,11 @@ import {moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {useAuth} from '@/services/auth';
 import {useBottomInset} from '@/hooks/useBottomInset';
+import {useTranslation} from 'react-i18next';
 
 export default function SettingsSignIn() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'common']);
   const router = useRouter();
   const {status, lastError, signIn} = useAuth();
   const isWorking = status === 'loading';
@@ -50,12 +52,14 @@ export default function SettingsSignIn() {
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
       <View style={styles.content}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          Sign in to Qariah
+          {t('qariah:account.signInTitle')}
         </Text>
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          Sign in with your Quran Foundation account to restore your favorites
-          from the original Qariah app. We&apos;ll only ask for this once.
+          {t('qariah:signIn.settingsBody')}
         </Text>
+        {/* `lastError` is technical English ("State mismatch (possible
+         * CSRF)"); it stays in AuthContext for the sign-in telemetry. The
+         * user sees one localized sentence. */}
         {lastError ? (
           <View
             style={[
@@ -66,7 +70,7 @@ export default function SettingsSignIn() {
               },
             ]}>
             <Text style={[styles.errorText, {color: theme.colors.error}]}>
-              {lastError}
+              {t('qariah:auth.signInFailed')}
             </Text>
           </View>
         ) : null}
@@ -85,12 +89,12 @@ export default function SettingsSignIn() {
             (pressed || isWorking) && styles.ctaPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Sign in with Quran Foundation">
+          accessibilityLabel={t('qariah:signIn.withQF')}>
           {isWorking ? (
             <ActivityIndicator color={theme.colors.background} />
           ) : (
             <Text style={[styles.ctaText, {color: theme.colors.background}]}>
-              Sign in with Quran Foundation
+              {t('qariah:signIn.withQF')}
             </Text>
           )}
         </Pressable>
@@ -99,10 +103,10 @@ export default function SettingsSignIn() {
           style={styles.cancelButton}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Cancel sign-in">
+          accessibilityLabel={t('qariah:signIn.cancelA11y')}>
           <Text
             style={[styles.cancelText, {color: theme.colors.textSecondary}]}>
-            Cancel
+            {t('common:actions.cancel')}
           </Text>
         </Pressable>
       </View>

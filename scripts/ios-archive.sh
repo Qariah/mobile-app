@@ -1,7 +1,12 @@
 #!/bin/bash
 
 # iOS Archive and Upload Script
-# Usage: ./scripts/ios-archive.sh [--upload] [--beta|--prod|--public-beta] [-y]
+# Usage: ./scripts/ios-archive.sh [--upload|--dry-run] [--beta|--prod|--public-beta] [-y]
+#
+#   --dry-run      Run the pre-flights and the variant patch, print the
+#                  identity the archive would build (bundle ids, display
+#                  names, App Group), then exit. No pod install, no archive,
+#                  no upload. The EXIT trap restores and verifies the files.
 #
 # Variants:
 #   --beta         Internal beta: bundle id .beta suffix, BETA-banded icon,
@@ -49,8 +54,10 @@
 # Beta variants: pbxproj is patched in-place before xcodebuild (bundle ids,
 # app icon, display name — bundle id only for --beta), then restored via a
 # trap on EXIT — the working tree is left clean regardless of success or
-# failure. See CONTRIBUTING-QARIAH.md → "Beta TestFlight build" for the
-# one-time App Store Connect + provisioning portal setup.
+# failure. The trap verifies the restore and fails loudly when a beta
+# identity is left (TECH_DEBT #178). See CONTRIBUTING-QARIAH.md → "Beta
+# TestFlight build" for the one-time App Store Connect + provisioning portal
+# setup.
 
 set -e
 # Make `set -e` honor pipeline failures. Without `pipefail`, a failing
@@ -77,8 +84,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # is a perfectly ordinary way to call it. That call read the OTHER tree's branch
 # to choose prod-vs-beta and then patched THIS tree's files. `git -C "$REPO_ROOT"`
 # below closes the same gap for the branch read, and mirrors what
-# android-archive.sh:117 and android-upload-play.sh:311 have always done.
+# the `git -C "$REPO_ROOT"` calls in android-archive.sh and
+# android-upload-play.sh have always done.
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Refuse to run from a shell whose cwd is inside a DIFFERENT git checkout
+# (2026-09-27). An Android AAB build for one worktree, started from the main
+# checkout, derived the main checkout's commit count and wrote versionCode
+# 2428 / versionName 3.2.2 where 2027 / 3.2.1 was correct. generate-version.js
+# now runs git with `-C <its own repo>`, so the number no longer depends on
+# cwd; this guard stops the operator confusion that caused the mix-up. A cwd
+# outside any git checkout is allowed, because no other tree can be meant.
+SCRIPT_REPO_TOP="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+CWD_REPO_TOP="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$CWD_REPO_TOP" ] && [ "$CWD_REPO_TOP" != "$SCRIPT_REPO_TOP" ]; then
+    echo "FATAL: the shell is in a different checkout from this script." >&2
+    echo "  cwd checkout:    $CWD_REPO_TOP" >&2
+    echo "  script checkout: $SCRIPT_REPO_TOP" >&2
+    echo "  Run it from the checkout you want to build:" >&2
+    echo "    cd \"$SCRIPT_REPO_TOP\" && bash scripts/$(basename "${BASH_SOURCE[0]}") ..." >&2
+    exit 1
+fi
 cd "$REPO_ROOT"
 
 # Force UTF-8 locale for CocoaPods. Ruby 3.3 + CocoaPods 1.16.x raise
@@ -132,6 +158,7 @@ BETA=false
 PUBLIC_BETA=false
 PROD_OVERRIDE=false
 SKIP_CONFIRM=false
+DRY_RUN=false
 for arg in "$@"; do
     case $arg in
         --upload)
@@ -154,8 +181,17 @@ for arg in "$@"; do
             SKIP_CONFIRM=true
             shift
             ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
     esac
 done
+
+if [ "$DRY_RUN" = true ] && [ "$UPLOAD" = true ]; then
+    echo -e "${RED}❌ --dry-run and --upload are mutually exclusive.${NC}"
+    exit 1
+fi
 
 # Mutual-exclusion: any two of {--beta, --public-beta, --prod} → error.
 mutex_count=0
@@ -196,12 +232,109 @@ PROD_BUNDLE_ID="com.qariah.app"
 PROD_SHARE_BUNDLE_ID="com.qariah.app.share-extension"
 BETA_BUNDLE_ID="${PROD_BUNDLE_ID}.beta"
 BETA_SHARE_BUNDLE_ID="${PROD_BUNDLE_ID}.beta.share-extension"
+# Sprint 46 (Pass B, B2): the widget extension (@bacons/apple-targets names it
+# `<app id>.widget`). An extension's bundle id must start with its app's id,
+# so --beta rewrites it with the app's.
+PROD_WIDGET_BUNDLE_ID="${PROD_BUNDLE_ID}.widget"
+BETA_WIDGET_BUNDLE_ID="${BETA_BUNDLE_ID}.widget"
+BETA_DISPLAY_NAME="Qariah Beta"
+PUBLIC_BETA_DISPLAY_NAME="Qariah PB"
 
 # Absolute, because the EXIT trap below restores these files and a trap can fire
 # from a different working directory than the one that set it (a failing
 # `cd ios && pod install` used to leave exactly that state, and the leftover
 # beta-patched pbxproj is a documented recovery step in CLAUDE.md).
 PBXPROJ="$REPO_ROOT/ios/Qariah.xcodeproj/project.pbxproj"
+ICON_DIR="$REPO_ROOT/ios/Qariah/Images.xcassets/AppIcon.appiconset"
+INFO_PLIST="$REPO_ROOT/ios/Qariah/Info.plist"
+ICON_LIGHT="$ICON_DIR/App-Icon-1024x1024@1x.png"
+ICON_DARK="$ICON_DIR/App-Icon-dark-1024x1024@1x.png"
+ICON_TINTED="$ICON_DIR/App-Icon-tinted-1024x1024@1x.png"
+# Sprint 47 (Pass C, Task 7): the home-screen name in each device language.
+# Expo writes ios/Qariah/Supporting/<lang>.lproj/InfoPlist.strings from the
+# app.config.ts `locales` files (i18n/native/ar.json: "قارئة"). A device in
+# that language shows this name instead of CFBundleDisplayName in Info.plist,
+# so the variant patch sets it too. The variant name stays English in every
+# language (the review pack, native-strings.csv rows 2 and 3).
+LOCALIZED_NAME_FILES=()
+for file in "$REPO_ROOT"/ios/Qariah/Supporting/*.lproj/InfoPlist.strings; do
+    if [ -f "$file" ] && grep -q '^CFBundleDisplayName = ' "$file"; then
+        LOCALIZED_NAME_FILES+=("$file")
+    fi
+done
+# The files the variant patch rewrites, in restore order.
+VARIANT_FILES=("$INFO_PLIST" "${LOCALIZED_NAME_FILES[@]}" "$ICON_TINTED" "$ICON_DARK" "$ICON_LIGHT" "$PBXPROJ")
+# The App Group files (Sprint 46, B2): see check_app_groups below.
+APP_ENTITLEMENTS="$REPO_ROOT/ios/Qariah/Qariah.entitlements"
+SHARE_ENTITLEMENTS="$REPO_ROOT/ios/ShareExtension/ShareExtension.entitlements"
+WIDGET_ENTITLEMENTS="$REPO_ROOT/ios/.targets/BayaanWidgetsExtension/generated.entitlements"
+WIDGET_INFO_PLIST="$REPO_ROOT/targets/widgets/Info.plist"
+RECOVERY_CMD="git -C \"$REPO_ROOT\" checkout -- ios/Qariah.xcodeproj/project.pbxproj ios/Qariah/Info.plist ios/Qariah/Supporting ios/Qariah/Images.xcassets/AppIcon.appiconset"
+
+# TECH_DEBT #178 (a), Sprint 46. Prints one line for each sign of a beta
+# identity in the tree: a leftover backup, a beta bundle id, a beta display
+# name, or a variant-banded icon. Empty output = the prod identity.
+identity_problems() {
+    local file variant
+    for file in "${VARIANT_FILES[@]}"; do
+        [ -f "$file.prod.bak" ] && echo "  - leftover backup ${file#$REPO_ROOT/}.prod.bak (a run stopped before its EXIT trap)"
+    done
+    grep -qF "$BETA_BUNDLE_ID" "$PBXPROJ" 2>/dev/null &&
+        echo "  - ios/Qariah.xcodeproj/project.pbxproj has the beta bundle id $BETA_BUNDLE_ID"
+    grep -qE "INFOPLIST_KEY_CFBundleDisplayName = \"?($BETA_DISPLAY_NAME|$PUBLIC_BETA_DISPLAY_NAME)\"?;" "$PBXPROJ" 2>/dev/null &&
+        echo "  - ios/Qariah.xcodeproj/project.pbxproj has a beta widget display name"
+    local display
+    display="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST" 2>/dev/null || true)"
+    if [ "$display" = "$BETA_DISPLAY_NAME" ] || [ "$display" = "$PUBLIC_BETA_DISPLAY_NAME" ]; then
+        echo "  - ios/Qariah/Info.plist CFBundleDisplayName is \"$display\""
+    fi
+    for file in "${LOCALIZED_NAME_FILES[@]}"; do
+        grep -qE "^CFBundleDisplayName = \"($BETA_DISPLAY_NAME|$PUBLIC_BETA_DISPLAY_NAME)\";" "$file" 2>/dev/null &&
+            echo "  - ${file#$REPO_ROOT/} has a beta CFBundleDisplayName"
+    done
+    for variant in beta public-beta; do
+        cmp -s "$ICON_LIGHT" "$REPO_ROOT/assets/branding/ios-light-$variant.png" &&
+            echo "  - the light AppIcon is the $variant icon"
+        cmp -s "$ICON_DARK" "$REPO_ROOT/assets/branding/ios-dark-$variant.png" &&
+            echo "  - the dark AppIcon is the $variant icon"
+        cmp -s "$ICON_TINTED" "$REPO_ROOT/assets/branding/ios-tinted-$variant.png" &&
+            echo "  - the tinted AppIcon is the $variant icon"
+    done
+    return 0
+}
+
+# Sprint 46 (B2): the app, the share extension and the widget must share one
+# App Group, or the widget reads an empty container (no snapshot, no command
+# queue). The app reads its BayaanAppGroup Info.plist key. The widget reads
+# its own BayaanAppGroup key, which expands the BAYAAN_APP_GROUP build setting
+# (plugins/withBayaanWidgets.js). Without that key the widget derives
+# `group.<its bundle id minus .widget>`, which is `group.com.qariah.app.beta`
+# after the --beta rewrite. Prints one line for each mismatch.
+check_app_groups() {
+    local group
+    group="$(/usr/libexec/PlistBuddy -c 'Print :BayaanAppGroup' "$INFO_PLIST" 2>/dev/null || true)"
+    if [ -z "$group" ]; then
+        echo "  - ios/Qariah/Info.plist has no BayaanAppGroup key"
+        return 0
+    fi
+    grep -qF "<string>$group</string>" "$APP_ENTITLEMENTS" 2>/dev/null ||
+        echo "  - ios/Qariah/Qariah.entitlements does not allow $group"
+    if [ -f "$SHARE_ENTITLEMENTS" ]; then
+        grep -qF "<string>$group</string>" "$SHARE_ENTITLEMENTS" ||
+            echo "  - ios/ShareExtension/ShareExtension.entitlements does not allow $group"
+    fi
+    if grep -qF 'INFOPLIST_FILE = ../targets/widgets/Info.plist;' "$PBXPROJ"; then
+        grep -qF "<string>$group</string>" "$WIDGET_ENTITLEMENTS" 2>/dev/null ||
+            echo "  - the widget entitlements do not allow $group"
+        grep -qF '<string>$(BAYAAN_APP_GROUP)</string>' "$WIDGET_INFO_PLIST" 2>/dev/null ||
+            echo "  - targets/widgets/Info.plist has no BayaanAppGroup = \$(BAYAAN_APP_GROUP) key"
+        local settings
+        settings="$(grep -E '^[[:space:]]*BAYAAN_APP_GROUP = ' "$PBXPROJ" | sed -E 's/^[[:space:]]*BAYAAN_APP_GROUP = "?([^";]*)"?;/\1/' | sort -u)"
+        [ "$settings" = "$group" ] ||
+            echo "  - the widget BAYAAN_APP_GROUP build setting is \"${settings:-<missing>}\", not $group (run prebuild)"
+    fi
+    return 0
+}
 VARIANT_SUFFIX=""
 if [ "$BETA" = true ]; then
     VARIANT_SUFFIX="beta-"
@@ -249,7 +382,7 @@ fi
 # confirm too, but the prod prompt is intentionally extra-noisy because
 # a stray --prod from a sprint branch (or a forgotten branch switch
 # before running) could ship untested code to App Store reviewers.
-if [ "$UPLOAD" = true ] && [ "$SKIP_CONFIRM" = false ]; then
+if [ "$UPLOAD" = true ] && [ "$SKIP_CONFIRM" = false ] && [ "$DRY_RUN" = false ]; then
     if [ "$BETA" = true ]; then
         echo
         echo -e "${YELLOW}🚨 About to UPLOAD to TestFlight as BETA (${BETA_BUNDLE_ID}).${NC}"
@@ -358,12 +491,28 @@ if [ "${VERIFY_FIX:-}" = "1" ] || [ "${VERIFY_FIX:-}" = "true" ]; then
     }
 else
     echo -e "\n${YELLOW}🔍 Verifying version sync (check-only, iOS)...${NC}"
-    node "$SCRIPT_DIR/verify-version-sync.js" --platform=ios || {
-        echo -e "${RED}❌ Version drift detected. Review output above, then either:${NC}"
-        echo -e "${RED}   - re-run with VERIFY_FIX=1 ${0} to auto-patch and archive in one shot, OR${NC}"
-        echo -e "${RED}   - fix manually and re-run ${0}.${NC}"
-        exit 1
-    }
+    if ! node "$SCRIPT_DIR/verify-version-sync.js" --platform=ios; then
+        if [ "$DRY_RUN" = true ]; then
+            # A dry run does not patch version files. The real run fixes the
+            # drift with VERIFY_FIX=1.
+            echo -e "${YELLOW}⚠️  Dry run: version drift (above). The real archive needs VERIFY_FIX=1.${NC}"
+        else
+            echo -e "${RED}❌ Version drift detected. Review output above, then either:${NC}"
+            echo -e "${RED}   - re-run with VERIFY_FIX=1 ${0} to auto-patch and archive in one shot, OR${NC}"
+            echo -e "${RED}   - fix manually and re-run ${0}.${NC}"
+            exit 1
+        fi
+    fi
+fi
+
+# Bundled fallback catalog freshness. The app shows assets/data/catalog.json on
+# a first launch with an empty cache; the ops console writes only the live R2
+# catalog, so the bundle goes stale unless it is refreshed before a release.
+# Warning only: an offline build still runs.
+echo -e "\n${YELLOW}🔍 Checking the bundled catalog against the live catalog...${NC}"
+if ! node "$SCRIPT_DIR/sync-bundled-catalog.mjs" --check; then
+    echo -e "${YELLOW}⚠️  assets/data/catalog.json is not the live catalog, or the check could not run (see above).${NC}"
+    echo -e "${YELLOW}   Before a release build: node scripts/sync-bundled-catalog.mjs --apply, then commit it.${NC}"
 fi
 
 # Sprint 14 (TECH_DEBT #28): if APPLE_TEAM_ID is set in env (sourced from
@@ -377,6 +526,19 @@ TEAM_OVERRIDE_ARGS=()
 if [ -n "$APPLE_TEAM_ID" ]; then
     TEAM_OVERRIDE_ARGS+=("DEVELOPMENT_TEAM=$APPLE_TEAM_ID")
     echo -e "${YELLOW}🔑 Forcing DEVELOPMENT_TEAM=$APPLE_TEAM_ID for archive + export${NC}"
+fi
+
+# TECH_DEBT #178 (a), Sprint 46: refuse to start on a tree that still holds a
+# beta identity. A backup taken from such a tree would "restore" the beta
+# identity, and a prod archive would ship it.
+LEFTOVER="$(identity_problems)"
+if [ -n "$LEFTOVER" ]; then
+    echo -e "${RED}❌ The working tree still holds a beta identity:${NC}"
+    echo "$LEFTOVER"
+    echo -e "${RED}   Restore the prod identity first, then re-run:${NC}"
+    echo "   $RECOVERY_CMD"
+    echo "   (or move each leftover *.prod.bak back over its file; re-run VERIFY_FIX=1 if needed)"
+    exit 1
 fi
 
 # Variant patching: --beta swaps bundle id + icon + display name; --public-beta
@@ -403,32 +565,53 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
     fi
     # Sprint 20: visually distinguish beta variants so testers can tell
     # them apart from prod on the home screen.
-    #   1. pbxproj bundle IDs (app + share extension)   — BETA only
+    #   1. pbxproj bundle IDs (app + share + widget extensions) — BETA only
     #   2. App icon (light/dark/tinted) → variant-banded — both
-    #   3. CFBundleDisplayName → "Qariah Beta"/"Qariah PB" — both
-    ICON_DIR="$REPO_ROOT/ios/Qariah/Images.xcassets/AppIcon.appiconset"
-    INFO_PLIST="$REPO_ROOT/ios/Qariah/Info.plist"
-    ICON_LIGHT="$ICON_DIR/App-Icon-1024x1024@1x.png"
-    ICON_DARK="$ICON_DIR/App-Icon-dark-1024x1024@1x.png"
-    ICON_TINTED="$ICON_DIR/App-Icon-tinted-1024x1024@1x.png"
+    #   3. CFBundleDisplayName → "Qariah Beta"/"Qariah PB" (app and widget) — both
+
+    # TECH_DEBT #178 (a): the checksums of the prod files, so the trap can
+    # prove that it put back exactly these bytes.
+    PRE_PATCH_SUMS="$(shasum -a 256 "${VARIANT_FILES[@]}")"
+
+    # Restores every backup, then VERIFIES the result (TECH_DEBT #178 a). The
+    # old trap printed "Restored" even when it restored nothing. A failed
+    # verification exits 1 and prints the recovery command; it never runs
+    # `git checkout` itself, because the tree can hold a VERIFY_FIX version
+    # sync that the archive needs.
+    restore_variant_identity() {
+        local status=$?
+        local file
+        for file in "${VARIANT_FILES[@]}"; do
+            if [ -f "$file.prod.bak" ]; then
+                mv -f "$file.prod.bak" "$file" || true
+            fi
+        done
+        rm -f "$PBXPROJ.tmp"
+        local problems now
+        local nl=$'\n'
+        problems="$(identity_problems)"
+        now="$(shasum -a 256 "${VARIANT_FILES[@]}" 2>/dev/null || true)"
+        if [ "$now" != "$PRE_PATCH_SUMS" ]; then
+            problems="${problems}${problems:+$nl}  - a restored file is not the same as before the patch"
+        fi
+        if [ -n "$problems" ]; then
+            echo -e "${RED}❌ The prod identity was NOT restored:${NC}"
+            echo "$problems"
+            echo -e "${RED}   Do not commit ios/ in this state. Recover with:${NC}"
+            echo "   $RECOVERY_CMD"
+            echo "   (then re-run VERIFY_FIX=1 if the archive needs the version sync again)"
+            exit 1
+        fi
+        echo -e "${YELLOW}🔁 Restored and verified the prod identity (pbxproj + Info.plist + icons).${NC}"
+        exit "$status"
+    }
+    trap restore_variant_identity EXIT
 
     # Take all backups upfront so the trap covers every artifact even if a
     # later patch step fails mid-stream.
-    cp "$PBXPROJ" "$PBXPROJ.prod.bak"
-    cp "$ICON_LIGHT" "$ICON_LIGHT.prod.bak"
-    cp "$ICON_DARK" "$ICON_DARK.prod.bak"
-    cp "$ICON_TINTED" "$ICON_TINTED.prod.bak"
-    cp "$INFO_PLIST" "$INFO_PLIST.prod.bak"
-
-    # shellcheck disable=SC2064
-    trap "
-        [ -f '$INFO_PLIST.prod.bak' ] && mv '$INFO_PLIST.prod.bak' '$INFO_PLIST'
-        [ -f '$ICON_TINTED.prod.bak' ] && mv '$ICON_TINTED.prod.bak' '$ICON_TINTED'
-        [ -f '$ICON_DARK.prod.bak' ] && mv '$ICON_DARK.prod.bak' '$ICON_DARK'
-        [ -f '$ICON_LIGHT.prod.bak' ] && mv '$ICON_LIGHT.prod.bak' '$ICON_LIGHT'
-        [ -f '$PBXPROJ.prod.bak' ] && mv '$PBXPROJ.prod.bak' '$PBXPROJ'
-        echo -e '${YELLOW}🔁 Restored prod identity (pbxproj + Info.plist + icons).${NC}'
-    " EXIT
+    for file in "${VARIANT_FILES[@]}"; do
+        cp "$file" "$file.prod.bak"
+    done
 
     if [ "$BETA" = true ]; then
         if ! grep -q "PRODUCT_BUNDLE_IDENTIFIER = $PROD_BUNDLE_ID;" "$PBXPROJ"; then
@@ -436,12 +619,24 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
             echo -e "${RED}   If you renamed the prod bundle id, update PROD_BUNDLE_ID at the top of this script.${NC}"
             exit 1
         fi
+        # The widget id is unquoted in the pbxproj. The app pattern does not
+        # match it, because the app pattern ends at the `;`.
         sed -i.tmp \
             -e "s|PRODUCT_BUNDLE_IDENTIFIER = ${PROD_BUNDLE_ID};|PRODUCT_BUNDLE_IDENTIFIER = ${BETA_BUNDLE_ID};|g" \
             -e "s|PRODUCT_BUNDLE_IDENTIFIER = \"${PROD_SHARE_BUNDLE_ID}\";|PRODUCT_BUNDLE_IDENTIFIER = \"${BETA_SHARE_BUNDLE_ID}\";|g" \
+            -e "s|PRODUCT_BUNDLE_IDENTIFIER = ${PROD_WIDGET_BUNDLE_ID};|PRODUCT_BUNDLE_IDENTIFIER = ${BETA_WIDGET_BUNDLE_ID};|g" \
             "$PBXPROJ"
         rm -f "$PBXPROJ.tmp"
-        echo -e "${YELLOW}🧬 Patched $PBXPROJ:${NC} ${PROD_BUNDLE_ID} → ${BETA_BUNDLE_ID} (+ share extension)"
+        # Every target id must now start with the beta app id. Xcode rejects
+        # an archive whose extension id does not start with its app's id.
+        KEPT_PROD_IDS="$(grep 'PRODUCT_BUNDLE_IDENTIFIER' "$PBXPROJ" | grep -F "$PROD_BUNDLE_ID" | grep -vF "$BETA_BUNDLE_ID" || true)"
+        if [ -n "$KEPT_PROD_IDS" ]; then
+            echo -e "${RED}❌ These targets keep a prod bundle id after the beta patch:${NC}"
+            echo "$KEPT_PROD_IDS"
+            echo -e "${RED}   Add their ids to the beta rewrite in this script.${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}🧬 Patched $PBXPROJ:${NC} ${PROD_BUNDLE_ID} → ${BETA_BUNDLE_ID} (+ share and widget extensions)"
     fi
 
     cp "$REPO_ROOT/assets/branding/ios-light-${ICON_VARIANT_SUFFIX}.png" "$ICON_LIGHT"
@@ -450,7 +645,41 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
     echo -e "${YELLOW}🎨 Swapped AppIcon to ${ICON_VARIANT_SUFFIX}-banded variant${NC}"
 
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${DISPLAY_NAME}" "$INFO_PLIST"
-    echo -e "${YELLOW}🏷️  Patched CFBundleDisplayName -> ${DISPLAY_NAME}${NC}"
+    # The widget extension's name comes from a build setting (apple-targets
+    # `displayName`). Widget copy reads it at runtime (AppBrand.name).
+    sed -i.tmp \
+        -e "s|INFOPLIST_KEY_CFBundleDisplayName = [^;]*;|INFOPLIST_KEY_CFBundleDisplayName = \"${DISPLAY_NAME}\";|g" \
+        "$PBXPROJ"
+    rm -f "$PBXPROJ.tmp"
+    # Sprint 47 (Task 7): the per-language names (see LOCALIZED_NAME_FILES).
+    for file in "${LOCALIZED_NAME_FILES[@]}"; do
+        sed -i.tmp -e "s|^CFBundleDisplayName = \".*\";|CFBundleDisplayName = \"${DISPLAY_NAME}\";|" "$file"
+        rm -f "$file.tmp"
+    done
+    echo -e "${YELLOW}🏷️  Patched CFBundleDisplayName -> ${DISPLAY_NAME} (app + widget + ${#LOCALIZED_NAME_FILES[@]} localized)${NC}"
+fi
+
+# Sprint 46 (B2): one App Group for the app and its extensions, for every
+# variant (see check_app_groups above).
+GROUP_PROBLEMS="$(check_app_groups)"
+if [ -n "$GROUP_PROBLEMS" ]; then
+    echo -e "${RED}❌ The app and its extensions do not share one App Group:${NC}"
+    echo "$GROUP_PROBLEMS"
+    exit 1
+fi
+APP_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :BayaanAppGroup' "$INFO_PLIST")"
+echo -e "  App Group: ${GREEN}$APP_GROUP${NC} (app, share extension and widget)"
+
+if [ "$DRY_RUN" = true ]; then
+    echo -e "\n${YELLOW}🧪 Dry run: the identity this archive would build:${NC}"
+    grep 'PRODUCT_BUNDLE_IDENTIFIER' "$PBXPROJ" | sed -E 's/^[[:space:]]+//' | sort | uniq -c
+    grep 'INFOPLIST_KEY_CFBundleDisplayName' "$PBXPROJ" | sed -E 's/^[[:space:]]+//' | sort | uniq -c
+    echo "      app CFBundleDisplayName = $(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")"
+    for file in "${LOCALIZED_NAME_FILES[@]}"; do
+        echo "      ${file#$REPO_ROOT/ios/Qariah/Supporting/}: $(cat "$file")"
+    done
+    echo -e "${YELLOW}   No pod install, no archive, no upload.${NC}"
+    exit 0
 fi
 
 # Clean build folder (export IPA only — archive lives in Xcode-standard location)
@@ -461,8 +690,19 @@ mkdir -p build/
 # Run pod install
 echo -e "\n${YELLOW}📦 Running pod install...${NC}"
 # In a subshell so a pod-install failure cannot leave the script -- and its EXIT
-# trap -- running from ios/ instead of the repo root.
-(cd "$REPO_ROOT/ios" && pod install)
+# trap -- running from ios/ instead of the repo root. TECH_DEBT #178 (b): stop
+# here when pod install fails, with the reason, instead of a misleading
+# "xcworkspace does not exist" error from xcodebuild later. The explicit
+# check does not depend on `set -e` rules for a compound command.
+if ! (cd "$REPO_ROOT/ios" && pod install); then
+    echo -e "${RED}❌ pod install failed (output above). Fix CocoaPods first; not archiving.${NC}"
+    echo -e "${RED}   A pod 'differs from Pods/Local Podspecs' error: check node_modules against package-lock.json first (npm ci).${NC}"
+    exit 1
+fi
+if [ ! -d "$WORKSPACE" ]; then
+    echo -e "${RED}❌ $WORKSPACE is missing after pod install; not archiving.${NC}"
+    exit 1
+fi
 
 # Archive
 # `-allowProvisioningUpdates` lets xcodebuild refresh provisioning profiles for

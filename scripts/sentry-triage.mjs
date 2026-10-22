@@ -52,17 +52,29 @@
 // is embedded as a second dedup marker so a re-split of the same signal under a
 // new shortId folds instead of re-filing. `fatal` is floored at `high`.
 //
+// LAB DEVICES. The agent test phone runs internal betas with
+// environment=production, so it sends the allow-listed warning messages in bulk
+// (GitHub #646: 72 of 72 events of QARIAHV2-3S were lab devices). A message issue
+// whose events ALL come from lab devices (scripts/lib/lab-exclusion.mjs) is
+// skipped: no issue, no label. A mixed one is filed with a "Lab devices: n of m
+// events" line. A crash (fatal/error) is never gated. See lib/triage-lab-gate.mjs.
+//
 // SURFACED TAGS. The app already collects rich init/OOM context
 // (`slow_init_service`, `boot_step`, `device_tier`, `is_low_ram`, `app_memory`
 // PSS) but the bot never showed it. These now render in the issue body for the
 // cold-start / init / OOM categories, so the cold-start answer (Tafseer DB) and
 // the OOM memory state aren't buried.
 
-import {execFileSync} from 'node:child_process';
 import crypto from 'node:crypto';
-import {writeFileSync, mkdtempSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {writeFileSync} from 'node:fs';
+import {createSentryClient, sentryConfig} from './lib/sentry-client.mjs';
+import {
+  createIssue,
+  ensureLabels,
+  listLaneIssues,
+  markersIn,
+} from './lib/triage-common.mjs';
+import {applyLabGate, isLabGated} from './lib/triage-lab-gate.mjs';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -87,14 +99,8 @@ if (flag('help')) {
   process.exit(0);
 }
 
-const TOKEN = process.env.SENTRY_READ_TOKEN;
-const ORG = process.env.SENTRY_ORG || 'qariah';
-const PROJECT = process.env.SENTRY_PROJECT || 'qariahv2';
-const HOST = (process.env.SENTRY_REGION_HOST || 'https://de.sentry.io').replace(
-  /\/$/,
-  '',
-);
-const GH_REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
+const SENTRY = sentryConfig();
+const {token: TOKEN, org: ORG, project: PROJECT} = SENTRY;
 
 const DRY_RUN = flag('dry-run');
 // Sentry's free plan only accepts these stats periods. Clamp anything else
@@ -300,28 +306,25 @@ const KNOWLEDGE = [
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function sentry(path) {
-  const url = `${HOST}/api/0${path}`;
-  const res = await fetch(url, {headers: {Authorization: `Bearer ${TOKEN}`}});
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Sentry ${res.status} on ${path}: ${body.slice(0, 300)}`);
-  }
-  return res.json();
-}
+const sentry = createSentryClient(SENTRY);
 
-function gh(args, {input} = {}) {
-  try {
-    return execFileSync('gh', args, {
-      encoding: 'utf8',
-      input,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (e) {
-    const msg = (e.stderr || e.stdout || e.message || '').toString();
-    throw new Error(`gh ${args.join(' ')} failed: ${msg.slice(0, 400)}`);
+// One Sentry tag breakdown: every top value (Sentry returns at most 10) and the
+// number of events that carry the tag. Cached, so the lab gate and the enrich
+// step share one request for the `device` tag. A failed request throws and is
+// not cached; each caller decides what "unknown" means.
+const tagCache = new Map();
+async function fetchTag(issueId, key) {
+  const k = `${issueId}:${key}`;
+  if (!tagCache.has(k)) {
+    const t = await sentry(
+      `/organizations/${ORG}/issues/${issueId}/tags/${encodeURIComponent(key)}/?statsPeriod=${WINDOW}`,
+    );
+    tagCache.set(k, {
+      values: (t.topValues || []).map(v => ({value: v.value, count: v.count})),
+      total: t.totalValues,
+    });
   }
+  return tagCache.get(k);
 }
 
 const haystack = i =>
@@ -377,7 +380,7 @@ function topTagLine(tags, key) {
 // Categories whose init/OOM context tags are worth surfacing.
 const SHOW_INIT_TAGS = /cold-start|splash|init|hang|oom|memory|native crash/i;
 
-function fmtIssueBody(i, tags, triage, group) {
+function fmtIssueBody(i, tags, triage, group, lab) {
   const permalink = i.permalink || `https://${ORG}.sentry.io/issues/${i.id}/`;
   const sig = signature(i);
 
@@ -426,7 +429,7 @@ ${collapsedBlock}
 - **Environment:** ${topTagLine(tags, 'environment')}
 - **Release:** ${topTagLine(tags, 'release')}
 - **OS:** ${topTagLine(tags, 'os')}
-- **Device:** ${topTagLine(tags, 'device')}
+- **Device:** ${topTagLine(tags, 'device')}${lab ? `\n- **Lab devices:** ${lab.lab} of ${lab.total} events come from our own test devices (the user count above includes them)` : ''}
 ${initTags ? `\n### Init / memory context (app probe)\n${initTags}\n` : ''}
 ### Triage
 - **Category:** ${triage.category}
@@ -490,37 +493,6 @@ function signature(i) {
     .slice(0, 16);
 }
 
-function ensureLabels(labels) {
-  if (DRY_RUN) return;
-  const palette = {
-    sentry: '5319e7',
-    bug: 'd73a4a',
-    'severity:critical': 'b60205',
-    'severity:high': 'd93f0b',
-    'severity:medium': 'fbca04',
-    'severity:low': 'c2e0c6',
-    android: '3ddc84',
-    ios: 'a2d2ff',
-    'user-impacting': 'e11d21',
-  };
-  for (const l of labels) {
-    try {
-      gh([
-        'label',
-        'create',
-        l,
-        '--repo',
-        GH_REPO,
-        '--color',
-        palette[l] || 'ededed',
-        '--force',
-      ]);
-    } catch {
-      /* label exists / race — fine */
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -557,9 +529,11 @@ async function main() {
   // 3. Dedup against already-filed GitHub issues (by embedded marker / shortId).
   // Ensure the `sentry` label exists first, so the `--label` filter below
   // works on the very first run (when no issue has created it yet).
-  if (!DRY_RUN)
-    ensureLabels([
-      LABEL,
+  // Make the labels first. listLaneIssues() makes the `sentry` label itself, so
+  // its label filter works on the very first run. In a real run it exits when
+  // it cannot list.
+  ensureLabels(
+    [
       'bug',
       'severity:critical',
       'severity:high',
@@ -568,52 +542,39 @@ async function main() {
       'android',
       'ios',
       'user-impacting',
-    ]);
-  let alreadyFiled = new Set(); // shortIds
-  let alreadyFiledSigs = new Set(); // signal signatures
-  let alreadyFiledTokens = new Set(); // signal tokens (from filed-issue bodies)
-  try {
-    const existing = JSON.parse(
-      gh([
-        'issue',
-        'list',
-        '--repo',
-        GH_REPO,
-        '--label',
-        LABEL,
-        '--state',
-        'all',
-        '--limit',
-        '500',
-        '--json',
-        'title,body',
-      ]),
-    );
-    for (const e of existing) {
-      const blob = `${e.title}\n${e.body || ''}`;
-      const m = blob.match(/QARIAHV2-[A-Z0-9]+/g);
-      if (m) m.forEach(id => alreadyFiled.add(id));
-      const ms = blob.match(new RegExp(`${SIG_PREFIX}([^\\s>]+)`, 'g'));
-      if (ms) ms.forEach(s => alreadyFiledSigs.add(s.slice(SIG_PREFIX.length)));
-    }
-  } catch (e) {
-    console.warn(
-      `  ⚠ could not list existing GitHub issues for dedup: ${e.message}`,
-    );
-    if (!DRY_RUN) {
-      console.error('  refusing to file without a working dedup check.');
-      process.exit(1);
-    }
+    ],
+    DRY_RUN,
+  );
+  const existing = listLaneIssues(LABEL, {dryRun: DRY_RUN, limit: 500});
+  const alreadyFiled = new Set(); // shortIds
+  const alreadyFiledSigs = markersIn(existing, SIG_PREFIX); // signal signatures
+  const alreadyFiledTokens = new Set(); // signal tokens (from filed-issue bodies)
+  for (const e of existing) {
+    const m = `${e.title}\n${e.body || ''}`.match(/QARIAHV2-[A-Z0-9]+/g);
+    if (m) m.forEach(id => alreadyFiled.add(id));
   }
   // A filed issue's signature covers any not-yet-seen shortId of the same signal.
   for (const sig of alreadyFiledSigs) alreadyFiledTokens.add(sig);
 
+  const freshUnchecked = filtered.filter(
+    i => !alreadyFiled.has(i.shortId) && !alreadyFiledSigs.has(signature(i)),
+  );
+  // 3a. LAB GATE — a purpose-built MESSAGE signal whose events all come from our
+  //     own test devices is not a user problem (GitHub #646). Crashes pass
+  //     through unchanged. Runs before the collapse and the --max cap, so a
+  //     lab-only issue neither adds to a group's reach nor takes a cap slot.
+  const {kept: freshRaw, shares: labShares} = await applyLabGate(
+    freshUnchecked,
+    {
+      gated: i => isLabGated(i, MESSAGE_ALLOWLIST.test(haystack(i))),
+      fetchDevice: i => fetchTag(i.id, 'device'),
+      log: console.log,
+    },
+  );
+
   // 3b. SIGNAL-TOKEN COLLAPSE — fold the N-shortIds-for-one-message split into
   //     ONE logical signal. Group fresh issues by signalToken, keep the
   //     highest-reach representative, sum the reach, and remember the members.
-  const freshRaw = filtered.filter(
-    i => !alreadyFiled.has(i.shortId) && !alreadyFiledSigs.has(signature(i)),
-  );
   const byToken = new Map();
   for (const i of freshRaw) {
     const tok = signalToken(i);
@@ -691,12 +652,7 @@ async function main() {
     const tags = {};
     for (const key of TAG_KEYS) {
       try {
-        const t = await sentry(
-          `/organizations/${ORG}/issues/${i.id}/tags/${encodeURIComponent(key)}/?statsPeriod=${WINDOW}`,
-        );
-        tags[key] = (t.topValues || [])
-          .slice(0, 5)
-          .map(v => ({value: v.value, count: v.count}));
+        tags[key] = (await fetchTag(i.id, key)).values.slice(0, 5);
       } catch {
         tags[key] = [];
       }
@@ -710,7 +666,16 @@ async function main() {
       },
       group?.users,
     );
-    candidates.push({issue: i, tags, triage, group});
+    // Lab events of a gated message signal, summed over the collapsed members.
+    let lab = null;
+    for (const m of group?.members || [i]) {
+      const share = labShares.get(m.shortId);
+      if (!share) continue;
+      lab = lab || {lab: 0, total: 0};
+      lab.lab += share.lab;
+      lab.total += share.total;
+    }
+    candidates.push({issue: i, tags, triage, group, lab});
   }
 
   if (EMIT) {
@@ -735,8 +700,7 @@ async function main() {
 
   // 6. File.
   let filed = 0;
-  const tmp = mkdtempSync(join(tmpdir(), 'sentry-triage-'));
-  for (const {issue: i, tags, triage, group} of candidates) {
+  for (const {issue: i, tags, triage, group, lab} of candidates) {
     // A collapsed signal can span platforms — union them across members.
     const memberPlat = new Set(triage.platforms);
     for (const m of group?.members || []) {
@@ -760,7 +724,7 @@ async function main() {
         .trim()
         .slice(0, 140);
     const title = `[Sentry ${i.shortId}] ${titleText}`;
-    const body = fmtIssueBody(i, tags, triage, group);
+    const body = fmtIssueBody(i, tags, triage, group, lab);
 
     if (DRY_RUN) {
       console.log('\n' + '─'.repeat(72));
@@ -776,20 +740,8 @@ async function main() {
       continue;
     }
 
-    ensureLabels(labels);
-    const bodyFile = join(tmp, `${i.shortId}.md`);
-    writeFileSync(bodyFile, body);
-    const url = gh([
-      'issue',
-      'create',
-      '--repo',
-      GH_REPO,
-      '--title',
-      title,
-      '--body-file',
-      bodyFile,
-      ...labels.flatMap(l => ['--label', l]),
-    ]);
+    ensureLabels(labels, false);
+    const {url} = createIssue({title, body, labels});
     console.log(`  ✅ filed ${i.shortId} → ${url}`);
     filed++;
   }

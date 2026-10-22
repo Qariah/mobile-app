@@ -58,16 +58,38 @@ import {showToast} from '@/utils/toastUtils';
 // The body carries the anonymous diagnostic block, so a report arrives with the
 // debug ID that finds the sender's telemetry in Sentry and PostHog. The user
 // sees the text in the composer before they send it — it is never hidden.
-const openSupportEmail = async (subjectSuffix: string): Promise<void> => {
-  const subject = encodeURIComponent(`${branding.appName} ${subjectSuffix}`);
+// `subject` is the subject line (qariah:support.emailSubject*). Callers pass
+// the English text in every language, so the support inbox can sort by it.
+// @ai
+const openSupportEmail = async (subject: string): Promise<void> => {
+  const encodedSubject = encodeURIComponent(subject);
   const body = encodeURIComponent(`\n\n${getDebugIdBlock()}\n`);
-  const mailto = `mailto:${branding.supportEmail}?subject=${subject}&body=${body}`;
+  const mailto = `mailto:${branding.supportEmail}?subject=${encodedSubject}&body=${body}`;
   try {
     await Linking.openURL(mailto);
   } catch {
-    Alert.alert('Email us', `Please reach us at ${branding.supportEmail}`);
+    Alert.alert(
+      i18n.t('qariah:support.emailUsTitle'),
+      // No digit post-processing: an e-mail address keeps Latin digits.
+      i18n.t('qariah:support.emailUsBody', {
+        email: branding.supportEmail,
+        postProcess: [],
+      }),
+    );
   }
 };
+// @ai-start
+import {flipX, latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+import type {TFunction} from 'i18next';
+import i18n from '@/i18n';
+import {
+  getNotificationsSettingsItems,
+  NOTIFICATIONS_SETTINGS_ROUTE,
+  NOTIFICATIONS_SETTINGS_TYPE,
+  useNotificationsHoldout,
+} from '@/components/settings/notificationsSettingsItem';
+// @ai-end
 
 const isExternalLink = (type: string): boolean => {
   return [
@@ -80,145 +102,163 @@ const isExternalLink = (type: string): boolean => {
   ].includes(type);
 };
 
-const settingsItems = [
-  {
-    section: 'Quran',
-    items: [
-      {
-        title: 'Mushaf Settings',
-        type: 'mushafSettings',
-        description: 'Customize Quran display options',
-        icon: 'quran',
-        iconType: 'custom',
-      },
-      {
-        title: 'Translations & Tafaseer',
-        type: 'translations',
-        description: 'Manage Quran translations and commentary',
-        icon: 'dualPages',
-        iconType: 'custom',
-      },
-    ],
-  },
-  {
-    section: 'Audio & Playback',
-    items: [
-      {
-        title: 'Default Reciter',
-        type: 'defaultReciter',
-        description: 'Choose your preferred reciter',
-        icon: 'personAudio',
-        iconType: 'custom',
-      },
-      {
-        title: 'Reciter Choice',
-        type: 'reciterChoice',
-        description: 'Customize reciter selection',
-        icon: 'selectionList',
-        iconType: 'custom',
-      },
-      // Android-only: OEM battery restriction (Samsung "Sleeping apps" etc.)
-      // can stop background audio. This row keeps the fix discoverable beyond
-      // the bounded kill-triggered prompt (hooks/useBackgroundPlaybackPrompt).
-      ...(Platform.OS === 'android'
-        ? [
-            {
-              title: 'Background Playback',
-              type: 'backgroundPlayback',
-              description: 'Keep audio playing when the screen is off',
-              icon: 'battery-charging',
-              iconType: 'feather',
-            },
-          ]
-        : []),
-    ],
-  },
-  {
-    section: 'App & Data',
-    items: [
-      {
-        title: 'Storage',
-        type: 'storage',
-        description: 'View and manage storage usage',
-        icon: 'database',
-        iconType: 'custom',
-      },
-    ],
-  },
-  {
-    section: 'Feedback',
-    items: [
-      {
-        title: 'Write a Review',
-        type: 'rateApp',
-        description: 'Share your experience with others',
-        icon: 'star',
-        iconType: 'custom',
-      },
-      {
-        title: 'Feature Requests',
-        type: 'featureRequest',
-        description: 'Suggest improvements and new features',
-        icon: 'lightbulb',
-        iconType: 'custom',
-      },
-      {
-        title: 'Help & Support',
-        type: 'support',
-        description: `Get assistance with using ${branding.appName}`,
-        icon: 'chatBubble',
-        iconType: 'custom',
-      },
-    ],
-  },
-  {
-    section: `About ${branding.appName}`,
-    items: [
-      {
-        title: "What's New",
-        type: 'whatsNew',
-        description: "See what's new in this version",
-        icon: 'giftBox',
-        iconType: 'custom',
-      },
-      {
-        title: `About ${branding.appName}`,
-        type: 'about',
-        description: 'Learn more about our mission',
-        icon: 'infoRounded',
-        iconType: 'custom',
-      },
-      {
-        title: 'Credits',
-        type: 'credits',
-        description: 'View contributors and acknowledgments',
-        icon: 'medal',
-        iconType: 'custom',
-      },
-      {
-        title: 'Contribute on GitHub',
-        type: 'github',
-        description: `${branding.appName} is open source. Star, report issues, or submit a PR`,
-        icon: 'github',
-        iconType: 'feather',
-      },
-      {
-        title: 'Terms of Service',
-        type: 'terms',
-        description: 'Read our terms of service',
-        icon: 'docCheck',
-        iconType: 'custom',
-      },
-      {
-        title: 'Privacy Policy',
-        type: 'privacy',
-        description: 'View our privacy policy',
-        icon: 'shieldLock',
-        iconType: 'custom',
-      },
-    ],
-  },
-];
+// @ai-start
+const getSettingsSections = (
+  t: TFunction<['settings', 'common', 'qariah']>,
+  notificationsHoldout?: boolean, // @ai Qariah (S48.7)
+) => {
+  const appName = branding.appName;
+  return [
+    {
+      section: t('settings:index.sections.quran'),
+      items: [
+        {
+          title: t('settings:index.items.mushafSettings.title'),
+          type: 'mushafSettings',
+          description: t('settings:index.items.mushafSettings.description'),
+          icon: 'quran',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.translations.title'),
+          type: 'translations',
+          description: t('settings:index.items.translations.description'),
+          icon: 'dualPages',
+          iconType: 'custom',
+        },
+      ],
+    },
+    {
+      section: t('settings:index.sections.audio'),
+      items: [
+        {
+          title: t('settings:index.items.defaultReciter.title'),
+          type: 'defaultReciter',
+          description: t('settings:index.items.defaultReciter.description'),
+          icon: 'personAudio',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.reciterChoice.title'),
+          type: 'reciterChoice',
+          description: t('settings:index.items.reciterChoice.description'),
+          icon: 'selectionList',
+          iconType: 'custom',
+        },
+        // @ai Qariah (S33): Android-only. OEM battery restriction (Samsung
+        // "Sleeping apps" etc.) can stop background audio. This row keeps the
+        // fix discoverable beyond the bounded kill-triggered prompt
+        // (hooks/useBackgroundPlaybackPrompt).
+        ...(Platform.OS === 'android'
+          ? [
+              {
+                title: t('qariah:settings.backgroundPlayback'),
+                type: 'backgroundPlayback',
+                description: t('qariah:settings.backgroundPlaybackDesc'),
+                icon: 'battery-charging',
+                iconType: 'feather',
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      section: t('settings:index.sections.appData'),
+      items: [
+        {
+          title: t('common:language.title'),
+          type: 'language',
+          description: t('common:language.description'),
+          icon: 'globe',
+          iconType: 'feather',
+        },
+        // @ai Qariah (S48.7): the Notifications page; no row in the holdout.
+        ...getNotificationsSettingsItems(t, notificationsHoldout),
+        {
+          title: t('settings:index.items.storage.title'),
+          type: 'storage',
+          description: t('settings:index.items.storage.description'),
+          icon: 'database',
+          iconType: 'custom',
+        },
+      ],
+    },
+    {
+      section: t('settings:index.sections.feedback'),
+      items: [
+        {
+          title: t('settings:index.items.rateApp.title'),
+          type: 'rateApp',
+          description: t('settings:index.items.rateApp.description'),
+          icon: 'star',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.featureRequest.title'),
+          type: 'featureRequest',
+          description: t('settings:index.items.featureRequest.description'),
+          icon: 'lightbulb',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.support.title'),
+          type: 'support',
+          description: t('settings:index.items.support.description', {appName}),
+          icon: 'chatBubble',
+          iconType: 'custom',
+        },
+      ],
+    },
+    {
+      section: t('settings:index.sections.about', {appName}),
+      items: [
+        {
+          title: t('settings:index.items.whatsNew.title'),
+          type: 'whatsNew',
+          description: t('settings:index.items.whatsNew.description'),
+          icon: 'giftBox',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.about.title', {appName}),
+          type: 'about',
+          description: t('settings:index.items.about.description'),
+          icon: 'infoRounded',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.credits.title'),
+          type: 'credits',
+          description: t('settings:index.items.credits.description'),
+          icon: 'medal',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.github.title'),
+          type: 'github',
+          description: t('settings:index.items.github.description', {appName}),
+          icon: 'github',
+          iconType: 'feather',
+        },
+        {
+          title: t('settings:index.items.terms.title'),
+          type: 'terms',
+          description: t('settings:index.items.terms.description'),
+          icon: 'docCheck',
+          iconType: 'custom',
+        },
+        {
+          title: t('settings:index.items.privacy.title'),
+          type: 'privacy',
+          description: t('settings:index.items.privacy.description'),
+          icon: 'shieldLock',
+          iconType: 'custom',
+        },
+      ],
+    },
+  ];
+};
+// @ai-end
 
 const customIconMap: Record<string, React.FC<{size: number; color: string}>> = {
   quran: QuranIcon,
@@ -264,6 +304,7 @@ const renderIcon = (
   );
 };
 
+// @ai-start
 export default function SettingsScreen() {
   const router = useRouter();
   const {theme} = useTheme();
@@ -272,6 +313,13 @@ export default function SettingsScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const glassColorScheme = useGlassColorScheme();
   const {showFloatingDevMenu, toggleFloatingDevMenu} = useDevSettingsStore();
+  const {t} = useTranslation(['settings', 'common', 'qariah']);
+  // @ai Qariah (S48.7): the holdout is read again on each focus.
+  const notificationsHoldout = useNotificationsHoldout();
+  const settingsSections = useMemo(
+    () => getSettingsSections(t, notificationsHoldout),
+    [t, notificationsHoldout],
+  );
   const {analyticsEnabled, setAnalyticsEnabled} = useAnalyticsConsentStore();
   const {status, signOut} = useAuth();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -307,9 +355,9 @@ export default function SettingsScreen() {
   const handleCopyDebugId = async (): Promise<void> => {
     try {
       await Clipboard.setStringAsync(getDebugIdBlock());
-      showToast('Debug ID copied', debugId);
+      showToast(t('qariah:debug.copied'), debugId);
     } catch {
-      Alert.alert('Debug ID', debugId);
+      Alert.alert(t('qariah:debug.title'), debugId);
     }
   };
 
@@ -349,6 +397,12 @@ export default function SettingsScreen() {
       case 'reciterChoice':
         router.push('/(d.settings)/reciter-choice');
         break;
+      case 'language':
+        router.push('/(d.settings)/language');
+        break;
+      case NOTIFICATIONS_SETTINGS_TYPE: // @ai Qariah (S48.7)
+        router.push(NOTIFICATIONS_SETTINGS_ROUTE);
+        break;
       case 'storage':
         router.push('/(d.settings)/storage');
         break;
@@ -366,10 +420,14 @@ export default function SettingsScreen() {
         router.push('/(d.settings)/whats-new');
         break;
       case 'support':
-        await openSupportEmail('support');
+        await openSupportEmail(
+          t('qariah:support.emailSubjectSupport', {lng: 'en'}),
+        );
         break;
       case 'featureRequest':
-        await openSupportEmail('feature request');
+        await openSupportEmail(
+          t('qariah:support.emailSubjectFeatureRequest', {lng: 'en'}),
+        );
         break;
       case 'terms':
         await Linking.openURL(branding.termsUrl);
@@ -421,7 +479,9 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}>
         {/* Account (Sprint 11) */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>ACCOUNT</Text>
+          <Text style={styles.sectionHeader}>
+            {t('qariah:account.section')}
+          </Text>
           {renderCard(
             status === 'authenticated' ? (
               <>
@@ -434,9 +494,11 @@ export default function SettingsScreen() {
                     />
                   </View>
                   <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>Signed in</Text>
+                    <Text style={styles.settingsTitle}>
+                      {t('qariah:account.signedIn')}
+                    </Text>
                     <Text style={styles.settingsDescription}>
-                      {userEmail ?? 'Quran Foundation account'}
+                      {userEmail ?? t('qariah:account.qfAccount')}
                     </Text>
                   </View>
                 </View>
@@ -455,16 +517,18 @@ export default function SettingsScreen() {
                     />
                   </View>
                   <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>Your data</Text>
+                    <Text style={styles.settingsTitle}>
+                      {t('qariah:account.yourData')}
+                    </Text>
                     <Text style={styles.settingsDescription}>
-                      Export, import, or restore favorites from the original
-                      Qariah app
+                      {t('qariah:account.yourDataDesc')}
                     </Text>
                   </View>
                   <Feather
                     name="chevron-right"
                     size={moderateScale(16)}
                     color={chevronColor}
+                    style={flipX}
                   />
                 </Pressable>
                 <View style={styles.divider} />
@@ -482,15 +546,18 @@ export default function SettingsScreen() {
                     />
                   </View>
                   <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>Sign out</Text>
+                    <Text style={styles.settingsTitle}>
+                      {t('qariah:account.signOut')}
+                    </Text>
                     <Text style={styles.settingsDescription}>
-                      Your data stays on this device
+                      {t('qariah:account.signOutDesc')}
                     </Text>
                   </View>
                   <Feather
                     name="chevron-right"
                     size={moderateScale(16)}
                     color={chevronColor}
+                    style={flipX}
                   />
                 </Pressable>
               </>
@@ -509,15 +576,18 @@ export default function SettingsScreen() {
                   />
                 </View>
                 <View style={styles.settingsTextContainer}>
-                  <Text style={styles.settingsTitle}>Sign in to Qariah</Text>
+                  <Text style={styles.settingsTitle}>
+                    {t('qariah:account.signInTitle')}
+                  </Text>
                   <Text style={styles.settingsDescription}>
-                    Restore your favorites from the original Qariah app
+                    {t('qariah:account.signInDesc')}
                   </Text>
                 </View>
                 <Feather
                   name="chevron-right"
                   size={moderateScale(16)}
                   color={chevronColor}
+                  style={flipX}
                 />
               </Pressable>
             ),
@@ -526,12 +596,14 @@ export default function SettingsScreen() {
 
         {/* Appearance */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>APPEARANCE</Text>
+          <Text style={styles.sectionHeader}>
+            {t('settings:index.appearance')}
+          </Text>
           <ThemePicker />
         </View>
 
         {/* Settings Sections */}
-        {settingsItems.map(section => (
+        {settingsSections.map(section => (
           <View key={section.section} style={styles.section}>
             <Text style={styles.sectionHeader}>
               {section.section.toUpperCase()}
@@ -563,6 +635,7 @@ export default function SettingsScreen() {
                       }
                       size={moderateScale(16)}
                       color={chevronColor}
+                      style={isExternalLink(item.type) ? undefined : flipX}
                     />
                   </Pressable>
                 </React.Fragment>
@@ -573,7 +646,9 @@ export default function SettingsScreen() {
 
         {/* Privacy Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>PRIVACY</Text>
+          <Text style={styles.sectionHeader}>
+            {t('settings:index.analytics.section')}
+          </Text>
           {renderCard(
             <>
               <View style={styles.settingsRow}>
@@ -586,11 +661,12 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.settingsTextContainer}>
                   <Text style={styles.settingsTitle}>
-                    Share anonymous usage data
+                    {t('settings:index.analytics.title')}
                   </Text>
                   <Text style={styles.settingsDescription}>
-                    Help improve {branding.appName} with anonymous, non-personal
-                    analytics. Your name and account are never shared.
+                    {t('settings:index.analytics.description', {
+                      appName: branding.appName,
+                    })}
                   </Text>
                 </View>
                 <Switch
@@ -615,7 +691,7 @@ export default function SettingsScreen() {
                   pressed && styles.pressed,
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel="Copy debug ID"
+                accessibilityLabel={t('qariah:debug.copy')}
                 onPress={handleCopyDebugId}>
                 <View style={styles.settingsItemIcon}>
                   <Feather
@@ -625,7 +701,9 @@ export default function SettingsScreen() {
                   />
                 </View>
                 <View style={styles.settingsTextContainer}>
-                  <Text style={styles.settingsTitle}>Copy debug ID</Text>
+                  <Text style={styles.settingsTitle}>
+                    {t('qariah:debug.copy')}
+                  </Text>
                   <Text style={styles.settingsDescription} selectable>
                     {debugId}
                   </Text>
@@ -642,6 +720,8 @@ export default function SettingsScreen() {
 
         {/* Developer Section */}
         {__DEV__ && (
+          // Dev-only tools stay in English. // @ai
+          // i18next-instrument-ignore
           <View style={styles.section}>
             <Text style={styles.sectionHeader}>DEVELOPER</Text>
             {renderCard(
@@ -680,7 +760,9 @@ export default function SettingsScreen() {
     </View>
   );
 }
+// @ai-end
 
+// @ai-start
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({
     container: {
@@ -694,10 +776,11 @@ const createStyles = (theme: Theme) =>
       marginBottom: moderateScale(14),
     },
     sectionHeader: {
+      textAlign: 'left',
       fontSize: moderateScale(10.5),
       fontFamily: 'Manrope-SemiBold',
       color: theme.colors.textSecondary,
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2),
       textTransform: 'uppercase',
       marginBottom: moderateScale(6),
       marginLeft: moderateScale(2),
@@ -743,11 +826,13 @@ const createStyles = (theme: Theme) =>
       marginRight: moderateScale(10),
     },
     settingsTitle: {
+      textAlign: 'left',
       fontSize: moderateScale(13.5),
       fontFamily: 'Manrope-Medium',
       color: theme.colors.text,
     },
     settingsDescription: {
+      textAlign: 'left',
       fontSize: moderateScale(11),
       fontFamily: 'Manrope-Regular',
       color: theme.colors.textSecondary,
@@ -759,3 +844,4 @@ const createStyles = (theme: Theme) =>
       transform: [{scaleX: 0.8}, {scaleY: 0.8}],
     },
   });
+// @ai-end

@@ -1,4 +1,4 @@
-# K10 — Theme picker: the Appearance control switches theme without crashing.
+# SET-02 (matrix K10) — Theme picker: the Appearance control switches theme without crashing.
 # Grounded: APPEARANCE section is inline on the Settings index with Light / Dark / Auto.
 appId: com.qariah.app
 tags:

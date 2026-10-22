@@ -101,6 +101,8 @@ jest.mock('@/services/mushaf/QCFLineService', () => ({
   findQCFVerseAtCharIndex: () => null,
 }));
 jest.mock('@/services/mushaf/QCFFontLoader', () => ({
+  // Pass C (Sprint 47): upstream's V4 tajweed font variants (#350).
+  getQCFFontVariant: () => 'v2',
   qcfFontFamilyForPage: () => 'QCF_P100',
   qcfFontLoader: {
     isReady: () => true,
@@ -153,6 +155,8 @@ jest.mock('@/store/mushafSettingsStore', () => ({
 jest.mock('@/store/mushafPlayerStore', () => ({
   useMushafPlayerStore: (sel: any) =>
     sel({currentVerseKey: null, playbackState: 'idle'}),
+  // Upstream #329: QCFPage reads the playing verses through this hook.
+  usePlaybackVerseKeys: () => [],
 }));
 const mockSelectionState = {
   selectedVerseKeys: [],
@@ -173,8 +177,17 @@ import {
   CONTENT_WIDTH as DEFAULT_CONTENT_WIDTH,
   CONTENT_HEIGHT as DEFAULT_CONTENT_HEIGHT,
   PAGE_PADDING_TOP as DEFAULT_PAGE_PADDING_TOP,
+  canvasBottomOverflow,
   getMushafLayout,
 } from '../../constants';
+import {qcfFontSizeForContentWidth} from '@/services/mushaf/qcfFontSizing';
+
+// Pass C (Sprint 47): upstream's canvas reserves room below the content box
+// for V4 tajweed glyphs (#350): `canvasBottomOverflow(fontSize)`. 900 is the
+// mocked calibration width (`widestRef`).
+const canvasHeightFor = (contentWidth: number, contentHeight: number) =>
+  contentHeight +
+  canvasBottomOverflow(qcfFontSizeForContentWidth(900, contentWidth));
 
 // Pixel 3 landscape — the orientation the defect showed up in.
 const LANDSCAPE = getMushafLayout({
@@ -234,12 +247,18 @@ describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
 
     const style = flatten(getByTestId('qcf-canvas').props.style);
     expect(style.width).toBeCloseTo(LANDSCAPE.contentWidth, 5);
-    expect(style.height).toBeCloseTo(LANDSCAPE.contentHeight, 5);
+    expect(style.height).toBeCloseTo(
+      canvasHeightFor(LANDSCAPE.contentWidth, LANDSCAPE.contentHeight),
+      5,
+    );
     expect(style.marginTop).toBeCloseTo(LANDSCAPE.paddingTop, 5);
     expect(style.marginLeft).toBeCloseTo(LANDSCAPE.paddingHorizontal, 5);
 
     expect(style.width).not.toBeCloseTo(DEFAULT_CONTENT_WIDTH, 5);
-    expect(style.height).not.toBeCloseTo(DEFAULT_CONTENT_HEIGHT, 5);
+    expect(style.height).not.toBeCloseTo(
+      canvasHeightFor(DEFAULT_CONTENT_WIDTH, DEFAULT_CONTENT_HEIGHT),
+      5,
+    );
     expect(style.marginTop).not.toBeCloseTo(DEFAULT_PAGE_PADDING_TOP, 5);
   });
 
@@ -254,7 +273,34 @@ describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
     );
     const canvas = flatten(getByTestId('qcf-canvas').props.style);
     expect(canvas.width).toBeCloseTo(DEFAULT_CONTENT_WIDTH, 5);
-    expect(canvas.height).toBeCloseTo(DEFAULT_CONTENT_HEIGHT, 5);
+    expect(canvas.height).toBeCloseTo(
+      canvasHeightFor(DEFAULT_CONTENT_WIDTH, DEFAULT_CONTENT_HEIGHT),
+      5,
+    );
     expect(canvas.marginTop).toBeCloseTo(DEFAULT_PAGE_PADDING_TOP, 5);
+  });
+});
+
+// @ai — TECH_DEBT #272: the rotation stage counts each commit of a page as a
+// draw and drops its portrait snapshot. A page whose font is ready must not
+// set `fontReady` again when the font load ends: on the 2026-10-18 device
+// run that one empty commit after each mount dropped the snapshot at the
+// Mushaf 1440 turns. React skips such a render in this test renderer (and
+// not on the device), so the guard reads the source.
+describe('QCFPage commits (TECH_DEBT #272)', () => {
+  it('sets fontReady after the font load only for a page that was not ready', () => {
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'QCFPage.tsx'),
+      'utf8',
+    );
+    // Pass C (Sprint 47): upstream replaced `fontReady` with a `loadedFont`
+    // state (font variants, #350); the guard is the same.
+    expect(source).toMatch(
+      /const wasReady = qcfFontLoader\.isReady\(\s*pageNumber,\s*fontMgr,\s*fontVariant,?\s*\);/,
+    );
+    expect(source).toMatch(
+      /if \(!cancelled && !wasReady\) \{\s*setLoadedFont\(/,
+    );
+    expect(source).not.toMatch(/if \(!cancelled\) setLoadedFont\(/);
   });
 });

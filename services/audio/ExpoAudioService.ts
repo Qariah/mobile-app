@@ -35,13 +35,20 @@ interface ExpoAudioServiceState {
 type StateListener = (state: ExpoAudioServiceState) => void;
 
 /**
- * @ai How long loadTrack() waits for setPlayer() before it gives up. On a cold
- * start, restoreSession can reach loadTrack() before ExpoAudioProvider mounts
- * and injects the player (planning/boot-restore-player-order-plan.md). The
- * mount takes well under a second on a Pixel 3. The limit only stops a hang
- * when the provider never mounts.
+ * @ai How long loadTrack() and play() wait for setPlayer() before they give
+ * up. On a cold start, restoreSession can reach loadTrack() before
+ * ExpoAudioProvider mounts and injects the player
+ * (planning/boot-restore-player-order-plan.md), and a tap on play can reach
+ * play() in the same window. The mount takes well under a second on a Pixel 3.
+ * The limit only stops a hang when the provider never injects the player.
  */
 export const PLAYER_WAIT_MS = 10000;
+
+/**
+ * @ai The end of a load wait: the player reported the new source as loaded, or
+ * as failed (an `error` status), or neither within the timeout.
+ */
+type LoadWaitResult = 'loaded' | 'error' | 'timeout';
 
 class ExpoAudioService {
   private static instance: ExpoAudioService;
@@ -51,8 +58,22 @@ class ExpoAudioService {
   // @ai Increments on each loadTrack() and each cleanup(). A load that waited
   // for the player compares it after the wait, to learn if it is stale.
   private loadGeneration = 0;
+  // @ai Increments on each pause(). A play() that waited for the player
+  // compares it after the wait: playerStore.pause() and playerStore.cleanup()
+  // both call pause(), so either one during the wait makes that play stale.
+  private pauseGeneration = 0;
   private isInitialized = false;
+  // @ai The source that the player holds: set when a load ends, cleared when
+  // the player reports a load error (TECH_DEBT #271).
   private currentUrl: string | null = null;
+  // @ai The source of the newest loadTrack() while it runs (the player wait
+  // included), and a promise that settles when that load ends. runningLoad()
+  // returns it, so playerStore.play() waits for the load before it plays.
+  private loadingUrl: string | null = null;
+  private loadingDone: Promise<void> | null = null;
+  // @ai Called with the URL when a load that timed out reports an error
+  // later (setSourceLostHandler). cleanup() keeps it.
+  private sourceLostHandler: ((url: string) => void) | null = null;
   private stateListeners: Set<StateListener> = new Set();
   private playbackState: PlaybackState = 'idle';
   private lastError: Error | null = null;
@@ -121,10 +142,13 @@ class ExpoAudioService {
   }
 
   /**
-   * @ai Resolve when a player exists, or after `timeoutMs`. Never rejects.
-   * The caller re-checks `this.player`. A resolved wait leaves no timer.
+   * Resolves once a player is set, or after timeoutMs at the latest.
+   * @ai Never rejects. The caller re-checks `this.player`. A resolved wait
+   * leaves no timer. Qariah's Set-based version (TECH_DEBT #218) replaces
+   * upstream's array-based one (fca03eed, used by services/car); same
+   * contract, so it is public for the car bridge.
    */
-  private waitForPlayer(timeoutMs: number): Promise<void> {
+  waitForPlayer(timeoutMs: number): Promise<void> {
     if (this.player) return Promise.resolve();
     return new Promise<void>(resolve => {
       const release = (): void => {
@@ -166,7 +190,17 @@ class ExpoAudioService {
    * Load a track from a URL.
    * Uses the player's replace method to load new audio.
    */
-  async loadTrack(url: string): Promise<void> {
+  loadTrack(url: string): Promise<void> {
+    const load = this.loadSource(url);
+    // @ai For runningLoad(): it settles when the load ends, and never rejects.
+    this.loadingDone = load.then(
+      () => undefined,
+      () => undefined,
+    );
+    return load;
+  }
+
+  private async loadSource(url: string): Promise<void> {
     // @ai REPORT-ONLY playback-health: a new source ends the previous attempt.
     // Before the player check, so a load that throws still spends the store's
     // load-then-play mark.
@@ -176,6 +210,7 @@ class ExpoAudioService {
     // of failing a load that arrived first. A caller that supersedes the load
     // meanwhile (playerStore playOpId) re-checks after this await as before.
     const generation = ++this.loadGeneration;
+    this.loadingUrl = url; // @ai
     if (!this.player) {
       await this.waitForPlayer(PLAYER_WAIT_MS);
       // @ai A newer loadTrack() or a cleanup() started during the wait. The
@@ -186,6 +221,7 @@ class ExpoAudioService {
     }
 
     if (!this.player) {
+      this.loadingUrl = null; // @ai
       throw new Error(
         '[ExpoAudioService] Player not set. Call setPlayer first.',
       );
@@ -207,17 +243,39 @@ class ExpoAudioService {
       // on a slow device with a busy main thread the old poll loop (~110 reads)
       // turned into a multi-second JS-thread hard-lock at play, while audio kept
       // playing on its own native thread (Redmi Note 9 freeze, 2026-06-19).
-      const ready = this.waitForLoaded(5000);
+      // @ai An error that the player reports after the timeout means that
+      // this source did not load: forget it, so that a later play() loads it
+      // again (TECH_DEBT #271).
+      const ready = this.waitForLoaded(5000, () => {
+        if (generation === this.loadGeneration && this.currentUrl === url) {
+          this.currentUrl = null;
+          this.sourceLostHandler?.(url);
+        }
+      });
 
       // Replace current audio with new source
       await this.player.replace(source);
 
       // Wait for the player to report the new source is loaded (event-driven)
-      await ready;
+      const result = await ready; // @ai
 
       // @ai A newer loadTrack() or a cleanup() started during this load. The
       // newer work owns the service state, so this stale load writes nothing.
       if (generation !== this.loadGeneration) return;
+
+      this.loadingUrl = null; // @ai
+      // @ai-start The player reported a load error (offline, a CDN error, a
+      // missing file). Record no source and report the error, so that the
+      // next playerStore.play() loads the track again (TECH_DEBT #271). Do
+      // not throw: the callers treat a timed-out load the same way.
+      if (result === 'error') {
+        this.currentUrl = null;
+        this.playbackState = 'error';
+        this.lastError = new Error(`[ExpoAudioService] Load failed: ${url}`);
+        this.notifyListeners();
+        return;
+      }
+      // @ai-end
 
       this.currentUrl = url;
       // @ai A play() that landed during the load already set 'playing' (for
@@ -238,6 +296,7 @@ class ExpoAudioService {
       console.error('[ExpoAudioService] Failed to load track:', error);
       // @ai Only the current load reports its failure in the service state.
       if (generation === this.loadGeneration) {
+        this.loadingUrl = null;
         this.playbackState = 'error';
         this.lastError =
           error instanceof Error ? error : new Error(String(error));
@@ -252,6 +311,10 @@ class ExpoAudioService {
    * native-pushed `playbackStatusUpdate` event. Falls back to a timeout so a
    * failed/slow load can't hang the caller.
    *
+   * @ai It resolves 'loaded', 'error' (an `error` status) or 'timeout'. After
+   * a timeout it keeps the listener and calls `onLateError` when the player
+   * then reports an error. A late isLoaded or the error ends that watch.
+   *
    * MUST be called BEFORE `replace()` so the load->ready transition isn't
    * missed. Deliberately does NOT read `this.player.isLoaded`: that synchronous
    * getter round-trips through expo-audio's `runOnMain` -> `runBlocking(
@@ -260,14 +323,22 @@ class ExpoAudioService {
    * devices and hard-locked the UI at play (Redmi Note 9, root-caused
    * 2026-06-19). The event is delivered native->JS and never blocks.
    */
-  private waitForLoaded(timeoutMs = 5000): Promise<void> {
+  private waitForLoaded(
+    timeoutMs = 5000,
+    onLateError?: () => void,
+  ): Promise<LoadWaitResult> {
     const player = this.player;
-    if (!player) return Promise.resolve();
+    if (!player) return Promise.resolve('timeout'); // @ai
 
-    return new Promise<void>(resolve => {
+    return new Promise<LoadWaitResult>(resolve => {
       let settled = false;
       let seenUnloaded = false;
-      let sub: {remove: () => void} | undefined;
+      // @ai After a timeout the listener stays, to see a late error.
+      let watchLate = false;
+      // @ai An error that comes before the new source reports isLoaded:false,
+      // within the grace window below, can belong to the PREVIOUS source. It
+      // only counts if the new source never reports loading (see the timer).
+      let earlyError = false;
       const armedAt = Date.now();
       // Prefer to observe an isLoaded:false (the new source has begun loading)
       // before accepting isLoaded:true — otherwise a stale periodic status
@@ -279,36 +350,66 @@ class ExpoAudioService {
       // next true anyway rather than stalling until the timeout.
       const acceptStaleAfterMs = 500;
 
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
+      const removeListener = (): void => {
+        watchLate = false;
         try {
-          sub?.remove();
+          sub.remove();
         } catch {
           // listener already gone; ignore
         }
-        resolve();
+      };
+
+      const finish = (result: LoadWaitResult): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (result === 'timeout' && onLateError) watchLate = true;
+        else removeListener();
+        resolve(result);
       };
 
       const timer = setTimeout(() => {
         if (__DEV__) {
           console.warn('[ExpoAudioService] Timeout waiting for track to load');
         }
-        finish();
+        finish(earlyError ? 'error' : 'timeout'); // @ai
       }, timeoutMs);
 
-      sub = player.addListener(
+      const sub = player.addListener(
         'playbackStatusUpdate',
         (status: AudioStatus) => {
+          // @ai-start expo-audio sends an `error` key (not in the AudioStatus
+          // type) when the source fails to load, on Android and on iOS.
+          const failed = !!(status as {error?: unknown} | undefined)?.error;
+          if (watchLate) {
+            // The load timed out. A later error means that it failed; a
+            // later isLoaded means that it loaded. Either one ends the watch.
+            if (failed) {
+              removeListener();
+              onLateError?.();
+            } else if (status?.isLoaded) {
+              removeListener();
+            }
+            return;
+          }
+          if (failed) {
+            if (!seenUnloaded && Date.now() - armedAt < acceptStaleAfterMs) {
+              earlyError = true;
+              return;
+            }
+            finish('error');
+            return;
+          }
+          // @ai-end
           if (!status?.isLoaded) {
             seenUnloaded = true;
+            earlyError = false; // @ai The new source loads: that error was old.
             return;
           }
           // isLoaded === true: accept once the new source has confirmed loading
           // (seenUnloaded), or once the stale-status grace window has elapsed.
           if (seenUnloaded || Date.now() - armedAt >= acceptStaleAfterMs) {
-            finish();
+            finish('loaded');
           }
         },
       );
@@ -322,19 +423,72 @@ class ExpoAudioService {
     return this.currentUrl;
   }
 
+  /**
+   * @ai Set the function that hears of a source lost after its load timed
+   * out: the player reported an error after the 5 s wait (TECH_DEBT #271).
+   * playerStore uses it to show Play again. It must not reload the source
+   * (TECH_DEBT #207).
+   */
+  setSourceLostHandler(handler: ((url: string) => void) | null): void {
+    this.sourceLostHandler = handler;
+  }
+
+  /**
+   * @ai True when the player holds `url`: its load ended with no load error
+   * (TECH_DEBT #271). False when it never loaded, when the load failed, or
+   * while it still loads (see runningLoad()).
+   */
+  holdsSource(url: string): boolean {
+    return this.currentUrl === url;
+  }
+
+  /**
+   * @ai While a load of `url` runs, a promise that settles (never rejects)
+   * when it ends; otherwise null. playerStore.play() waits for it, then
+   * checks holdsSource(), so it does not play a source that is still loading
+   * or that failed (TECH_DEBT #271).
+   */
+  runningLoad(url: string): Promise<void> | null {
+    return this.loadingUrl === url ? this.loadingDone : null;
+  }
+
   // ========== PLAYBACK CONTROLS ==========
 
   /**
-   * Start playback
+   * Start playback.
+   * @ai Returns true when it called player.play(), and false when no player
+   * came within PLAYER_WAIT_MS or a pause(), cleanup() or newer loadTrack()
+   * cancelled the play during that wait. Callers that write a 'playing' state
+   * must check the result.
    */
-  async play(): Promise<void> {
+  async play(): Promise<boolean> {
     if (!this.player) {
-      if (__DEV__) console.warn('[ExpoAudioService] Cannot play: no player');
-      return;
+      // @ai Early tap: ExpoAudioProvider renders the UI before it calls
+      // setPlayer(), so a tap can reach play() first (third review of PR
+      // #422). Wait for the player, as loadTrack() does, instead of returning
+      // with no audio.
+      const loadGeneration = this.loadGeneration;
+      const pauseGeneration = this.pauseGeneration;
+      await this.waitForPlayer(PLAYER_WAIT_MS);
+      // @ai A newer work cancelled this play during the wait: a stop or pause,
+      // a cleanup(), or a newer loadTrack() that owns the source. Do not start
+      // audio for it.
+      if (
+        loadGeneration !== this.loadGeneration ||
+        pauseGeneration !== this.pauseGeneration
+      ) {
+        return false;
+      }
+      if (!this.player) {
+        if (__DEV__) console.warn('[ExpoAudioService] Cannot play: no player');
+        return false;
+      }
     }
 
     // @ai REPORT-ONLY playback-health: the first play after a load is an
     // attempt. The reader returns a field, never a native player property.
+    // It runs after the player wait, so a play that never reaches a player
+    // starts no attempt.
     notePlaybackPlayRequested(() => this.playbackState);
 
     try {
@@ -342,6 +496,7 @@ class ExpoAudioService {
       this.playbackState = 'playing';
       this.notifyListeners();
       if (__DEV__) console.log('[ExpoAudioService] Playing');
+      return true;
     } catch (error) {
       console.error('[ExpoAudioService] Play failed:', error);
       this.playbackState = 'error';
@@ -356,6 +511,9 @@ class ExpoAudioService {
    * Pause playback
    */
   async pause(): Promise<void> {
+    // @ai Before the player check: a pause with no player must still cancel a
+    // play() that waits for the player.
+    this.pauseGeneration++;
     if (!this.player) {
       if (__DEV__) console.warn('[ExpoAudioService] Cannot pause: no player');
       return;
@@ -583,6 +741,7 @@ class ExpoAudioService {
     // for the player is now stale, so end its claim.
     this.loadGeneration++;
     this.currentUrl = null;
+    this.loadingUrl = null; // @ai
     this.playbackState = 'idle';
     this.lastError = null;
     this.stateListeners.clear();

@@ -1,6 +1,10 @@
 import React, {useState, useMemo, useCallback, useLayoutEffect} from 'react';
 import {View, FlatList, Text, Pressable} from 'react-native';
-import {useRouter, useNavigation} from 'expo-router';
+// @ai-start
+import {Stack, useRouter, useNavigation} from 'expo-router';
+import {SearchInput} from '@/components/SearchInput';
+import {rankSurahs} from '@/utils/search/catalog'; // @ai
+// @ai-end
 import {
   moderateScale,
   verticalScale,
@@ -24,6 +28,10 @@ import {getJuzForSurah, getJuzName} from '@/data/juzData';
 import {useHeaderHeight} from 'expo-router/react-navigation';
 import {GlassView} from 'expo-glass-effect';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+// @ai-end
 
 const isGlass = USE_GLASS;
 
@@ -42,6 +50,7 @@ const ItemSeparator = React.memo(() => {
 });
 ItemSeparator.displayName = 'ItemSeparator';
 
+// @ai-start
 const useStyles = () => {
   return ScaledSheet.create({
     container: {
@@ -145,10 +154,11 @@ const useStyles = () => {
       fontSize: moderateScale(12),
       fontFamily: 'Manrope-SemiBold',
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: latinLetterSpacing(0.8),
     },
   });
 };
+// @ai-end
 
 interface BrowseSurahsProps {
   theme: Theme;
@@ -164,16 +174,19 @@ interface BrowseSurahsProps {
   forceBrowseAll?: boolean;
 }
 
+// @ai-start
 export default function BrowseSurahs({
   theme,
   onBack,
   forceBrowseAll = false,
 }: BrowseSurahsProps) {
   const router = useRouter();
+  const {t} = useTranslation(['home', 'common']);
   const navigation = useNavigation();
   const glassColorScheme = useGlassColorScheme();
   const insets = useSafeAreaInsets();
-  const iosHeaderHeight = isGlass ? useHeaderHeight() : 0;
+  const headerHeight = useHeaderHeight();
+  const iosHeaderHeight = isGlass ? headerHeight : 0;
   const {askEveryTime, defaultReciterSelection} = useSettings();
   const defaultReciter = useReciterStore(state => state.defaultReciter);
   const {playWithReciter, playWithRandomReciter} = useReciterSelection();
@@ -191,14 +204,14 @@ export default function BrowseSurahs({
   useLayoutEffect(() => {
     if (!isGlass) return;
     navigation.setOptions({
-      headerTitle: 'All Surahs',
+      headerTitle: t('browse.allSurahs'),
     });
-  }, [navigation]);
+  }, [navigation, t]);
 
   // Define styles *before* callbacks that use them
   const styles = useStyles();
 
-  const [searchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   // Initialize local state from persisted settings
   const [viewMode, setViewMode] = useState<ViewMode>(browseViewModeSetting);
   const [sortOption, setSortOption] = useState<SortOption>(
@@ -206,19 +219,12 @@ export default function BrowseSurahs({
   );
 
   // Filter and sort surahs
+  // @ai-start
+  const isSearching = searchQuery.trim().length > 0;
   const displaySurahs = useMemo(() => {
-    // First filter based on search query
-    const result = searchQuery.trim()
-      ? SURAHS.filter(
-          surah =>
-            surah.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            surah.translated_name_english
-              .toLowerCase()
-              .includes(searchQuery.toLowerCase()),
-        )
-      : [...SURAHS];
-
-    // Then sort based on selected option
+    // A query ranks by relevance; the sort option applies to the full list.
+    if (isSearching) return [...rankSurahs(searchQuery)];
+    const result = [...SURAHS];
     switch (sortOption) {
       case 'asc':
         return result.sort((a, b) => a.id - b.id);
@@ -229,12 +235,16 @@ export default function BrowseSurahs({
       default:
         return result;
     }
-  }, [searchQuery, sortOption]);
+  }, [isSearching, searchQuery, sortOption]);
+  // @ai-end
 
   // Prepare list data with Juz headers (only for list view with asc/desc sort)
   const listDataWithJuzHeaders = useMemo(() => {
+    // Juz headers assume mushaf order, which ranked results don't have.
     const shouldShowJuzHeaders =
-      viewMode === 'list' && (sortOption === 'asc' || sortOption === 'desc');
+      !isSearching && // @ai
+      viewMode === 'list' &&
+      (sortOption === 'asc' || sortOption === 'desc');
 
     if (!shouldShowJuzHeaders) {
       // No Juz headers - just return surahs as ListItems
@@ -257,7 +267,10 @@ export default function BrowseSurahs({
         data.push({
           type: 'juz-header',
           juzNumber: surahJuz,
-          juzName: getJuzName(surahJuz),
+          juzName:
+            surahJuz === 30
+              ? t('juz.amma')
+              : t('common:labels.juzNumber', {number: surahJuz}),
         });
       }
 
@@ -269,7 +282,7 @@ export default function BrowseSurahs({
     });
 
     return data;
-  }, [displaySurahs, viewMode, sortOption]);
+  }, [displaySurahs, isSearching, viewMode, sortOption, t]); // @ai
 
   // Function to generate a consistent color for each surah
   const getColorForSurah = useCallback((id: number): string => {
@@ -366,6 +379,7 @@ export default function BrowseSurahs({
         id={item.id}
         name={item.name}
         translatedName={item.translated_name_english}
+        versesCount={item.verses_count}
         revelationPlace={item.revelation_place}
         color={getColorForSurah(item.id)}
         onPress={() => handleSurahPress(item)}
@@ -414,7 +428,11 @@ export default function BrowseSurahs({
                 ? 'arrow-down'
                 : 'calendar';
           const label =
-            option === 'asc' ? 'Asc' : option === 'desc' ? 'Desc' : 'Rev';
+            option === 'asc'
+              ? t('sort.asc')
+              : option === 'desc'
+                ? t('sort.desc')
+                : t('sort.revelation');
           return (
             <Pressable
               key={option}
@@ -481,6 +499,7 @@ export default function BrowseSurahs({
     : moderateScale(40 + 4); // optionsRow + margin
 
   const flatListProps = {
+    keyboardShouldPersistTaps: 'handled' as const,
     showsVerticalScrollIndicator: false,
     scrollEnabled: true,
     initialNumToRender: 25,
@@ -493,9 +512,18 @@ export default function BrowseSurahs({
   return (
     <View
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
+      {isGlass && (
+        <Stack.SearchBar
+          placeholder={t('browse.searchSurahs')}
+          onChangeText={event => setSearchQuery(event.nativeEvent.text)}
+          onCancelButtonPress={() => setSearchQuery('')}
+          onClose={() => setSearchQuery('')}
+          hideWhenScrolling={false}
+        />
+      )}
       {/* Android: custom header | iOS: native header via layout */}
       {!isGlass && (
-        <Header title="All Surahs" onBack={onBack} showBlur={true} />
+        <Header title={t('browse.allSurahs')} onBack={onBack} showBlur={true} />
       )}
 
       <View
@@ -503,6 +531,18 @@ export default function BrowseSurahs({
           styles.content,
           !isGlass && {marginTop: insets.top + moderateScale(56)},
         ]}>
+        {!isGlass && (
+          <SearchInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('browse.searchSurahs')}
+            showCancelButton={false}
+            iconColor={theme.colors.text}
+            textColor={theme.colors.text}
+            backgroundColor={Color(theme.colors.text).alpha(0.04).toString()}
+            borderColor={Color(theme.colors.text).alpha(0.06).toString()}
+          />
+        )}
         {/* Android: inline options row (normal flow) */}
         {!isGlass && renderOptionsRow()}
 
@@ -568,3 +608,4 @@ export default function BrowseSurahs({
     </View>
   );
 }
+// @ai-end

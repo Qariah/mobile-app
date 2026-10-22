@@ -7,7 +7,7 @@
 //      one-off diagnostic APK (available at Sentry.init time, before remote
 //      flags load). The escape hatch that doesn't need a network round-trip.
 //   2. Remote flag — a PostHog `diagnostics_mode` boolean (read in
-//      AnalyticsConnector once flags load) calls enableDiagnostics(payload).
+//      QariahRootEffects once flags load) calls enableDiagnostics(payload).
 //      The payload is the no-rebuild control surface, applied once per process
 //      (first call wins; a change applies at a later cold start):
 //        { "sampleRate": 0.2, "heartbeatOverrunMs": 3000,
@@ -54,7 +54,7 @@ export const DIAGNOSTIC_BUILD_FLAG =
 
 /** Sentry session replay is a Sentry.init-time setting (can't wait for PostHog
  *  flags), so it's gated at PUBLISH time via env, or on in any diagnostic
- *  build. Sample rates are env-driven (see app/_layout.tsx). */
+ *  build. Sample rates are env-driven (see qariahSentryOptions.ts). */
 export const SENTRY_REPLAY_ENABLED =
   DIAGNOSTIC_BUILD_FLAG || process.env.EXPO_PUBLIC_SENTRY_REPLAY === 'true';
 

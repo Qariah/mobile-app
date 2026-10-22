@@ -13,6 +13,8 @@ import {
   SurahGradientMesh,
   paletteForKey,
 } from '@/components/hero/SurahGradientMesh';
+import {useTranslation} from 'react-i18next';
+import {latinLetterSpacing} from '@/utils/rtl';
 
 interface CountryCardProps {
   country: CountryInfo;
@@ -28,6 +30,7 @@ function CountryCard({
   height = moderateScale(92),
 }: CountryCardProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah']);
   const glassColorScheme = useGlassColorScheme();
   const styles = useMemo(
     () => createStyles(theme, width, height),
@@ -89,7 +92,7 @@ function CountryCard({
           {country.name}
         </Text>
         <Text style={styles.subtitle}>
-          {country.reciterCount} reciter{country.reciterCount !== 1 && 's'}
+          {t('qariah:countryCard.reciters', {count: country.reciterCount})}
         </Text>
       </View>
     </View>
@@ -175,7 +178,7 @@ function createStyles(
       fontSize: moderateScale(13),
       fontFamily: theme.fonts.semiBold,
       color: theme.colors.text,
-      letterSpacing: -0.3,
+      letterSpacing: latinLetterSpacing(-0.3),
       lineHeight: moderateScale(16),
     },
     subtitle: {

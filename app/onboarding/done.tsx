@@ -15,7 +15,7 @@ import {useTheme} from '@/hooks/useTheme';
 import {markOnboarded} from '@/services/onboarding/onboardingState';
 import {useAuth} from '@/services/auth';
 import {isFeatureEnabled} from '@/config/featureFlags';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 
 export default function OnboardingDone() {
   const {theme} = useTheme();
@@ -28,7 +28,7 @@ export default function OnboardingDone() {
     // of the bare Listen home (49% of installers never tap a reciter). Reversible
     // via the onboardingReciterNudge flag.
     const nudge = isFeatureEnabled('onboardingReciterNudge');
-    analyticsService.trackOnboardingCompleted({
+    qariahAnalytics.trackOnboardingCompleted({
       signed_in: status === 'authenticated',
       reciter_nudge: nudge,
     });

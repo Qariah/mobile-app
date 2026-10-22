@@ -37,13 +37,6 @@ jest.mock('@sentry/react-native', () => ({
 jest.mock('@/services/audio/AudioCoordinator', () => ({
   audioCoordinator: {
     mainWillPlay: jest.fn(),
-    sourceDidStop: jest.fn(),
-  },
-}));
-
-jest.mock('@/services/audio/LockScreenService', () => ({
-  lockScreenService: {
-    clearMainPlayer: jest.fn(),
   },
 }));
 
@@ -203,26 +196,37 @@ describe('restoreSession vs setPlayer boot order', () => {
     expect(player.sources).toEqual([RESTORE_URL]);
   });
 
-  // Safety tests (not regressions): they pass on the unfixed code too, where
-  // the load throws at once. They prove the wait does not re-open the #266
-  // stop race or the cleanup path.
-  it('S-a1 (safety): stop() while a load waits for the player -> no play(), no crash when the wait ends', async () => {
-    const update = usePlayerStore.getState().updateQueue([userTrack()], 0);
-    await sleep(10);
+  // @ai Early tap (third review of PR #422, 2026-09-13). This is the device
+  // scenario: the restore load waits for the player, and the user taps play
+  // before setPlayer. Before the fix, play() returned at once, the store
+  // showed Pause and no audio played.
+  it('R-d: a tap on play while the restore load waits -> the restored track loads, plays and seeks once the player arrives', async () => {
+    await restoreSession();
+    await sleep(150); // The restore load now waits for the player.
+    expect(expoAudioService.hasPlayer()).toBe(false);
 
-    await usePlayerStore.getState().stop();
+    const tap = usePlayerStore.getState().play();
+    await sleep(10);
+    expect(usePlayerStore.getState().playback.state).not.toBe('playing');
 
     const player = new FakeAudioPlayer();
     inject(player);
-    await update;
+    await tap;
     await sleep(50);
 
-    expect(player.play).not.toHaveBeenCalled();
-    const state = usePlayerStore.getState();
-    expect(state.playback.state).toBe('stopped');
-    expect(state.queue.tracks).toHaveLength(0);
+    expect(player.sources).toEqual([RESTORE_URL]);
+    expect(player.play).toHaveBeenCalledTimes(1);
+    expect(player.replace.mock.invocationCallOrder[0]).toBeLessThan(
+      player.play.mock.invocationCallOrder[0],
+    );
+    expect(player.seekTo).toHaveBeenCalledWith(RESTORE_POSITION);
+    expect(usePlayerStore.getState().playback.state).toBe('playing');
+    expect(expoAudioService.getPlaybackState()).toBe('playing');
   });
 
+  // Safety test (not a regression): it passes on the unfixed code too, where
+  // the load throws at once. It proves the wait does not re-open the cleanup
+  // path.
   it('S-a2 (safety): playerStore.cleanup() while a load waits for the player -> no replace(), no play(), no crash when the wait ends', async () => {
     const update = usePlayerStore.getState().updateQueue([userTrack()], 0);
     await sleep(10);

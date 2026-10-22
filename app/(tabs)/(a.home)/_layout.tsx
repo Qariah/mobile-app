@@ -1,8 +1,17 @@
 import {Stack} from 'expo-router';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+// @ai-end
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {MaxWidthContainer} from '@/components/layout/MaxWidthContainer';
 
+// A deep link (widget, Live Activity, App Link) that opens a screen in this
+// stack lands on top of its first screen, so back always has a target.
+export const unstable_settings = {initialRouteName: 'index'};
+
+// @ai-start
 export default function HomeLayout() {
+  const {t} = useTranslation('home');
   return (
     <MaxWidthContainer>
       <Stack
@@ -37,12 +46,12 @@ export default function HomeLayout() {
         <Stack.Screen name="adhkar" options={{headerShown: false}} />
         <Stack.Screen
           name="translations"
-          options={{title: 'Translations & Tafaseer'}}
+          options={{title: t('translations.title')}}
         />
         <Stack.Screen
           name="browse-all"
           options={{
-            title: 'Browse All',
+            title: t('browse.browseAll'),
             // Non-glass devices use custom Header component; hide native header to avoid clash
             headerShown: USE_GLASS,
           }}
@@ -56,7 +65,7 @@ export default function HomeLayout() {
             // header inherited the route filename ("browse-all-surahs")
             // AND ran alongside the custom Header — visible as the
             // duplicate title + double back button bug.
-            title: 'All Surahs',
+            title: t('browse.allSurahs'),
             headerShown: USE_GLASS,
           }}
         />
@@ -64,3 +73,4 @@ export default function HomeLayout() {
     </MaxWidthContainer>
   );
 }
+// @ai-end

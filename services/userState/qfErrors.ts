@@ -4,13 +4,15 @@
  *
  * The SDK throws a plain `Error("{status} {statusText}")` on non-2xx. To
  * preserve the sync-queue's existing retry policy (retryable: network +
- * 408/429/5xx; permanent: 4xx other than 401/408/429; auth-paused:
- * 401-after-refresh) we wrap each SDK call with `withQfCall` which:
+ * 401/408/429/5xx; permanent: 4xx other than 401/408/429; auth-paused:
+ * no session after the refresh) we wrap each SDK call with `withQfCall` which:
  *
  *   1. Catches the SDK's generic Error.
  *   2. Parses the leading status code from `e.message`.
- *   3. On 401, forces a token refresh via `getValidAccessToken()` and
+ *   3. On 401, forces a token refresh via `refreshAfterUnauthorized()` and
  *      retries once (the SDK's storage adapter will pick up the new token).
+ *      M2 (TECH_DEBT #244): the refresh happens even when the token has not
+ *      expired by the local clock. // @ai
  *   4. Rethrows as typed `QfApiError` / `QfAuthRequiredError`.
  *
  * Note: response body is NOT preserved on the typed error (the SDK doesn't
@@ -19,6 +21,8 @@
  *
  * Sprint 17 (S17.2).
  */
+
+import {refreshAfterUnauthorized} from '@/services/auth/qfOAuth'; // @ai
 
 export class QfApiError extends Error {
   readonly status: number;
@@ -55,14 +59,18 @@ function parseStatus(e: unknown): number {
 /**
  * Wraps an SDK call with error-classification + one 401-retry-after-refresh.
  *
- * The retry exists to cover the race where the access token expires between
- * the storage adapter's read and the actual fetch — exactly the case the
- * pre-S17.2 hand-rolled client handled. `getValidAccessToken` will refresh
- * the token (or return null if the refresh token is dead); on null we throw
- * `QfAuthRequiredError` so the sync queue pauses rather than burns attempts.
+ * The retry covers an access token that expired between the storage
+ * adapter's read and the fetch, and a token that QF revoked on the server.
+ * `refreshAfterUnauthorized` refreshes the token (or returns null when no
+ * session can be refreshed); on null we throw `QfAuthRequiredError` so the
+ * sync queue pauses rather than burns attempts. // @ai
  *
- * `getValidAccessToken` is lazy-imported to break the
- * services/auth ↔ services/userState import cycle.
+ * `refreshAfterUnauthorized` comes from `services/auth/qfOAuth.ts`, not from
+ * the `services/auth` barrel. qfOAuth.ts imports nothing from
+ * services/userState, so this static import makes no cycle (notesSync.ts and
+ * postsRestore.ts use the same import). Jest cannot run a dynamic `import()`
+ * without `--experimental-vm-modules`, so the old lazy import also blocked
+ * the first sync-queue tests. // @ai
  */
 export async function withQfCall<T>(
   path: string,
@@ -77,8 +85,7 @@ export async function withQfCall<T>(
       throw new QfApiError(`QF ${path} failed: ${msg}`, status, path);
     }
     // 401 — try one refresh + retry.
-    const {getValidAccessToken} = await import('@/services/auth');
-    const next = await getValidAccessToken();
+    const next = await refreshAfterUnauthorized(); // @ai
     if (!next) throw new QfAuthRequiredError(path);
     try {
       return await fn();
@@ -98,13 +105,19 @@ export async function withQfCall<T>(
  * Classifies a thrown QfApiError as retryable (transient — re-enqueue) vs
  * permanent (give up). Used by the offline sync queue.
  *
- * Retryable: 0 (network), 408, 429, 500–599.
- * Auth-required (401 after refresh): retryable, but the queue pauses
- * draining until auth is restored.
+ * Retryable: 0 (network), 401, 408, 429, 500–599.
+ * Auth-required (no session after the refresh): retryable, but the queue
+ * pauses draining until auth is restored.
+ *
+ * M2 (TECH_DEBT #244): a 401 that stays after a refresh is retryable, not
+ * permanent. It is an auth problem, not a bad write, so the queued write must
+ * not be dropped. // @ai
  */
 export function isQfErrorRetryable(err: unknown): boolean {
   if (err instanceof QfAuthRequiredError) return true;
   if (!(err instanceof QfApiError)) return false;
   const s = err.status;
-  return s === 0 || s === 408 || s === 429 || (s >= 500 && s <= 599);
+  return (
+    s === 0 || s === 401 || s === 408 || s === 429 || (s >= 500 && s <= 599)
+  );
 }

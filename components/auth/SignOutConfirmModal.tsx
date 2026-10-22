@@ -14,6 +14,7 @@ import {moderateScale} from 'react-native-size-matters';
 import BottomSheetModal from '@/components/BottomSheetModal';
 import {useTheme} from '@/hooks/useTheme';
 import {useBottomInset} from '@/hooks/useBottomInset';
+import {useTranslation} from 'react-i18next';
 
 interface SignOutConfirmModalProps {
   isVisible: boolean;
@@ -27,6 +28,7 @@ export function SignOutConfirmModal({
   onCancel,
 }: SignOutConfirmModalProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'common']);
   // Sprint 17 user test: the prior `['38%']` snap point left the
   // Sign-out + Cancel buttons rendering behind the mini-player + tab bar
   // overlay whenever a track was loaded. Push the sheet up enough that
@@ -39,29 +41,30 @@ export function SignOutConfirmModal({
       snapPoints={['55%']}>
       <View style={[styles.container, {paddingBottom: bottomInset}]}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          Sign out of Qariah?
+          {t('qariah:signOut.title')}
         </Text>
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          Your favorites, listening history, and downloads will stay on this
-          device. You can sign back in any time from Settings.
+          {t('qariah:signOut.body')}
         </Text>
         <View style={styles.actions}>
           <Pressable
             onPress={onConfirm}
             style={[styles.button, styles.destructiveButton]}
             accessibilityRole="button"
-            accessibilityLabel="Sign out">
-            <Text style={styles.destructiveButtonText}>Sign out</Text>
+            accessibilityLabel={t('qariah:account.signOut')}>
+            <Text style={styles.destructiveButtonText}>
+              {t('qariah:account.signOut')}
+            </Text>
           </Pressable>
           <Pressable
             onPress={onCancel}
             style={styles.cancelButton}
             hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Cancel sign-out">
+            accessibilityLabel={t('qariah:signOut.cancelA11y')}>
             <Text
               style={[styles.cancelText, {color: theme.colors.textSecondary}]}>
-              Cancel
+              {t('common:actions.cancel')}
             </Text>
           </Pressable>
         </View>

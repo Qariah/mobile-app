@@ -48,7 +48,6 @@ export interface PlayerStoreState extends Omit<UnifiedPlayerState, 'ui'> {
   // Playback Actions
   play: () => Promise<void>;
   pause: () => Promise<void>;
-  stop: () => Promise<void>;
   skipToNext: () => Promise<void>;
   skipToPrevious: () => Promise<void>;
   seekTo: (position: number) => Promise<void>;
@@ -81,14 +80,15 @@ export interface PlayerStoreState extends Omit<UnifiedPlayerState, 'ui'> {
   cleanup: () => Promise<void>;
 }
 
-// @ai #266 review fix — monotonic id for the in-flight play operation.
-// Every loadTrackAtIndex() claims a fresh id at entry; stop()/cleanup() bump
-// it via invalidatePlayOps(). Without this, a stop() fired while updateQueue()
-// (or a skip) is awaiting the network re-creates ghost playback: the load's
-// play() lands AFTER stop()'s pause (audible audio, empty queue, hidden
-// mini-player, cleared lock screen) and the caller's trailing set() clobbers
-// the 'stopped' state. loadTrackAtIndex re-checks the id after each await and
-// returns false when superseded so callers skip their trailing state writes.
+// Monotonic id for the in-flight play operation. Every loadTrackAtIndex()
+// claims a fresh id at entry; cleanup() bumps it via invalidatePlayOps().
+// Without this, two overlapping loads both run to completion: a second tap (a
+// rapid skip, or re-queueing while the first load is still awaiting the
+// network) starts its own load, then the OLDER one's play() lands after the
+// newer one's and its caller's trailing set() clobbers the newer track's state
+// — audible track A over a queue that says track B. loadTrackAtIndex re-checks
+// the id after each await and returns false when superseded, so callers skip
+// their trailing state writes and the last legitimate operation wins.
 let playOpId = 0;
 
 /** Invalidate any in-flight loadTrackAtIndex (see playOpId above). */
@@ -97,24 +97,83 @@ function invalidatePlayOps(): void {
 }
 
 /**
+ * Current play op id. Loads outside the store (restoreSession's background
+ * load) snapshot it and bail when it moves, so they never replace a source a
+ * newer play started.
+ */
+export function currentPlayOpId(): number {
+  return playOpId;
+}
+
+/**
+ * @ai Stop the audio before a write that leaves the queue with no current
+ * track: cleanup() (Settings -> Clear cache), the removal of the last tracks,
+ * or a queue with no track to load (TECH_DEBT #235). With no current track,
+ * the app shows no player, and LockScreenService clears the lock-screen and
+ * notification controls, so audio that kept playing had no control anywhere.
+ *
+ * It ends the in-flight loads first, so none of them can start audio after
+ * the pause, then pauses the native player. A pause failure must not block
+ * the caller's write. Returns the op id that it claimed: a caller compares it
+ * after the await to learn if a newer load started during the pause.
+ */
+async function pauseForEmptyQueue(): Promise<number> {
+  invalidatePlayOps();
+  const opId = playOpId;
+  try {
+    await expoAudioService.pause();
+  } catch (error) {
+    if (__DEV__)
+      console.warn('[PlayerStore] Pause before an empty queue failed:', error);
+  }
+  return opId;
+}
+
+// @ai-start
+/**
+ * The result of loadTrackAtIndex. `false`: superseded. 'played': the service
+ * called player.play(). 'loaded': the track loaded and did not play (no
+ * autoplay, or play() returned false: no player came in time, or a pause
+ * cancelled the player wait).
+ */
+type LoadOutcome = false | 'loaded' | 'played';
+
+/**
+ * The state that an autoplaying load settles. A load that did not play must
+ * not write 'playing' (the same rule as play()). It settles 'ready' over its
+ * own 'loading' (or the 'playing' it replaced), and keeps a state that a
+ * newer action wrote, for example the 'paused' of a pause() during the wait.
+ */
+function settledAfterAutoPlay(
+  outcome: 'loaded' | 'played',
+  current: StorePlaybackState,
+): StorePlaybackState {
+  if (outcome === 'played') return 'playing';
+  return current === 'loading' || current === 'playing' ? 'ready' : current;
+}
+// @ai-end
+
+/**
  * Helper to load and optionally play a track from the queue.
  *
- * Returns `false` when the operation was superseded mid-flight (a stop(),
- * cleanup(), or newer load won the race) — the caller MUST skip its trailing
- * state write in that case so the superseding action's state stands.
+ * Returns `false` when the operation was superseded mid-flight (a cleanup() or
+ * a newer load won the race) — the caller MUST skip its trailing state write in
+ * that case so the superseding action's state stands.
  */
 async function loadTrackAtIndex(
   tracks: Track[],
   index: number,
-  startPosition = 0,
+  // @ai A function is read after the load ends, so a seek during the load
+  // wins over the position from before it (TECH_DEBT #271).
+  startAt: number | (() => number) = 0,
   autoPlay = false,
-): Promise<boolean> {
+): Promise<LoadOutcome> {
   const track = tracks[index];
   if (!track?.url) {
     if (__DEV__) console.warn('[PlayerStore] No track at index:', index);
     // Not superseded — nothing was loaded, but the caller's op is still the
     // current one, so let it finalize its loading flags as before.
-    return true;
+    return 'loaded'; // @ai
   }
 
   // Claim the op: any older load still awaiting the network is now stale
@@ -131,7 +190,7 @@ async function loadTrackAtIndex(
       index,
       title: track.title,
       url: track.url.substring(0, 50) + '...',
-      startPosition,
+      startPosition: typeof startAt === 'number' ? startAt : 'after the load', // @ai
       autoPlay,
     });
 
@@ -141,11 +200,16 @@ async function loadTrackAtIndex(
   await expoAudioService.loadTrack(track.url);
   diagBreadcrumb('play:load-loadTrack-done', {index});
   if (opId !== playOpId) {
-    // stop()/cleanup() or a newer load landed while we awaited the network —
-    // do NOT seek or play; the superseding action's state is authoritative.
+    // cleanup() or a newer load landed while we awaited the network — do NOT
+    // seek or play; the superseding action's state is authoritative.
     diagBreadcrumb('play:load-superseded', {index});
     return false;
   }
+  // @ai The player reported a load error (TECH_DEBT #271): it holds no
+  // source. Do not seek or play; the caller settles 'ready', so Play shows,
+  // and the next play() in the app loads the track again.
+  if (!expoAudioService.holdsSource(track.url)) return 'loaded';
+  const startPosition = typeof startAt === 'function' ? startAt() : startAt; // @ai
 
   if (startPosition > 0) {
     if (__DEV__)
@@ -168,14 +232,22 @@ async function loadTrackAtIndex(
       diagBreadcrumb('play:load-superseded', {index});
       return false;
     }
-    await expoAudioService.play();
+    // @ai play() can wait up to 10 s for setPlayer (PR #425). A cleanup(),
+    // a newer load or the removal of the last track during that wait moves
+    // the op id: the caller must not write 'playing' over the newer state.
+    const played = await expoAudioService.play();
     diagBreadcrumb('play:load-play-done', {index});
+    if (opId !== playOpId) {
+      diagBreadcrumb('play:load-superseded', {index}); // @ai
+      return false; // @ai
+    }
     if (__DEV__ && startPosition > 0)
       console.log('[PlayerStore] POST-PLAY state:', {
         currentTime: expoAudioService.getCurrentTime(),
       });
+    return played ? 'played' : 'loaded'; // @ai
   }
-  return true;
+  return 'loaded'; // @ai
 }
 
 export const usePlayerStore = create<PlayerStoreState>()(
@@ -213,19 +285,99 @@ export const usePlayerStore = create<PlayerStoreState>()(
       // Playback Actions
       play: async () => {
         diagBreadcrumb('playback', {action: 'play'});
+        // @ai-start TECH_DEBT #271: the player does not hold the shown track.
+        // Examples: a restore that loaded nothing, a load that failed, a
+        // queue that hydrated after the restore ran, or a load that still
+        // runs (the boot restore, or the load of an earlier tap).
+        // player.play() would then show Pause with no audio. So first wait
+        // for the running load of that track, or load it at the saved
+        // position (no autoplay), and play below only when the player holds
+        // it. The play below keeps the early-tap rules (#218 part 5). This
+        // never re-loads a source that the player holds (TECH_DEBT #207).
+        const {queue} = get();
+        const shown = queue.tracks[queue.currentIndex];
+        if (shown?.url && !expoAudioService.holdsSource(shown.url)) {
+          // A 'loading' state that is gone after the wait means a pause (or
+          // another action) during the wait: no play.
+          const settleNoPlay = () =>
+            set(state => ({
+              loading: {...state.loading, trackLoading: false},
+              playback:
+                state.playback.state === 'loading'
+                  ? {...state.playback, state: 'paused' as StorePlaybackState}
+                  : state.playback,
+            }));
+          try {
+            set(state => ({
+              loading: {...state.loading, trackLoading: true},
+              playback: {
+                ...state.playback,
+                state: 'loading' as StorePlaybackState,
+              },
+            }));
+            const running = expoAudioService.runningLoad(shown.url);
+            if (running) {
+              const waitOpId = playOpId;
+              await running;
+              // A newer load or a cleanup() owns the state now.
+              if (waitOpId !== playOpId) return;
+            } else {
+              const loaded = await loadTrackAtIndex(
+                queue.tracks,
+                queue.currentIndex,
+                () => get().playback.position, // @ai read after the load
+                false,
+              );
+              if (!loaded) return; // superseded by cleanup()/a newer load
+            }
+            if (
+              get().playback.state !== 'loading' ||
+              !expoAudioService.holdsSource(shown.url)
+            ) {
+              // A pause during the wait, or the load failed: no play.
+              settleNoPlay();
+              return;
+            }
+            set(state => ({
+              playback: {
+                ...state.playback,
+                state: 'paused' as StorePlaybackState,
+              },
+            }));
+          } catch (error) {
+            console.error('[PlayerStore] Play (load) failed:', error);
+            if (error instanceof Error) {
+              set(state => ({error: {...state.error, playback: error}}));
+            }
+            settleNoPlay();
+            return;
+          }
+        }
+        // @ai-end
+        // @ai The current op id. A cleanup() or a newer load during the play
+        // await moves it (see playOpId above).
+        const opId = playOpId;
         try {
           set(state => ({
             loading: {...state.loading, trackLoading: true},
           }));
 
           audioCoordinator.mainWillPlay();
-          await expoAudioService.play();
+          // @ai false when no player came in time, or the play was cancelled
+          // during the player wait (an early tap before setPlayer).
+          const played = await expoAudioService.play();
+
+          // @ai Superseded: the newer action owns the state. Do not write
+          // 'playing' over its state, and do not touch its loading flags.
+          if (opId !== playOpId) return;
 
           set(state => ({
-            playback: {
-              ...state.playback,
-              state: 'playing' as StorePlaybackState,
-            },
+            // @ai Write 'playing' only when the service called player.play().
+            // That call does not prove that audio is audible. Before this
+            // check, a tap before setPlayer showed Pause with no audio.
+            playback: played
+              ? {...state.playback, state: 'playing' as StorePlaybackState}
+              : state.playback,
             loading: {...state.loading, trackLoading: false},
           }));
         } catch (error) {
@@ -264,82 +416,6 @@ export const usePlayerStore = create<PlayerStoreState>()(
             }));
           }
         }
-      },
-
-      // Stop playback and dismiss the mini-player (#266). There is no native
-      // "stop" distinct from pause — `expoAudioService.pause()` is what halts
-      // audio (same call `pause()` above makes) — so this pauses, deactivates
-      // the OS media session, then clears the queue. MiniPlayer/FloatingPlayer
-      // gate their visibility on `currentTrack` (`queue.tracks[currentIndex]`),
-      // so an emptied queue hides them; the player reappears the next time
-      // something is queued and played.
-      //
-      // Why NOT remove() the native player (unlike mushafPlayerStore.stop()):
-      // the main AudioPlayer is a persistent `useAudioPlayer(null)` hook
-      // instance injected once via `expoAudioService.setPlayer()` on
-      // ExpoAudioProvider mount, and `loadTrack()` reuses it via
-      // `player.replace()`. There is no re-init path in `play()`/`updateQueue()`
-      // (mushaf, by contrast, `createAudioPlayer()`s a fresh player on every
-      // `loadSurah`), so `remove()`ing it would break the NEXT play. Instead we
-      // pause it and deactivate its lock-screen controls — that leaves no live
-      // media session to resume from ("ghost playback"), and `replace()` on the
-      // next play re-arms it.
-      //
-      // Deliberately narrow: playback settings (repeat/shuffle/sleep timer) and
-      // other stores (e.g. recently-played history) are left untouched — this
-      // dismisses the current track, it doesn't reset preferences.
-      stop: async () => {
-        diagBreadcrumb('playback', {action: 'stop'});
-        // Invalidate any in-flight loadTrackAtIndex FIRST (synchronously,
-        // before the pause await) so a load still waiting on the network
-        // can't play() after our pause or let its caller overwrite the
-        // 'stopped' state below (#266 close-button vs in-flight-load race).
-        invalidatePlayOps();
-        try {
-          await expoAudioService.pause();
-        } catch (error) {
-          console.error('[PlayerStore] Stop failed to pause audio:', error);
-        }
-
-        // Deactivate the main player's lock-screen / media session so there's
-        // no remote Play/Seek control left once the queue is empty. Lazy
-        // require to dodge the playerStore<->LockScreenService import cycle
-        // (LockScreenService imports usePlayerStore) — mirrors AudioCoordinator's
-        // lazy mushaf require.
-        try {
-          const {
-            lockScreenService,
-          } = require('@/services/audio/LockScreenService');
-          lockScreenService.clearMainPlayer();
-        } catch (error) {
-          if (__DEV__)
-            console.warn('[PlayerStore] Stop lock-screen clear failed:', error);
-        }
-
-        audioCoordinator.sourceDidStop('main');
-
-        set(state => ({
-          playback: {
-            ...state.playback,
-            state: 'stopped' as StorePlaybackState,
-            position: 0,
-            duration: 0,
-            buffering: false,
-          },
-          queue: {
-            ...state.queue,
-            tracks: [],
-            currentIndex: -1,
-            total: 0,
-            loading: false,
-            endReached: false,
-          },
-          loading: {
-            ...state.loading,
-            trackLoading: false,
-            queueLoading: false,
-          },
-        }));
       },
 
       skipToNext: async () => {
@@ -400,12 +476,13 @@ export const usePlayerStore = create<PlayerStoreState>()(
             0,
             true,
           );
-          if (!stillCurrent) return; // superseded by stop()/a newer load
+          if (!stillCurrent) return; // superseded by cleanup()/a newer load
 
           set(state => ({
             playback: {
               ...state.playback,
-              state: 'playing' as StorePlaybackState,
+              // @ai 'playing' only when play() played (see settledAfterAutoPlay).
+              state: settledAfterAutoPlay(stillCurrent, state.playback.state),
               position: 0,
             },
             loading: {...state.loading, trackLoading: false},
@@ -494,12 +571,13 @@ export const usePlayerStore = create<PlayerStoreState>()(
             0,
             true,
           );
-          if (!stillCurrent) return; // superseded by stop()/a newer load
+          if (!stillCurrent) return; // superseded by cleanup()/a newer load
 
           set(state => ({
             playback: {
               ...state.playback,
-              state: 'playing' as StorePlaybackState,
+              // @ai 'playing' only when play() played (see settledAfterAutoPlay).
+              state: settledAfterAutoPlay(stillCurrent, state.playback.state),
               position: 0,
             },
             loading: {...state.loading, trackLoading: false},
@@ -584,6 +662,44 @@ export const usePlayerStore = create<PlayerStoreState>()(
               targetTrack: tracks[currentIndex]?.title,
             });
 
+          // @ai No track to load at currentIndex (for example an empty list):
+          // the queue gets no current track, so stop the audio before the
+          // queue write (see pauseForEmptyQueue). The callers check for an
+          // empty list, so this is a guard.
+          if (
+            !(
+              tracks.length > 0 &&
+              currentIndex >= 0 &&
+              currentIndex < tracks.length
+            )
+          ) {
+            const opId = await pauseForEmptyQueue();
+            if (opId !== playOpId) return; // a newer load owns the state
+            set(state => ({
+              queue: {
+                ...state.queue,
+                tracks,
+                currentIndex,
+                total: tracks.length,
+                loading: false,
+                endReached: false,
+              },
+              loading: {
+                ...state.loading,
+                queueLoading: false,
+                trackLoading: false,
+                stateRestoring: false,
+              },
+              playback: {
+                ...state.playback,
+                state: 'paused' as StorePlaybackState,
+                position: startPosition,
+                buffering: false,
+              },
+            }));
+            return;
+          }
+
           // Optimistic update: set queue metadata immediately so UI updates instantly
           set(state => ({
             queue: {
@@ -623,10 +739,10 @@ export const usePlayerStore = create<PlayerStoreState>()(
               true,
             );
             diagBreadcrumb('play:loadTrack-returned', {currentIndex});
-            // A stop() (mini-player ✕) or newer play landed while the load
-            // awaited the network — keep ITS state; writing 'ready' here
-            // would leave audio-less 'ready' (or worse, resurrect a playing
-            // state over an emptied queue = ghost playback, #266 review).
+            // A cleanup() or a newer play landed while the load awaited the
+            // network — keep ITS state; writing 'ready' here would report the
+            // superseded track as the ready one (or resurrect a playing state
+            // over a queue that has already moved on).
             if (!stillCurrent) return;
           }
 
@@ -706,6 +822,17 @@ export const usePlayerStore = create<PlayerStoreState>()(
           const state = get();
           const tracks = [...state.queue.tracks];
           let newCurrentIndex = state.queue.currentIndex;
+          // @ai Read the autoplay intent before the reload starts (#237).
+          // Only the autoplaying loads (updateQueue, skipToNext,
+          // skipToPrevious, and play() when it loads first, #271) write
+          // 'loading'. So 'loading' means that a load
+          // which plays is in flight, and this reload supersedes it. Before,
+          // only 'playing' counted, so the replacement track loaded paused.
+          const autoPlay =
+            state.playback.state === 'playing' ||
+            state.playback.state === 'loading';
+          // @ai The outcome of the reload, or null when nothing reloaded.
+          let reloaded: 'loaded' | 'played' | null = null;
 
           for (const index of sortedIndices) {
             if (index >= 0 && index < tracks.length) {
@@ -724,16 +851,37 @@ export const usePlayerStore = create<PlayerStoreState>()(
                     tracks,
                     newCurrentIndex,
                     0,
-                    state.playback.state === 'playing',
+                    autoPlay,
                   );
-                  // Superseded by stop()/a newer load — bail before the
+                  // Superseded by cleanup()/a newer load — bail before the
                   // trailing set() below re-writes queue.tracks (that would
-                  // resurrect a queue stop() just emptied).
+                  // resurrect the queue the superseding action replaced).
                   if (!stillCurrent) return;
+                  reloaded = stillCurrent; // @ai
                 }
               }
             }
           }
+
+          // @ai The removal left no track: the only track, or the last
+          // tracks with the current one. Stop the audio before the
+          // empty-queue write (see pauseForEmptyQueue). Before, nothing
+          // paused, and the state stayed 'playing' with no player shown.
+          const emptied = tracks.length === 0 && state.queue.tracks.length > 0;
+          if (emptied) {
+            const opId = await pauseForEmptyQueue();
+            if (opId !== playOpId) return; // a newer load owns the queue
+          }
+
+          // @ai The state that this op settles, or null when it leaves the
+          // state to the op that owns it (no reload, nothing emptied). An
+          // autoplaying reload writes 'playing' only when play() played.
+          let settled: StorePlaybackState | null = null;
+          if (emptied) settled = 'paused';
+          else if (reloaded)
+            settled = autoPlay
+              ? settledAfterAutoPlay(reloaded, get().playback.state)
+              : 'ready';
 
           set(state => ({
             queue: {
@@ -742,14 +890,32 @@ export const usePlayerStore = create<PlayerStoreState>()(
               total: tracks.length,
               currentIndex: Math.max(0, newCurrentIndex),
             },
-            loading: {...state.loading, queueLoading: false},
+            loading: {
+              ...state.loading,
+              queueLoading: false,
+              // @ai The winning op clears all loading state (#237). A skip
+              // that this reload superseded returned before its own clear,
+              // so without this, trackLoading stayed true (the player
+              // controls stayed disabled) and the state stayed 'loading'
+              // (ExpoAudioProvider skips its status sync in that state).
+              ...(settled ? {trackLoading: false} : {}),
+            },
+            ...(settled
+              ? {playback: {...state.playback, state: settled, position: 0}}
+              : {}),
           }));
         } catch (error) {
           console.error('[PlayerStore] Remove from queue failed:', error);
           if (error instanceof Error) {
             set(state => ({
               error: {...state.error, queue: error},
-              loading: {...state.loading, queueLoading: false},
+              // @ai A failed reload must not leave the controls disabled
+              // (#237), the same as the catch in the other load paths.
+              loading: {
+                ...state.loading,
+                queueLoading: false,
+                trackLoading: false,
+              },
             }));
           }
         }
@@ -951,7 +1117,10 @@ export const usePlayerStore = create<PlayerStoreState>()(
       // Cleanup method
       cleanup: async () => {
         // In-flight loads must not play()/write state into a cleaned service.
-        invalidatePlayOps();
+        // @ai Then pause the native player before the reset (TECH_DEBT #235).
+        // Settings -> Clear cache calls this while audio can play, and the
+        // reset empties the queue (see pauseForEmptyQueue).
+        await pauseForEmptyQueue();
         const state = get();
         if (
           typeof state.settings.sleepTimerInterval === 'object' &&
@@ -1006,6 +1175,20 @@ export const usePlayerStore = create<PlayerStoreState>()(
 
 // Export singleton instance for use in service worker
 export const playerStore = usePlayerStore;
+
+// @ai TECH_DEBT #271: a load that timed out counts as held, so Play can start
+// it; when the player then reports an error, it holds no source. If the store
+// shows that track as playing, show Play again, so the next Play in the app
+// loads it. No reload here (TECH_DEBT #207). Test mocks of the service may
+// not have the method.
+expoAudioService.setSourceLostHandler?.(url => {
+  const {queue, playback} = usePlayerStore.getState();
+  if (queue.tracks[queue.currentIndex]?.url !== url) return;
+  if (playback.state !== 'playing' && playback.state !== 'buffering') return;
+  usePlayerStore.setState(state => ({
+    playback: {...state.playback, state: 'paused', buffering: false},
+  }));
+});
 
 export const updateQueue = async (tracks: Track[], targetIndex: number) => {
   const store = usePlayerStore.getState();

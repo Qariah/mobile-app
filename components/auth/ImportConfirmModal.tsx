@@ -19,6 +19,9 @@ import {moderateScale} from 'react-native-size-matters';
 import BottomSheetModal from '@/components/BottomSheetModal';
 import {useTheme} from '@/hooks/useTheme';
 import type {ImportCandidate} from '@/services/userState/exportImport';
+import {useTranslation} from 'react-i18next';
+import {currentLanguage} from '@/i18n/language';
+import {SOURCE_LANGUAGE, getIntlLocale} from '@/i18n/languages';
 
 interface ImportConfirmModalProps {
   isVisible: boolean;
@@ -36,22 +39,29 @@ export function ImportConfirmModal({
   onCancel,
 }: ImportConfirmModalProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'common']);
   if (!candidate) return null;
 
   const {counts, exportedAt, source} = candidate;
   const dateLabel = (() => {
     try {
-      return new Date(exportedAt).toLocaleDateString();
+      // English keeps the device's own date order (en-GB: 18/10/2026);
+      // other languages use upstream's locale for that language.
+      return new Date(exportedAt).toLocaleDateString(
+        currentLanguage === SOURCE_LANGUAGE
+          ? undefined
+          : getIntlLocale(currentLanguage),
+      );
     } catch {
       return exportedAt.slice(0, 10);
     }
   })();
   const sourceLabel =
     source === 'v1-extractor'
-      ? 'original Qariah app'
+      ? t('qariah:import.sourceV1')
       : source === 'v2-export'
-        ? 'a Qariah export'
-        : 'Qariah server';
+        ? t('qariah:import.sourceExport')
+        : t('qariah:import.sourceServer');
 
   const totalItems = counts.reciters + counts.surahs + counts.recitations;
 
@@ -62,34 +72,35 @@ export function ImportConfirmModal({
       snapPoints={['50%']}>
       <View style={styles.container}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          Import {totalItems} item{totalItems === 1 ? '' : 's'}?
+          {t('qariah:import.title', {count: totalItems})}
         </Text>
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          From {sourceLabel} · exported {dateLabel}
+          {t('qariah:import.from', {source: sourceLabel, date: dateLabel})}
         </Text>
         <View style={styles.countsList}>
           {counts.reciters > 0 && (
             <Text style={[styles.countLine, {color: theme.colors.text}]}>
-              · {counts.reciters} reciter favorite
-              {counts.reciters === 1 ? '' : 's'}
+              {'· '}
+              {t('qariah:counts.reciterFavorites', {count: counts.reciters})}
             </Text>
           )}
           {counts.recitations > 0 && (
             <Text style={[styles.countLine, {color: theme.colors.text}]}>
-              · {counts.recitations} recitation favorite
-              {counts.recitations === 1 ? '' : 's'}
+              {'· '}
+              {t('qariah:counts.recitationFavorites', {
+                count: counts.recitations,
+              })}
             </Text>
           )}
           {counts.surahs > 0 && (
             <Text style={[styles.countLine, {color: theme.colors.text}]}>
-              · {counts.surahs} surah favorite
-              {counts.surahs === 1 ? '' : 's'}
+              {'· '}
+              {t('qariah:counts.surahFavorites', {count: counts.surahs})}
             </Text>
           )}
         </View>
         <Text style={[styles.note, {color: theme.colors.textSecondary}]}>
-          These will be merged with your existing favorites — nothing will be
-          deleted.
+          {t('qariah:import.mergeNote')}
         </Text>
         <View style={styles.actions}>
           {pending ? (
@@ -105,7 +116,7 @@ export function ImportConfirmModal({
                   styles.primaryButtonText,
                   {color: theme.colors.background, marginLeft: 8},
                 ]}>
-                Importing…
+                {t('qariah:import.importing')}
               </Text>
             </View>
           ) : (
@@ -121,14 +132,14 @@ export function ImportConfirmModal({
                   styles.primaryButtonText,
                   {color: theme.colors.background},
                 ]}>
-                Import
+                {t('qariah:import.confirm')}
               </Text>
             </Pressable>
           )}
           <Pressable style={styles.cancelLink} onPress={onCancel} hitSlop={12}>
             <Text
               style={[styles.cancelText, {color: theme.colors.textSecondary}]}>
-              Cancel
+              {t('common:actions.cancel')}
             </Text>
           </Pressable>
         </View>

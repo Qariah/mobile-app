@@ -27,6 +27,7 @@ import {useLovedStore} from '@/services/player/store/lovedStore';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {RECITERS} from '@/data/reciterData';
 import Constants from 'expo-constants';
+import i18n from '@/i18n';
 
 const EXPORT_FILENAME_PREFIX = 'qariah-export';
 
@@ -167,7 +168,7 @@ export async function exportAndShare(): Promise<ExportResult> {
   if (canShare) {
     await Sharing.shareAsync(uri, {
       mimeType: 'application/json',
-      dialogTitle: 'Save your Qariah data',
+      dialogTitle: i18n.t('qariah:data.shareDialogTitle'),
       UTI: 'public.json',
     });
   }

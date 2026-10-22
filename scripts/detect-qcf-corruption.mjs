@@ -42,8 +42,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = join(__dirname, '../data/mushaf/qcf/qcf-pages.json');
 
 const args = process.argv.slice(2);
-const SEVERITY_FILTER = args
-  .find(a => a.startsWith('--severity='))
+const SEVERITY_FILTER = args.find(a => a.startsWith('--severity='))
   ?.split('=')[1]; // 'high' | 'all'
 const JSON_OUTPUT = args.includes('--json');
 
@@ -95,7 +94,11 @@ for (const page of data.pages) {
     page.l.length < TOO_FEW_LINES_PER_PAGE &&
     !EXPECTED_SHORT_PAGES.has(page.p)
   ) {
-    add('too-few-lines', SOFT, `${page.l.length} lines (typical 13–15)`);
+    add(
+      'too-few-lines',
+      SOFT,
+      `${page.l.length} lines (typical 13–15)`,
+    );
   }
 
   // Page-level: gap in line numbering. Lines should be a contiguous
@@ -284,9 +287,7 @@ if (JSON_OUTPUT) {
 }
 
 const SEVERE_PAGES = filtered.filter(f => f.score >= 6).map(f => f.page);
-const HARD_PAGES = filtered
-  .filter(f => f.score >= HARD && f.score < 6)
-  .map(f => f.page);
+const HARD_PAGES = filtered.filter(f => f.score >= HARD && f.score < 6).map(f => f.page);
 const SOFT_PAGES = filtered.filter(f => f.score < HARD).map(f => f.page);
 
 console.log(`Found ${filtered.length} suspect page(s).\n`);

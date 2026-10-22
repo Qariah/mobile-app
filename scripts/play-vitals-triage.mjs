@@ -28,10 +28,10 @@
 //   GOOGLE_PLAY_SA_JSON                  full service-account JSON STRING (how CI passes it)
 //   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON     path to the JSON file (local override)
 //   ~/.android/play-service-account.json default local path
-// The SA needs Play Developer Reporting read access. A JWT is signed locally
-// with RS256 (Node `crypto`, no deps) and exchanged for an OAuth token scoped to
-// https://www.googleapis.com/auth/playdeveloperreporting. The private key and
-// the token are NEVER logged.
+// The SA needs Play Developer Reporting read access. scripts/lib/google-play-auth.mjs
+// signs a JWT locally with RS256 (Node `crypto`, no deps) and exchanges it for an
+// OAuth token scoped to https://www.googleapis.com/auth/playdeveloperreporting.
+// The private key and the token are NEVER logged.
 //
 // Optional env (sensible defaults for this repo):
 //   PLAY_PACKAGE        default "com.qariah.app"
@@ -67,10 +67,16 @@
 // we've already filed is folded, not re-filed.
 
 import crypto from 'node:crypto';
-import {execFileSync} from 'node:child_process';
-import {readFileSync, writeFileSync, mkdtempSync} from 'node:fs';
-import {tmpdir, homedir} from 'node:os';
-import {join} from 'node:path';
+import {writeFileSync, realpathSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
+import {getPlayAccessToken} from './lib/google-play-auth.mjs';
+import {
+  createIssue,
+  ensureLabels,
+  listLaneIssues,
+  markersIn,
+} from './lib/triage-common.mjs';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -97,8 +103,7 @@ if (flag('help')) {
   process.exit(0);
 }
 
-const PACKAGE = process.env.PLAY_PACKAGE || 'com.qariah.app';
-const GH_REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
+const PACKAGE = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME;
 
 const DRY_RUN = flag('dry-run');
 const DAYS = Math.max(1, parseInt(opt('days', '28'), 10) || 28);
@@ -266,34 +271,6 @@ export function classifyAppLineage(issue, reportHead) {
 }
 
 // ---------------------------------------------------------------------------
-// Service-account credentials — load WITHOUT logging any secret material.
-// ---------------------------------------------------------------------------
-function loadServiceAccount() {
-  const raw = process.env.GOOGLE_PLAY_SA_JSON;
-  if (raw && raw.trim()) {
-    try {
-      return JSON.parse(raw);
-    } catch (e) {
-      // Never echo the raw value (it contains the private key).
-      throw new Error(
-        `GOOGLE_PLAY_SA_JSON is set but is not valid JSON: ${e.message}`,
-      );
-    }
-  }
-  const path =
-    process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ||
-    join(homedir(), '.android', 'play-service-account.json');
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch (e) {
-    throw new Error(
-      `No service account: set GOOGLE_PLAY_SA_JSON (JSON string) or ` +
-        `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (path), or place the file at ${path}. (${e.message})`,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Noise filter — substrings/regex marking an error issue as known noise.
 // Matched case-insensitively against cause + location + the reportText head.
 // Keep this list curated; everything here is excluded from filing.
@@ -441,54 +418,6 @@ const KNOWLEDGE = [
 ];
 
 // ---------------------------------------------------------------------------
-// OAuth — mint a token from the SA via RS256 JWT.
-// ---------------------------------------------------------------------------
-/* global Buffer */ // Buffer is a Node.js built-in; eslint env lacks node:true
-const b64u = o =>
-  Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString(
-    'base64url',
-  );
-
-async function mintToken(sa) {
-  const now = Math.floor(Date.now() / 1000);
-  const unsigned =
-    b64u({alg: 'RS256', typ: 'JWT'}) +
-    '.' +
-    b64u({
-      iss: sa.client_email,
-      scope: 'https://www.googleapis.com/auth/playdeveloperreporting',
-      aud: 'https://oauth2.googleapis.com/token',
-      exp: now + 3600,
-      iat: now,
-    });
-  const sig = crypto
-    .createSign('RSA-SHA256')
-    .update(unsigned)
-    .sign(sa.private_key)
-    .toString('base64url');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: `${unsigned}.${sig}`,
-    }),
-  });
-  const tok = await res.json().catch(() => null);
-  if (!tok || !tok.access_token) {
-    // Surface ONLY the non-secret error fields — never the token payload.
-    const why =
-      tok && (tok.error_description || tok.error)
-        ? `${tok.error || ''} ${tok.error_description || ''}`.trim()
-        : `HTTP ${res.status}`;
-    throw new Error(
-      `Failed to mint Play Reporting token (${why}). Check the service-account permissions.`,
-    );
-  }
-  return tok.access_token;
-}
-
-// ---------------------------------------------------------------------------
 // Play Developer Reporting API
 // ---------------------------------------------------------------------------
 const API_BASE = `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PACKAGE}`;
@@ -515,7 +444,9 @@ async function playFetch(path, init) {
     } catch (e) {
       // Network-layer failure (DNS, socket) is transient by nature.
       last = Object.assign(
-        new Error(`Play Reporting network error on ${path.split('?')[0]}: ${e.message}`),
+        new Error(
+          `Play Reporting network error on ${path.split('?')[0]}: ${e.message}`,
+        ),
         {transient: true},
       );
       if (attempt < MAX_ATTEMPTS) {
@@ -669,20 +600,6 @@ function issuesFilter() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function gh(args, {input} = {}) {
-  try {
-    return execFileSync('gh', args, {
-      encoding: 'utf8',
-      input,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (e) {
-    const msg = (e.stderr || e.stdout || e.message || '').toString();
-    throw new Error(`gh ${args.join(' ')} failed: ${msg.slice(0, 400)}`);
-  }
-}
-
 const issueId = issue =>
   String(issue.name || '')
     .split('/')
@@ -881,36 +798,6 @@ ${insight ? `\n### Play insight\n${insight}\n` : ''}
 <!-- ${SIG_PREFIX}${sig} -->`;
 }
 
-function ensureLabels(labels) {
-  if (DRY_RUN) return;
-  const palette = {
-    'play-store': '34a853', // Google green
-    anr: 'd93f0b',
-    crash: 'b60205',
-    investigate: '0e8a16',
-    'severity:critical': 'b60205',
-    'severity:high': 'd93f0b',
-    'severity:medium': 'fbca04',
-    'severity:low': 'c2e0c6',
-  };
-  for (const l of labels) {
-    try {
-      gh([
-        'label',
-        'create',
-        l,
-        '--repo',
-        GH_REPO,
-        '--color',
-        palette[l] || 'ededed',
-        '--force',
-      ]);
-    } catch {
-      /* label exists / race — fine */
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -920,8 +807,16 @@ async function main() {
       `versionCodes=[${VERSION_CODES.join(',') || 'all'}] max=${MAX}${DRY_RUN ? '  (DRY RUN)' : ''}`,
   );
 
-  const sa = loadServiceAccount();
-  const token = await mintToken(sa);
+  let token;
+  try {
+    token = await getPlayAccessToken({scope: 'reporting'});
+  } catch (e) {
+    if (e.code !== 'token-mint-failed') throw e;
+    // Surface ONLY the non-secret error fields — never the token payload.
+    throw new Error(
+      `Failed to mint Play Reporting token (${e.detail}). Check the service-account permissions.`,
+    );
+  }
   console.log('  ✓ token acquired (scope=playdeveloperreporting)');
 
   // 0. Per-versionCode crash/ANR RATES (best-effort; skipped with --no-rates).
@@ -1054,46 +949,11 @@ async function main() {
   //    rotates across windows (one OOM class carried 3 ids → the re-file flood),
   //    so the signature is the durable key: if a signature we've filed before
   //    shows up under a new id, fold it instead of re-filing.
-  if (!DRY_RUN) ensureLabels([LABEL]);
-  let alreadyFiledIds = new Set();
-  let alreadyFiledSigs = new Set();
-  try {
-    const existing = JSON.parse(
-      gh([
-        'issue',
-        'list',
-        '--repo',
-        GH_REPO,
-        '--label',
-        LABEL,
-        '--state',
-        'all',
-        '--limit',
-        '500',
-        '--json',
-        'body',
-      ]),
-    );
-    for (const e of existing) {
-      const mi = (e.body || '').match(
-        new RegExp(`${MARKER_PREFIX}([^\\s>]+)`, 'g'),
-      );
-      if (mi)
-        mi.forEach(s => alreadyFiledIds.add(s.slice(MARKER_PREFIX.length)));
-      const ms = (e.body || '').match(
-        new RegExp(`${SIG_PREFIX}([^\\s>]+)`, 'g'),
-      );
-      if (ms) ms.forEach(s => alreadyFiledSigs.add(s.slice(SIG_PREFIX.length)));
-    }
-  } catch (e) {
-    console.warn(
-      `  ⚠ could not list existing GitHub issues for dedup: ${e.message}`,
-    );
-    if (!DRY_RUN) {
-      console.error('  refusing to file without a working dedup check.');
-      process.exit(1);
-    }
-  }
+  // One listing serves both markers. In a real run listLaneIssues() exits when
+  // it cannot list, so a failed dedup check never files twice.
+  const existing = listLaneIssues(LABEL, {dryRun: DRY_RUN, limit: 500});
+  const alreadyFiledIds = markersIn(existing, MARKER_PREFIX);
+  const alreadyFiledSigs = markersIn(existing, SIG_PREFIX);
   // Collapse WITHIN this run, two levels:
   //   (1) identical signature → keep the highest-reach member (Play sometimes
   //       lists the same crash twice across windows with different ids).
@@ -1233,7 +1093,6 @@ async function main() {
 
   // 5. File.
   let filed = 0;
-  const tmp = mkdtempSync(join(tmpdir(), 'play-vitals-triage-'));
   for (const {
     issue,
     id,
@@ -1284,20 +1143,8 @@ async function main() {
       continue;
     }
 
-    ensureLabels(labels);
-    const bodyFile = join(tmp, `${id}.md`);
-    writeFileSync(bodyFile, body);
-    const url = gh([
-      'issue',
-      'create',
-      '--repo',
-      GH_REPO,
-      '--title',
-      title,
-      '--body-file',
-      bodyFile,
-      ...labels.flatMap(l => ['--label', l]),
-    ]);
+    ensureLabels(labels, false);
+    const {url} = createIssue({title, body, labels});
     console.log(`  ✅ filed ${id} → ${url}`);
     filed++;
   }
@@ -1318,17 +1165,24 @@ async function main() {
   }
 }
 
-main().catch(e => {
-  // A transient upstream outage is not a CI failure: exiting 1 here paints the
-  // whole Diagnostics Watch run red and (historically) skipped every downstream
-  // job. Report it and exit clean — tomorrow's run picks the data back up.
-  if (e.transient) {
-    console.error(`⚠️  ${e.message}`);
-    console.error(
-      '   Transient Play Reporting outage after retries — skipping this collector for today.',
-    );
-    process.exit(0);
-  }
-  console.error(`❌ ${e.message}`);
-  process.exit(1);
-});
+// @ai Run only as a command. A test imports classifyAppLineage() from this
+// file; without this guard the import started the live collector, which can
+// file GitHub issues when a Play service account is on the machine.
+const isMain =
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+if (isMain)
+  main().catch(e => {
+    // A transient upstream outage is not a CI failure: exiting 1 here paints the
+    // whole Diagnostics Watch run red and (historically) skipped every downstream
+    // job. Report it and exit clean — tomorrow's run picks the data back up.
+    if (e.transient) {
+      console.error(`⚠️  ${e.message}`);
+      console.error(
+        '   Transient Play Reporting outage after retries — skipping this collector for today.',
+      );
+      process.exit(0);
+    }
+    console.error(`❌ ${e.message}`);
+    process.exit(1);
+  });

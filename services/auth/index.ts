@@ -16,10 +16,12 @@ export {
   getValidAccessToken,
   isSignedIn,
   refreshAccessToken,
+  refreshAfterUnauthorized,
   signIn,
   signOut,
+  subscribeAuthEvents,
 } from './qfOAuth';
-export type {SignInResult} from './qfOAuth';
+export type {AuthEvent, SignInResult} from './qfOAuth';
 export {
   getQfOAuthConfig,
   getQfApiBase,

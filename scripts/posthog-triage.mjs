@@ -72,10 +72,13 @@
 // cohort-maturity window. The zero-floor discrete-fault tripwire (splash_stalled
 // / boot_not_completed) is KEPT intact — it is correct and denominator-immune.
 
-import {execFileSync} from 'node:child_process';
-import {writeFileSync, mkdtempSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {writeFileSync} from 'node:fs';
+import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
+import {
+  createIssue,
+  ensureLabels,
+  existingMarkers,
+} from './lib/triage-common.mjs';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -101,15 +104,10 @@ if (flag('help')) {
   process.exit(0);
 }
 
-const TOKEN = process.env.POSTHOG_PERSONAL_API_TOKEN;
-const PROJECT = process.env.POSTHOG_PROJECT_ID;
-const HOST = (process.env.POSTHOG_HOST || 'https://us.posthog.com').replace(
-  /\/$/,
-  '',
-);
+const POSTHOG = posthogConfig();
+const {token: TOKEN, project: PROJECT} = POSTHOG;
 const FLAG_KEY = process.env.DIAGNOSTICS_FLAG_KEY || 'diagnostics_mode';
 const FLAG_ID = process.env.DIAGNOSTICS_FLAG_ID || '706025';
-const GH_REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
 
 const DRY_RUN = flag('dry-run');
 const WINDOW = opt('window', '7d');
@@ -218,44 +216,7 @@ const SUPPRESSED_RATIOS = new Set([
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-async function ph(path, {method = 'GET', body} = {}) {
-  const url = `${HOST}/api/projects/${PROJECT}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      ...(body ? {'Content-Type': 'application/json'} : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`PostHog ${res.status} on ${path}: ${txt.slice(0, 300)}`);
-  }
-  return res.json();
-}
-
-async function hogql(query) {
-  const out = await ph('/query/', {
-    method: 'POST',
-    body: {query: {kind: 'HogQLQuery', query}},
-  });
-  return out.results || [];
-}
-
-function gh(args, {input} = {}) {
-  try {
-    return execFileSync('gh', args, {
-      encoding: 'utf8',
-      input,
-      env: process.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (e) {
-    const msg = (e.stderr || e.stdout || e.message || '').toString();
-    throw new Error(`gh ${args.join(' ')} failed: ${msg.slice(0, 400)}`);
-  }
-}
+const {request: ph, hogql} = createPosthogClient(POSTHOG);
 
 // "3.1.8" > "3.1.6". Returns >0 if a>b, <0 if a<b, 0 if equal/unparseable.
 function semverCmp(a, b) {
@@ -281,35 +242,6 @@ const ratio = (counts, num, den) => {
 
 const MARKER_PREFIX = 'posthog-triage-id:';
 const LABEL = 'posthog';
-
-function ensureLabels(labels) {
-  if (DRY_RUN) return;
-  const palette = {
-    posthog: '1d4aff',
-    investigate: '0e8a16',
-    regression: 'b60205',
-    'severity:critical': 'b60205',
-    'severity:high': 'd93f0b',
-    'severity:medium': 'fbca04',
-    'severity:low': 'c2e0c6',
-  };
-  for (const l of labels) {
-    try {
-      gh([
-        'label',
-        'create',
-        l,
-        '--repo',
-        GH_REPO,
-        '--color',
-        palette[l] || 'ededed',
-        '--force',
-      ]);
-    } catch {
-      /* exists / race — fine */
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -622,38 +554,7 @@ async function main() {
   // -------------------------------------------------------------------------
   // Dedup against already-filed GitHub issues (by embedded marker key).
   // -------------------------------------------------------------------------
-  if (!DRY_RUN) ensureLabels([LABEL]);
-  let filedKeys = new Set();
-  try {
-    const existing = JSON.parse(
-      gh([
-        'issue',
-        'list',
-        '--repo',
-        GH_REPO,
-        '--label',
-        LABEL,
-        '--state',
-        'all',
-        '--limit',
-        '500',
-        '--json',
-        'body',
-      ]),
-    );
-    for (const e of existing) {
-      const m = (e.body || '').match(
-        new RegExp(`${MARKER_PREFIX}([^\\s>]+)`, 'g'),
-      );
-      if (m) m.forEach(s => filedKeys.add(s.slice(MARKER_PREFIX.length)));
-    }
-  } catch (e) {
-    console.warn(`  ⚠ could not list existing issues for dedup: ${e.message}`);
-    if (!DRY_RUN) {
-      console.error('  refusing to file without a working dedup check.');
-      process.exit(1);
-    }
-  }
+  const filedKeys = existingMarkers(LABEL, MARKER_PREFIX, {dryRun: DRY_RUN});
   const fresh = signals.filter(s => !filedKeys.has(s.key));
   console.log(
     `  signals: ${signals.length} total, ${fresh.length} new  [${filedKeys.size} already filed]`,
@@ -672,7 +573,6 @@ async function main() {
 
   // File.
   let filed = 0;
-  const tmp = mkdtempSync(join(tmpdir(), 'posthog-triage-'));
   for (const s of toFile) {
     const labels = [LABEL, s.kind, `severity:${s.severity}`];
     const body = `${s.body}\n\n<!-- ${MARKER_PREFIX}${s.key} -->`;
@@ -689,20 +589,12 @@ async function main() {
       filed++;
       continue;
     }
-    ensureLabels(labels);
-    const bodyFile = join(tmp, `${s.key.replace(/[^a-z0-9]+/gi, '_')}.md`);
-    writeFileSync(bodyFile, body);
-    const url = gh([
-      'issue',
-      'create',
-      '--repo',
-      GH_REPO,
-      '--title',
-      s.title.slice(0, 140),
-      '--body-file',
-      bodyFile,
-      ...labels.flatMap(l => ['--label', l]),
-    ]);
+    ensureLabels(labels, false);
+    const {url} = createIssue({
+      title: s.title.slice(0, 140),
+      body,
+      labels,
+    });
     console.log(`  ✅ filed ${s.key} → ${url}`);
     filed++;
   }

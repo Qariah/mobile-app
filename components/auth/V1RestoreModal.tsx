@@ -21,15 +21,32 @@
  */
 
 import React, {useState, useCallback} from 'react';
-import {View, Text, Pressable, ActivityIndicator, Platform, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  ActivityIndicator,
+  Platform,
+  StyleSheet,
+} from 'react-native';
 import {moderateScale} from 'react-native-size-matters';
 import BottomSheetModal from '@/components/BottomSheetModal';
 import {useTheme} from '@/hooks/useTheme';
 import {showToast} from '@/utils/toastUtils';
-import {mergeV1IntoLocalStores, skipV1Restore, type RestoreCandidate} from '@/services/userState/v1Restore';
-import {restoreQfNotesOnce, getLastNotesRestoreCount} from '@/services/userState/notesRestore';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {
+  mergeV1IntoLocalStores,
+  skipV1Restore,
+  type RestoreCandidate,
+} from '@/services/userState/v1Restore';
+import {
+  restoreQfNotesOnce,
+  getLastNotesRestoreCount,
+} from '@/services/userState/notesRestore';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import * as Sentry from '@sentry/react-native';
+import {useTranslation} from 'react-i18next';
+import type {TFunction} from 'i18next';
+import {formatCommaList, formatList} from '@/i18n/qariahList';
 
 /** Sentry message for the pathological case. Also the explicit fingerprint —
  *  Sentry groups `captureMessage` by CALL SITE, so without this it would
@@ -105,8 +122,13 @@ interface V1RestoreModalProps {
   onDone: () => void;
 }
 
-export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalProps) {
+export function V1RestoreModal({
+  isVisible,
+  candidate,
+  onDone,
+}: V1RestoreModalProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'common']);
   const [merging, setMerging] = useState(false);
 
   const handleRestore = useCallback(async () => {
@@ -138,7 +160,8 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
       } catch {
         // Defensive — never let the notes branch break the favorites toast.
       }
-      const restored = result.recitersAdded + result.recitationsAdded + result.surahsAdded;
+      const restored =
+        result.recitersAdded + result.recitationsAdded + result.surahsAdded;
       const restoredAnyNotes = notesCount !== null && notesCount > 0;
 
       // The merge outcome already existed here (it built the toast string) and
@@ -148,7 +171,7 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
         candidate.counts.reciters +
         candidate.counts.surahs +
         candidate.counts.recitations;
-      analyticsService.trackV1RestoreMerged({
+      qariahAnalytics.trackV1RestoreMerged({
         platform: Platform.OS,
         restored_total: restored,
         reciters_added: result.recitersAdded,
@@ -215,18 +238,20 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
       }
       if (restored > 0 || restoredAnyNotes) {
         const parts = [
-          `${result.recitersAdded} reciter${result.recitersAdded === 1 ? '' : 's'}`,
-          `${result.recitationsAdded} recitation${result.recitationsAdded === 1 ? '' : 's'}`,
-          `${result.surahsAdded} surah${result.surahsAdded === 1 ? '' : 's'}`,
+          t('qariah:counts.reciters', {count: result.recitersAdded}),
+          t('qariah:counts.recitations', {count: result.recitationsAdded}),
+          t('qariah:counts.surahs', {count: result.surahsAdded}),
         ];
         if (restoredAnyNotes) {
           parts.push(
-            `${notesCount} personal note${notesCount === 1 ? '' : 's'}`,
+            t('qariah:counts.personalNotes', {count: notesCount ?? 0}),
           );
         }
         showToast(
-          restored > 0 ? 'Favorites restored' : 'Personal notes restored',
-          parts.join(', '),
+          restored > 0
+            ? t('qariah:v1.favoritesRestored')
+            : t('qariah:v1.notesRestored'),
+          formatCommaList(parts),
           'done',
         );
       } else if (result.surahsLostToWriteError > 0) {
@@ -235,29 +260,37 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
         // it is the one the user can act on: this failure is retryable once
         // there is room.
         showToast(
-          "Couldn't save your surah favorites",
-          'Your device may be out of storage. Free up space, then retry from Settings → Your Data',
+          t('qariah:data.surahFavoritesNotSaved'),
+          t('qariah:v1.outOfStorage'),
           'error',
         );
       } else {
         // Everything filtered out — most likely a slug-only mismatch set.
-        showToast('Restore complete', 'Your account had no items that match the new app yet', 'done');
+        showToast(
+          t('qariah:v1.restoreComplete'),
+          t('qariah:v1.noMatches'),
+          'done',
+        );
       }
     } catch (e) {
       Sentry.captureException(e, {tags: {scope: 'v1-restore-merge'}});
-      showToast("Couldn't restore favorites", 'Try again from Settings → Your Data', 'error');
+      showToast(
+        t('qariah:v1.restoreFailed'),
+        t('qariah:v1.retryFromSettings'),
+        'error',
+      );
     } finally {
       setMerging(false);
       onDone();
     }
-  }, [candidate, onDone]);
+  }, [candidate, onDone, t]);
 
   const handleSkip = useCallback(async () => {
     // Also the backdrop-dismiss handler and the empty-state Continue button.
     // `pending_total` separates a real decline (items left on the table) from
     // the zero-item acknowledgement, so the two never blur together.
     if (candidate) {
-      analyticsService.trackV1RestoreSkipped({
+      qariahAnalytics.trackV1RestoreSkipped({
         platform: Platform.OS,
         pending_total:
           candidate.counts.reciters +
@@ -281,52 +314,84 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
     counts.reciters === 0 && counts.surahs === 0 && counts.recitations === 0;
 
   return (
-    <BottomSheetModal isVisible={isVisible} onClose={handleSkip} snapPoints={['55%']}>
+    <BottomSheetModal
+      isVisible={isVisible}
+      onClose={handleSkip}
+      snapPoints={['55%']}>
       <View style={styles.container}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          {isEmpty ? 'Welcome back!' : 'Found your Qariah history'}
+          {isEmpty ? t('qariah:v1.welcomeBack') : t('qariah:v1.foundHistory')}
         </Text>
 
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          {isEmpty
-            ? "We found your account but no saved favorites from the original Qariah app. You're starting fresh — explore freely."
-            : describeCounts(counts)}
+          {isEmpty ? t('qariah:v1.nothingFound') : describeCounts(counts, t)}
         </Text>
 
         {!isEmpty && counts.recitationsWithoutSlug > 0 && (
           <Text style={[styles.note, {color: theme.colors.textSecondary}]}>
-            Note: {counts.recitationsWithoutSlug} recitation{counts.recitationsWithoutSlug === 1 ? '' : 's'} reference a reciter that isn't available in the new app yet — these will be skipped.
+            {t('qariah:v1.skippedNote', {
+              count: counts.recitationsWithoutSlug,
+            })}
           </Text>
         )}
 
         <View style={styles.actions}>
           {merging ? (
-            <View style={[styles.button, styles.primaryButton, {backgroundColor: theme.colors.primary}]}>
+            <View
+              style={[
+                styles.button,
+                styles.primaryButton,
+                {backgroundColor: theme.colors.primary},
+              ]}>
               <ActivityIndicator color={theme.colors.background} />
-              <Text style={[styles.primaryButtonText, {color: theme.colors.background, marginLeft: 8}]}>
-                Restoring…
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  {color: theme.colors.background, marginLeft: 8},
+                ]}>
+                {t('qariah:v1.restoring')}
               </Text>
             </View>
           ) : isEmpty ? (
             <Pressable
-              style={[styles.button, styles.primaryButton, {backgroundColor: theme.colors.primary}]}
+              style={[
+                styles.button,
+                styles.primaryButton,
+                {backgroundColor: theme.colors.primary},
+              ]}
               onPress={handleSkip}>
-              <Text style={[styles.primaryButtonText, {color: theme.colors.background}]}>
-                Continue
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  {color: theme.colors.background},
+                ]}>
+                {t('common:actions.continue')}
               </Text>
             </Pressable>
           ) : (
             <>
               <Pressable
-                style={[styles.button, styles.primaryButton, {backgroundColor: theme.colors.primary}]}
+                style={[
+                  styles.button,
+                  styles.primaryButton,
+                  {backgroundColor: theme.colors.primary},
+                ]}
                 onPress={handleRestore}>
-                <Text style={[styles.primaryButtonText, {color: theme.colors.background}]}>
-                  Restore favorites
+                <Text
+                  style={[
+                    styles.primaryButtonText,
+                    {color: theme.colors.background},
+                  ]}>
+                  {t('qariah:v1.restoreFavorites')}
                 </Text>
               </Pressable>
               <Pressable style={styles.skipLink} onPress={handleSkip}>
-                <Text style={[styles.skipLinkText, {color: theme.colors.textSecondary}]}>
-                  Skip for now
+                <Text
+                  style={[
+                    styles.skipLinkText,
+                    {color: theme.colors.textSecondary},
+                  ]}>
+                  {t('qariah:common.skipForNow')}
                 </Text>
               </Pressable>
             </>
@@ -337,21 +402,22 @@ export function V1RestoreModal({isVisible, candidate, onDone}: V1RestoreModalPro
   );
 }
 
-function describeCounts(counts: RestoreCandidate['counts']): string {
+type RestoreT = TFunction<['qariah', 'common']>;
+
+function describeCounts(
+  counts: RestoreCandidate['counts'],
+  t: RestoreT,
+): string {
   const parts: string[] = [];
   if (counts.reciters > 0)
-    parts.push(`${counts.reciters} reciter favorite${counts.reciters === 1 ? '' : 's'}`);
+    parts.push(t('qariah:counts.reciterFavorites', {count: counts.reciters}));
   if (counts.recitations > 0)
-    parts.push(`${counts.recitations} recitation favorite${counts.recitations === 1 ? '' : 's'}`);
+    parts.push(
+      t('qariah:counts.recitationFavorites', {count: counts.recitations}),
+    );
   if (counts.surahs > 0)
-    parts.push(`${counts.surahs} surah favorite${counts.surahs === 1 ? '' : 's'}`);
-  const list =
-    parts.length === 1
-      ? parts[0]
-      : parts.length === 2
-        ? parts.join(' and ')
-        : `${parts.slice(0, -1).join(', ')}, and ${parts.slice(-1)[0]}`;
-  return `We found ${list} from your original Qariah account. Restore them now?`;
+    parts.push(t('qariah:counts.surahFavorites', {count: counts.surahs}));
+  return t('qariah:v1.foundList', {list: formatList(parts)});
 }
 
 const styles = StyleSheet.create({

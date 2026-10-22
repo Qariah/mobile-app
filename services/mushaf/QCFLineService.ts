@@ -96,9 +96,8 @@ export function findQCFVerseAtCharIndex(
       const meta = model.charMeta[left];
       if (meta) {
         return (
-          model.verseSegments.find(
-            segment => segment.verseKey === meta.verseKey,
-          ) ?? null
+          model.verseSegments.find(segment => segment.verseKey === meta.verseKey) ??
+          null
         );
       }
     }
@@ -108,9 +107,8 @@ export function findQCFVerseAtCharIndex(
       const meta = model.charMeta[right];
       if (meta) {
         return (
-          model.verseSegments.find(
-            segment => segment.verseKey === meta.verseKey,
-          ) ?? null
+          model.verseSegments.find(segment => segment.verseKey === meta.verseKey) ??
+          null
         );
       }
     }
@@ -137,9 +135,7 @@ function projectWordCharMapToQCF(
   charMap: Map<number, string>,
   dkWordText: string,
 ): Map<number, string> | null {
-  const qcfChars = [...code].map(char =>
-    char === ' ' ? QCF_HAIR_SPACE : char,
-  );
+  const qcfChars = [...code].map(char => (char === ' ' ? QCF_HAIR_SPACE : char));
   const qcfSlots = qcfChars
     .map((char, index) => (char === QCF_HAIR_SPACE ? null : index))
     .filter((index): index is number => index !== null);
@@ -178,11 +174,7 @@ export function buildQCFLineAllahNameMap(
 
     const allahMap = getTextAllahNameCharMap(dkWordText);
     if (allahMap && allahMap.size > 0) {
-      const projected = projectWordCharMapToQCF(
-        word.code,
-        allahMap,
-        dkWordText,
-      );
+      const projected = projectWordCharMapToQCF(word.code, allahMap, dkWordText);
       if (projected) {
         for (const [localIndex] of projected) {
           charToColor.set(charOffset + localIndex, color);

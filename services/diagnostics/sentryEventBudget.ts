@@ -2,7 +2,7 @@
 // services/diagnostics/sentryEventBudget.ts
 // -----------------------------------------
 // PER-PROCESS, PER-SIGNATURE emit budget for Sentry error events. Runs as the
-// last step of the `beforeSend` hook in app/_layout.tsx.
+// last step of the `beforeSend` hook in services/diagnostics/qariahSentryOptions.ts.
 //
 // WHY THIS EXISTS: on 2026-08-26 the project's Sentry ERROR quota was exhausted
 // and stayed exhausted for six days (through 08-31), during which ZERO error
@@ -111,7 +111,7 @@ function messageText(event: ErrorEvent): string | undefined {
 export function eventSignature(event: ErrorEvent): string | null {
   // An explicit fingerprint is the app stating what the condition IS; honour it
   // over anything inferred. Both the qf-best-effort-sync collapse in
-  // app/_layout.tsx and the persist-* captures set one.
+  // qariahSentryOptions.ts and the persist-* captures set one.
   const fp = event.fingerprint;
   if (Array.isArray(fp) && fp.length > 0) {
     // The persist-* captures share ONE fingerprint across all 17 stores (one

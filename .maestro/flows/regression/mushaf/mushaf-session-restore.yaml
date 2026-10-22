@@ -1,4 +1,4 @@
-# E2 — Mushaf SESSION RESTORE across a cold start.
+# UPG-04, step 4 (older comments said matrix E2; the matrix row was A8) — Mushaf SESSION RESTORE across a cold start.
 #
 # Guards the bug that shipped in 3.2.0 (1705): on a cold start, app/_layout.tsx
 # prepare() restores the last session and pushes straight to /mushaf. Since
@@ -28,13 +28,14 @@ tags:
 - launchApp:
     clearState: true
 - runFlow: ../../../subflows/skip-onboarding.yaml
-- tapOn: "Mushaf"
+- tapOn: '.*Mushaf'
 - extendedWaitUntil:
-    visible: "Al-Baqarah"
+    visible: '.*Al-Baqarah.*'
     timeout: 8000
-- tapOn: "Al-Baqarah"
+- tapOn: '.*Al-Baqarah.*'
 - extendedWaitUntil:
-    visible: ".*Al-Baqarah.*"
+    visible:
+      id: 'mushaf-settings-button'
     timeout: 10000
 
 # 2. Kill the process. Session state is persisted; DK service state is not.
@@ -47,6 +48,10 @@ tags:
 
 # 4. The reader must render past the DK spinner. If this times out, the
 #    non-reactive dkReady regression is back.
+#    "Mushaf settings" is a reader-only control (components/mushaf/main.tsx).
+#    app/mushaf.tsx renders only a spinner until dkReady, so the label proves
+#    the reader rendered. A text match on the surah name fails on iOS (#259).
 - extendedWaitUntil:
-    visible: ".*Al-Baqarah.*"
+    visible:
+      id: 'mushaf-settings-button'
     timeout: 20000

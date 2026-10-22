@@ -154,7 +154,7 @@ interface AnalyticsService {
 | `playback_started` | Play pressed or autoplay | `surah_id`, `reciter_id`, `rewayah_id`, `source` (queue/direct/autoplay/playlist), `position_ms` |
 | `playback_paused` | User pauses | `surah_id`, `reciter_id`, `position_ms`, `listened_ms` |
 | `playback_resumed` | User resumes | `surah_id`, `reciter_id`, `position_ms` |
-| `playback_completed` | Surah finishes naturally | `surah_id`, `reciter_id`, `duration_ms`, `listened_ms`, `completion_pct` |
+| `playback_completed` | Surah finishes naturally | `surah_id`, `reciter_id`, `reciter_name`, `rewayah_id` (Qariah, TECH_DEBT #296; counts from the build that ships it), `duration_ms`, `listened_ms`, `completion_pct` |
 | `playback_skipped` | Skip next/prev | `surah_id`, `reciter_id`, `position_ms`, `listened_ms`, `direction` (next/prev) |
 | `playback_seeked` | User seeks | `surah_id`, `from_ms`, `to_ms` |
 | `meaningful_listen` | Crosses 30s or 10% threshold | `surah_id`, `reciter_id`, `rewayah_id` |
@@ -191,6 +191,39 @@ interface AnalyticsService {
 | `share_created` | User shares content | `content_type` (verse/surah/mushaf), `surah_id` |
 | `search_performed` | User searches | `query`, `results_count` |
 | `translation_viewed` | Translation opened | `translation_id`, `language` |
+
+#### Verse Annotation Events (Qariah, TECH_DEBT #297)
+
+Qariah-only events, named in `services/analytics/qariahEvents.ts` and sent by `services/analytics/verseAnnotationEvents.ts`. They count which ayat people annotate. They count from the build that ships them. No event holds note text, a note id, or anything the user typed.
+
+One user action sends one event, after the write has succeeded. A restore from Quran Foundation and a sign-out cleanup send none.
+
+| Event | Trigger | Key Properties |
+|-------|---------|----------------|
+| `verse_note_created` | The user saves a NEW note. An edit of a note sends nothing. | `verse_key`, `surah_id`, `verse_count`, `rewayah_id` |
+| `verse_note_deleted` | The user deletes a note (verse sheet, note sheet, or Notes list) | `verse_key`, `surah_id`, `verse_count`, `rewayah_id` |
+| `verse_highlight_set` | The user sets a highlight colour. A change of colour sends it again. | `verse_key`, `surah_id`, `verse_count`, `rewayah_id`, `color` (`yellow`, `green`, `blue`, `orange` or `purple`) |
+| `verse_highlight_removed` | The user removes a highlight | `verse_key`, `surah_id`, `verse_count`, `rewayah_id` |
+| `verse_bookmark_toggled` | The user adds or removes a bookmark (verse sheet, or the Bookmarks list) | `verse_key`, `surah_id`, `verse_count`, `rewayah_id`, `added` (boolean) |
+
+Properties:
+
+- `verse_key`: `"surah:ayah"` of the FIRST verse of the action. It is the Hafs storage anchor, so a split verse `1:7:5` is `1:7`.
+- `surah_id`: the surah of `verse_key`, as a number.
+- `verse_count`: how many verses the action covered. A note or a highlight on a range is ONE event, not one event for each verse.
+- `rewayah_id`: the rewayah the user read the verses in, or `null` when it is not known.
+
+#### Local Notification Events (Qariah, Sprint 48)
+
+Qariah-only events, named in `services/analytics/qariahEvents.ts` and sent by `services/notifications/notificationAnalytics.ts`. They measure the opt-in rate and the open rate of each notification type. Each event waits up to 60 s for the stored consent (a cold-start tap comes before it), then goes through the consent gate. The super property `notif_holdout` (`holdout`, `notify` or `unenrolled`) marks the arm of the `local_notifications_holdout` experiment on each event once the arm is known (`services/notifications/holdoutEnrollment.ts`).
+
+| Event | Trigger | Key Properties |
+|-------|---------|----------------|
+| `notification_permission_prompted` | The iOS card showed after a completed play (`soft_prompt`), the Android card that only lists the types showed after a completed play (`intro_card`; Android asks at the first launch), or the Notifications page asked the system (`settings`) | `source`, `platform` |
+| `notification_permission_result` | The answer: "Allow" or "Not now" on the iOS card, "Choose notifications" or "OK" on the Android card (the permission is the one that the card saw), or the system dialog of the Notifications page | `source`, `granted`, `status` (`granted`, `denied`, `undetermined`), `answer` (`allow`, `not_now`, `choose`, `ok`, `system`), `platform` |
+| `notification_scheduled` | A NEW notice: the Friday Al-Kahf reminder when none was pending (`sync`), "continue listening" when none was pending (`play`), or a notice that the catalog check posted (`foreground`, or `background`: sent at the next start, because a headless run has no PostHog client) | `type`, `trigger` (`immediate`, `date`, `weekly`), `source`, `announcement_id` (a `whats_new` notice, else `null`), `platform` |
+| `notification_opened` | A tap on a notice opened the app | `type`, `cold_start`, `result` (`play`, `browse_surah`, `resume`, `listen`, `profile`, `no_navigator`, `failed`), `announcement_id`, `platform` |
+| `notification_background_run` | The next start after a run of the background task (`services/notifications/backgroundRunReport.ts`) | `status`, `hours_since_run`, `launch_was_background`, `runs_since_report`, `platform` |
 
 #### App Lifecycle Events
 

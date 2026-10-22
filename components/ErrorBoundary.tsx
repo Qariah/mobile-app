@@ -1,6 +1,25 @@
 import React, {Component, ErrorInfo, ReactNode} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import * as Sentry from '@sentry/react-native';
+import i18n from '@/i18n';
+
+/**
+ * Translated text for the last-resort screen, with an English fallback: the
+ * boundary must render even when the failure came from the i18n layer.
+ * // @ai Qariah (Sprint 47 review)
+ */
+function safeT(
+  key: string,
+  fallback: string,
+  options?: Record<string, unknown>,
+): string {
+  try {
+    const value = i18n.t(key as never, options as never) as unknown;
+    return typeof value === 'string' && value.length > 0 ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 interface Props {
   children: ReactNode;
@@ -92,18 +111,32 @@ class ErrorBoundary extends Component<Props, State> {
       // message rendered under the status bar and was cut off.
       return (
         <View style={styles.container} testID="app-error-boundary">
-          <Text style={styles.title}>Something went wrong</Text>
+          <Text style={styles.title}>
+            {safeT('common:status.error', 'Something went wrong')}
+          </Text>
           <Text style={styles.body}>
             {canRetry
-              ? 'Qariah hit an unexpected error on this screen. Your downloads and saved items are safe.'
-              : 'Qariah hit the same error again. Please close the app fully and open it once more.'}
+              ? safeT(
+                  'qariah:errorBoundary.first',
+                  'Qariah hit an unexpected error on this screen. Your downloads and saved items are safe.',
+                )
+              : safeT(
+                  'qariah:errorBoundary.repeat',
+                  'Qariah hit the same error again. Please close the app fully and open it once more.',
+                )}
           </Text>
           {this.state.eventId ? (
             <Text
               style={styles.reference}
               selectable
               testID="app-error-boundary-id">
-              Reference {this.state.eventId.slice(0, 8)}
+              {/* No post-processing: the id keeps its Latin digits, so a
+               * user can quote it to support in any language. */}
+              {safeT(
+                'qariah:errorBoundary.reference',
+                `Reference ${this.state.eventId.slice(0, 8)}`,
+                {id: this.state.eventId.slice(0, 8), postProcess: []},
+              )}
             </Text>
           ) : null}
           {canRetry ? (
@@ -111,9 +144,14 @@ class ErrorBoundary extends Component<Props, State> {
               onPress={this.handleRetry}
               style={styles.button}
               accessibilityRole="button"
-              accessibilityLabel="Try again"
+              accessibilityLabel={safeT(
+                'settings:mushafSettings.fallback.retry',
+                'Try again',
+              )}
               testID="app-error-boundary-retry">
-              <Text style={styles.buttonLabel}>Try again</Text>
+              <Text style={styles.buttonLabel}>
+                {safeT('settings:mushafSettings.fallback.retry', 'Try again')}
+              </Text>
             </Pressable>
           ) : null}
         </View>

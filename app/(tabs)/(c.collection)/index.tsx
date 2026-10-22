@@ -26,6 +26,10 @@ import {useFocusEffect} from 'expo-router';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
 import {useBottomInset} from '@/hooks/useBottomInset';
 import {USE_GLASS} from '@/hooks/useGlassProps';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {flipX} from '@/utils/rtl';
+// @ai-end
 
 interface CategoryItem {
   id: string;
@@ -37,12 +41,14 @@ interface CategoryItem {
   route: string;
 }
 
+// @ai-start
 export default function CollectionScreen() {
   const {theme} = useTheme();
   const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
   const router = useRouter();
+  const {t} = useTranslation(['collection', 'common', 'qariah']);
   const {lovedTracks} = useLoved();
   const {favoriteReciters} = useFavoriteReciters();
   const downloads = useDownloads();
@@ -86,60 +92,61 @@ export default function CollectionScreen() {
   const categories: CategoryItem[] = [
     {
       id: 'playlists',
-      label: 'Playlists',
+      label: t('common:terms.playlists'),
       icon: <PlaylistIcon color="#6366F1" size={moderateScale(22)} />,
       color: '#6366F1',
       count: playlists.length,
-      emptyText: 'Create your first playlist',
+      emptyText: t('collectionScreen.empty.playlists'),
       route: '/collection/playlists',
     },
     {
       id: 'reciters',
-      label: 'Reciters',
+      label: t('common:terms.reciters'),
       icon: (
         <ProfileIcon color="#3B82F6" size={moderateScale(22)} filled={true} />
       ),
       color: '#3B82F6',
       count: favoriteReciters.length,
-      emptyText: 'No favorites yet',
+      emptyText: t('collectionScreen.empty.reciters'),
       route: '/collection/favorite-reciters',
     },
     {
       id: 'downloads',
-      label: 'Downloads',
+      label: t('common:terms.downloads'),
       icon: <DownloadIcon color="#10AC84" size={moderateScale(22)} />,
       color: '#10AC84',
       count: downloads.length,
-      emptyText: 'No downloads yet',
+      emptyText: t('collectionScreen.empty.downloads'),
       route: '/collection/downloads',
     },
     {
       id: 'loved',
-      label: 'Loved',
+      label: t('collectionScreen.loved'),
       icon: (
         <HeartIcon color="#FF6B6B" size={moderateScale(22)} filled={true} />
       ),
       color: '#FF6B6B',
       count: lovedTracks.length,
-      emptyText: 'No loved surahs yet',
+      emptyText: t('collectionScreen.empty.loved'),
       route: '/collection/loved',
     },
     {
       id: 'bookmarks',
-      label: 'Bookmarks',
+      label: t('common:terms.bookmarks'),
       icon: (
         <Feather name="bookmark" size={moderateScale(22)} color="#F59E0B" />
       ),
       color: '#F59E0B',
       count: bookmarkCount,
-      emptyText: 'No bookmarks yet',
+      emptyText: t('collectionScreen.empty.bookmarks'),
       route: '/collection/bookmarks',
     },
     ...(isFeatureEnabled('verseNotes')
       ? [
           {
             id: 'personal-notes',
-            label: 'Personal Notes',
+            // @ai Qariah copy (Sprint 21 split).
+            label: t('qariah:notes.personalNotes'),
             icon: (
               <Feather
                 name="file-text"
@@ -149,18 +156,18 @@ export default function CollectionScreen() {
             ),
             color: '#3B82F6',
             count: personalNoteCount,
-            emptyText: 'No personal notes yet',
+            emptyText: t('qariah:notes.noPersonalNotes'),
             route: '/collection/notes?type=personal',
           },
           {
             id: 'reflections',
-            label: 'Reflections',
+            label: t('qariah:notes.reflections'),
             icon: (
               <Feather name="users" size={moderateScale(22)} color="#5645a1" />
             ),
             color: '#5645a1',
             count: reflectionCount,
-            emptyText: 'No reflections yet',
+            emptyText: t('qariah:notes.noReflections'),
             route: '/collection/notes?type=reflection',
           },
         ]
@@ -169,11 +176,11 @@ export default function CollectionScreen() {
       ? [
           {
             id: 'uploads',
-            label: 'Uploads',
+            label: t('common:terms.uploads'),
             icon: <MicrophoneIcon color="#8B5CF6" size={moderateScale(22)} />,
             color: '#8B5CF6',
             count: uploadsTotalCount,
-            emptyText: 'No uploads yet',
+            emptyText: t('collectionScreen.empty.uploads'),
             route: '/collection/uploads',
           },
         ]
@@ -202,7 +209,7 @@ export default function CollectionScreen() {
           />
           <Text
             style={[styles.addBarText, {color: theme.colors.textSecondary}]}>
-            Add to Collection
+            {t('collectionScreen.addToCollection')}
           </Text>
         </Pressable>
 
@@ -236,9 +243,7 @@ export default function CollectionScreen() {
                   ]}
                   numberOfLines={1}>
                   {category.count > 0
-                    ? `${category.count} ${
-                        category.count === 1 ? 'item' : 'items'
-                      }`
+                    ? t('collectionScreen.itemsCount', {count: category.count})
                     : category.emptyText}
                 </Text>
               </View>
@@ -246,6 +251,7 @@ export default function CollectionScreen() {
                 name="chevron-right"
                 size={moderateScale(18)}
                 color={theme.colors.textSecondary}
+                style={flipX}
               />
             </Pressable>
           ))}
@@ -256,6 +262,7 @@ export default function CollectionScreen() {
     </View>
   );
 }
+// @ai-end
 
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({

@@ -12,8 +12,19 @@
  *
  * Usage:
  *   node scripts/play-vitals.mjs rates [--dims=versionCode,apiLevel] [--days=14]
- *                                      [--metric=both|crash|anr]
+ *                                      [--metric=both|crash|anr] [--json]
  *   node scripts/play-vitals.mjs issues [--filter='versionCode = 35'] [--days=14]
+ *
+ * `rates --json` prints one JSON object on stdout and nothing else:
+ *   {package, days, window: {start, end}, clampedTo, dims, metric,
+ *    sets: [{kind, set, metric, rows: [{date, dims, rate, users}], error?}]}
+ * `date` is the Play day (Play aggregates DAILY in America/Los_Angeles).
+ * `dims` maps each dimension to its value as a string. `rate` and `users` are
+ * numbers, or null when Play sent no value. `clampedTo` is the freshness date
+ * when Play's lag moved the window end, else null. The freshness warning goes
+ * to stderr. The exit code is the same as without --json (1 when a metric set
+ * fails; that set then carries `error`). Signals Phase 1 reads it
+ * (scripts/signals/sections/focus.mjs).
  *
  * `rates` reports CRASH **and** ANR by default (--metric=both). It queried only
  * crashRateMetricSet until 2026-08-28, which quietly made one of the documented
@@ -24,8 +35,10 @@
  * default; a condition nobody can measure is not a condition.
  *
  * Env:
+ *   GOOGLE_PLAY_SA_JSON               the SA key as JSON text (wins over the path)
  *   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON  path to the SA key JSON
  *                                     (default ~/.android/play-service-account.json)
+ *   (scripts/lib/google-play-auth.mjs reads both)
  *   PLAY_PACKAGE                      app package (default com.qariah.app)
  *
  * Notes:
@@ -33,14 +46,10 @@
  *   - Play suppresses slices below a privacy threshold (~50-60 users/day):
  *     an absent row means "cohort too small to report", NOT "zero crashes".
  */
-import {readFileSync} from 'fs';
-import {createSign} from 'crypto';
-import {homedir} from 'os';
+import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
+import {getPlayAccessToken} from './lib/google-play-auth.mjs';
 
-const SA_PATH =
-  process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ||
-  `${homedir()}/.android/play-service-account.json`;
-const PACKAGE = process.env.PLAY_PACKAGE || 'com.qariah.app';
+const PACKAGE = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME;
 const API = `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PACKAGE}`;
 
 const [, , cmd, ...rest] = process.argv;
@@ -53,14 +62,17 @@ const args = Object.fromEntries(
     }),
 );
 
-if (cmd !== 'rates' && cmd !== 'issues') {
+// --json is for `rates` only: `issues` carries crash causes and code
+// locations, which no machine reader needs yet.
+if ((cmd !== 'rates' && cmd !== 'issues') || (args.json && cmd !== 'rates')) {
   console.error(
     'usage: node scripts/play-vitals.mjs rates [--dims=versionCode,apiLevel] [--days=14]\n' +
-      '                                          [--metric=both|crash|anr]\n' +
+      '                                          [--metric=both|crash|anr] [--json]\n' +
       "       node scripts/play-vitals.mjs issues [--filter='versionCode = 35'] [--days=14]",
   );
   process.exit(2);
 }
+const JSON_OUT = !!args.json;
 
 const days = Number(args.days || 14);
 let end = new Date();
@@ -71,6 +83,28 @@ const ymd = d => ({
   day: d.getUTCDate(),
 });
 
+// One `rates --json` row: {date, dims, rate, users}. A missing value is null,
+// never 0: Play leaves out what it does not publish.
+function jsonRow(row, metric) {
+  const d = row.startTime || {};
+  const num = v =>
+    v === undefined || v === null || v === '' ? null : Number(v);
+  const mets = Object.fromEntries(
+    (row.metrics ?? []).map(x => [x.metric, x.decimalValue?.value ?? null]),
+  );
+  return {
+    date: `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`,
+    dims: Object.fromEntries(
+      (row.dimensions ?? []).map(x => [
+        x.dimension,
+        String(x.stringValue ?? x.int64Value),
+      ]),
+    ),
+    rate: num(mets[metric]),
+    users: num(mets.distinctUsers),
+  };
+}
+
 // Play's Reporting API publishes on a lag (typically 2-5 days) and REJECTS any
 // window ending past its freshness date outright — so a naive `end = now` 400s
 // and the caller sees NOTHING, not even the data that does exist. That blinds
@@ -78,10 +112,12 @@ const ymd = d => ({
 // (found 2026-08-04: freshness 2026-07-30 predated the 2026-08-02 rollout).
 // The error message carries the freshness date, so clamp to it and retry once.
 const FRESHNESS_RE = /current freshness (\d{4})-(\d{2})-(\d{2})/;
+let clampedTo = null;
 async function queryWindow(run) {
   let out = await run();
   const m = out.data?.error?.message?.match(FRESHNESS_RE);
   if (out.data?.error && m) {
+    clampedTo = `${m[1]}-${m[2]}-${m[3]}`;
     end = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
     start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
     console.error(
@@ -95,35 +131,13 @@ async function queryWindow(run) {
 }
 
 async function token() {
-  const sa = JSON.parse(readFileSync(SA_PATH, 'utf8'));
-  const now = Math.floor(Date.now() / 1000);
-  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const unsigned =
-    b64({alg: 'RS256', typ: 'JWT'}) +
-    '.' +
-    b64({
-      iss: sa.client_email,
-      scope: 'https://www.googleapis.com/auth/playdeveloperreporting',
-      aud: 'https://oauth2.googleapis.com/token',
-      exp: now + 3600,
-      iat: now,
-    });
-  const sign = createSign('RSA-SHA256');
-  sign.update(unsigned);
-  const jwt = unsigned + '.' + sign.sign(sa.private_key).toString('base64url');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body:
-      'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=' +
-      encodeURIComponent(jwt),
-  });
-  const tok = await res.json();
-  if (!tok.access_token) {
-    console.error('token mint failed:', JSON.stringify(tok).slice(0, 300));
+  try {
+    return await getPlayAccessToken({scope: 'reporting'});
+  } catch (e) {
+    if (e.code !== 'token-mint-failed') throw e;
+    console.error('token mint failed:', (e.bodyText || e.detail).slice(0, 300));
     process.exit(1);
   }
-  return tok.access_token;
 }
 
 const tk = await token();
@@ -148,6 +162,7 @@ if (cmd === 'rates') {
   ].filter(s => which === 'both' || s.kind === which);
 
   let total = 0;
+  const jsonSets = [];
   for (const {kind, set, metric} of SETS) {
     const {res, data} = await queryWindow(async () => {
       const r = await fetch(`${API}/${set}:query`, {
@@ -179,6 +194,24 @@ if (cmd === 'rates') {
         JSON.stringify(data.error).slice(0, 400),
       );
       process.exitCode = 1;
+      if (JSON_OUT)
+        jsonSets.push({
+          kind,
+          set,
+          metric,
+          rows: [],
+          error: `HTTP ${res.status}: ${String(data.error.message || data.error.status || 'error').slice(0, 200)}`,
+        });
+      continue;
+    }
+    if (JSON_OUT) {
+      jsonSets.push({
+        kind,
+        set,
+        metric,
+        rows: (data.rows ?? []).map(r => jsonRow(r, metric)),
+      });
+      total += (data.rows ?? []).length;
       continue;
     }
     for (const row of data.rows ?? []) {
@@ -211,7 +244,24 @@ if (cmd === 'rates') {
           : ''),
     );
   }
-  console.log(`rows: ${total}`);
+  if (JSON_OUT) {
+    const iso = d => d.toISOString().slice(0, 10);
+    console.log(
+      JSON.stringify(
+        {
+          package: PACKAGE,
+          days,
+          window: {start: iso(start), end: iso(end)},
+          clampedTo,
+          dims,
+          metric: which,
+          sets: jsonSets,
+        },
+        null,
+        2,
+      ),
+    );
+  } else console.log(`rows: ${total}`);
 } else {
   const {res, data} = await queryWindow(async () => {
     const url = new URL(`${API}/errorIssues:search`);

@@ -26,19 +26,16 @@ BRANCH="${BRANCH:-qariah-main}"
 #
 # Workflow → check name mapping (as of Sprint 26):
 #   .github/workflows/branding-conformance.yml → "No hardcoded Bayaan brand strings"
-#   .github/workflows/lint.yml                  → "Prettier, ESLint, TypeScript"
+#   .github/workflows/lint.yml                  → "TypeScript + duplicate keys (blocking); Prettier, ESLint (advisory)"
 #   .github/workflows/test.yml                  → "Jest"
-#   .github/workflows/claude-code-review.yml    → "claude-review"
 #
-# Note: GitHub uses the job's `name:` field if set, otherwise the job id.
-# The "Run Claude Code Review" step's outer job has no explicit name, so
-# the job id `claude-review` is what shows up as a required check.
+# `claude-code-review.yml` ("claude-review") is NOT required: since 2026-09-27 it
+# runs only when someone adds the `claude-review` label, so most PRs never get it.
 
 CONTEXTS_JSON='[
   "No hardcoded Bayaan brand strings",
-  "Prettier, ESLint, TypeScript",
-  "Jest",
-  "claude-review"
+  "TypeScript + duplicate keys (blocking); Prettier, ESLint (advisory)",
+  "Jest"
 ]'
 
 # Build the payload. PUT /repos/{owner}/{repo}/branches/{branch}/protection

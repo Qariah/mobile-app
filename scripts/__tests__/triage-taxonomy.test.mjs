@@ -10,10 +10,19 @@
 // ONLY through the `loop-actionable` label (rule 4b), `needs-decision` beats a
 // mislabelled `bug` (rule 4a), and a hand-filed `feedback` issue never becomes
 // actionable on its own.
+//
+// It also guards the fix record: an issue leaves the loop queue on EITHER a
+// `fixed-in:<build>` label or a triage-state ledger row, so a build that already
+// carries the fix cannot be re-investigated the next day.
 
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {classify, BUCKETS} from '../lib/triage-taxonomy.mjs';
+import {
+  classify,
+  BUCKETS,
+  fixedInLabelOf,
+  resolveFixedIn,
+} from '../lib/triage-taxonomy.mjs';
 
 const issue = (labels, title = 'x', number = 1) => ({labels, title, number});
 
@@ -116,5 +125,116 @@ describe('classify — hand-filed issues', () => {
     const r = classify(issue(['sentry', 'bug', 'severity:high']));
     assert.equal(r.bucket, 'actionable');
     assert.equal(r.loopEligible, true);
+  });
+});
+
+describe('classify — fixed-in:<build> label (label OR ledger)', () => {
+  it('a sentry bug with a fixed-in label waits for a release, NOT loop-eligible', () => {
+    // The real #409 shape on 2026-09-11: post-sprint Step 14b labelled it
+    // `fixed-in:1922`, the ledger had no row yet, and the loop re-queued it.
+    const r = classify(
+      issue(
+        ['sentry', 'bug', 'severity:high', 'android', 'fixed-in:1922'],
+        '[Sentry QARIAHV2-30] RemoteServiceException',
+        409,
+      ),
+    );
+    assert.equal(r.bucket, 'awaiting-release');
+    assert.equal(r.loopEligible, false);
+    assert.equal(r.fixedIn, '1922');
+    assert.match(r.reason, /1922/);
+  });
+  it('a promoted human-lane issue with a fixed-in label is NOT loop-eligible', () => {
+    const r = classify(
+      issue(['testflight', 'loop-actionable', 'fixed-in:1769'], 'x', 11),
+    );
+    assert.equal(r.bucket, 'awaiting-release');
+    assert.equal(r.loopEligible, false);
+    assert.equal(r.fixedIn, '1769');
+  });
+  it('no fixed-in label and no ledger row stays loop-eligible', () => {
+    const r = classify(issue(['sentry', 'bug'], 'x', 12));
+    assert.equal(r.loopEligible, true);
+    assert.equal(r.fixedIn, null);
+  });
+  it('ignores a malformed fixed-in label', () => {
+    const r = classify(issue(['sentry', 'bug', 'fixed-in:next'], 'x', 13));
+    assert.equal(r.loopEligible, true);
+    assert.equal(r.fixedIn, null);
+  });
+  it('a fixed Play ANR leaves native-crash for awaiting-release', () => {
+    // The 2026-09-27 backfill shape: build 1975 carries #451, behind a flag.
+    const r = classify(
+      issue(
+        [
+          'play-store',
+          'anr',
+          'incident:cold-start-hang',
+          'fixed-in:1975',
+          'behind-flag:nonblocking_splash',
+        ],
+        '[Play ANR] x @ Input dispatching timed out (No focused window)',
+        275,
+      ),
+    );
+    assert.equal(r.bucket, 'awaiting-release');
+    assert.equal(r.loopEligible, false);
+    assert.equal(r.incident, 'cold-start-hang');
+  });
+  it('a fixed-in label beats remediation-drafted (an adopted draft that shipped)', () => {
+    const r = classify(
+      issue(['sentry', 'bug', 'remediation-drafted', 'fixed-in:2013'], 'x', 15),
+    );
+    assert.equal(r.bucket, 'awaiting-release');
+  });
+  it('the incident umbrella stays an incident even with a fixed-in label', () => {
+    const r = classify(
+      issue(
+        ['incident', 'incident:cold-start-hang', 'fixed-in:1975'],
+        '[incident] cold-start-hang',
+        187,
+      ),
+    );
+    assert.equal(r.bucket, 'incident');
+  });
+  it('the ledger alone still works (unchanged behaviour)', () => {
+    const r = classify(issue(['sentry', 'bug'], 'x', 14), {
+      fixedInBuild: new Map([[14, '1717']]),
+    });
+    assert.equal(r.loopEligible, false);
+    assert.equal(r.fixedIn, '1717');
+  });
+});
+
+describe('resolveFixedIn — which build wins', () => {
+  it('returns null when neither source has a value', () => {
+    assert.equal(resolveFixedIn(null, null), null);
+  });
+  it('takes the label when only the label has a value', () => {
+    assert.equal(resolveFixedIn('1922', null), '1922');
+  });
+  it('takes the ledger when only the ledger has a value', () => {
+    assert.equal(resolveFixedIn(null, '1717'), '1717');
+  });
+  it('takes the HIGHER build when both are numbers', () => {
+    assert.equal(resolveFixedIn('1922', '1717'), '1922');
+    assert.equal(resolveFixedIn('1717', '1922'), '1922');
+  });
+  it('takes the numeric side when the ledger holds the `merged` sentinel', () => {
+    assert.equal(resolveFixedIn('1922', 'merged'), '1922');
+  });
+});
+
+describe('fixedInLabelOf', () => {
+  it('reads the build out of a well-formed label', () => {
+    assert.equal(fixedInLabelOf(['bug', 'fixed-in:1922']), '1922');
+  });
+  it('rejects a non-numeric build', () => {
+    assert.equal(fixedInLabelOf(['fixed-in:1922-hotfix']), null);
+    assert.equal(fixedInLabelOf(['prefix-fixed-in:1922']), null);
+  });
+  it('returns null for an empty label set', () => {
+    assert.equal(fixedInLabelOf([]), null);
+    assert.equal(fixedInLabelOf(undefined), null);
   });
 });

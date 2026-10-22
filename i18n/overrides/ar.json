@@ -1,0 +1,229 @@
+{
+  "sheets": {
+    "mushafPlayer": {
+      "reciterPickerSubtitle": "قارئات يدعمن التشغيل آيةً بآية",
+      "reciter": "القارئة"
+    },
+    "followAlong": {
+      "description": "القارئة الحالية لا تدعم التشغيل آيةً بآية. جرّب إحدى هؤلاء القارئات بدلًا منها:"
+    },
+    "addToCollection": {
+      "addFavoriteReciter": "إضافة قارئة مفضّلة"
+    },
+    "selectReciter": {
+      "title": "اختيار القارئة",
+      "useDefault": "القارئة الافتراضية",
+      "random": "قارئة عشوائية",
+      "browseAll": "تصفّح جميع القارئات"
+    },
+    "favoriteReciters": {
+      "title": "القارئات المفضّلات",
+      "selected_zero": "لم تُحدَّد أي قارئة",
+      "selected_one": "تم تحديد قارئة واحدة",
+      "selected_two": "تم تحديد قارئتين",
+      "selected_few": "تم تحديد {{count}} قارئات",
+      "selected_many": "تم تحديد {{count}} قارئة",
+      "selected_other": "تم تحديد {{count}} قارئة"
+    },
+    "reciterPicker": {
+      "searchPlaceholder": "ابحث عن قارئة…",
+      "empty": "لم يُعثر على قارئات"
+    },
+    "options": {
+      "goToReciter": "الانتقال إلى القارئة",
+      "shareListen": "استمع إلى السورة رقم {{surah}} على تطبيق {{appName}}",
+      "shareListenSurah": "استمع إلى سورة {{surah}} على تطبيق {{appName}}"
+    },
+    "homeCardOptions": {
+      "goToReciter": "الانتقال إلى القارئة",
+      "addReciterToFavorites": "إضافة القارئة إلى المفضلة",
+      "removeReciterFromFavorites": "إزالة القارئة من المفضلة",
+      "shareRecitation": "استمع إلى {{reciter}} تتلو سورة {{surah}} على تطبيق {{appName}}",
+      "shareReciter": "استمع إلى {{reciter}} على تطبيق {{appName}}"
+    }
+  },
+  "common": {
+    "terms": {
+      "reciter": "القارئة",
+      "reciters": "القارئات"
+    },
+    "counts": {
+      "reciters_zero": "لا توجد قارئات",
+      "reciters_one": "قارئة واحدة",
+      "reciters_two": "قارئتان",
+      "reciters_few": "{{count}} قارئات",
+      "reciters_many": "{{count}} قارئة",
+      "reciters_other": "{{count}} قارئة"
+    }
+  },
+  "home": {
+    "browse": {
+      "browseRecitersForSurah": "تصفّح القارئات - {{surah}}",
+      "searchReciters": "ابحث عن قارئة…",
+      "recitersFound_zero": "لا توجد قارئات مطابقة للفلاتر الحالية",
+      "recitersFound_one": "قارئة واحدة مطابقة للفلاتر الحالية",
+      "recitersFound_two": "قارئتان مطابقتان للفلاتر الحالية",
+      "recitersFound_few": "{{count}} قارئات مطابقات للفلاتر الحالية",
+      "recitersFound_many": "{{count}} قارئة مطابقة للفلاتر الحالية",
+      "recitersFound_other": "{{count}} قارئة مطابقة للفلاتر الحالية"
+    },
+    "search": {
+      "placeholder": "ابحث عن سورة أو قارئة"
+    },
+    "randomHero": {
+      "finding": "جارٍ البحث عن تلاوات عشوائية لقارئات مختلفات…"
+    },
+    "browseAllHero": {
+      "titles": {
+        "everyReciter": "استكشف جميع القارئات",
+        "allRecitersAwait": "جميع القارئات بانتظارك",
+        "oneTap": "كل القارئات بلمسة واحدة"
+      },
+      "labels": {
+        "allReciters": "جميع القارئات"
+      }
+    },
+    "filters": {
+      "title": "تصفية القارئات"
+    },
+    "home": {
+      "featuredReciters": "قارئات مميّزات",
+      "exploreByRewayah": "تصفّح حسب الرواية"
+    },
+    "reciterBrowse": {
+      "title": "تصفّح القارئات",
+      "noneFound": "لم يتم العثور على قارئات"
+    }
+  },
+  "player": {
+    "reciterProfile": {
+      "thisReciter": "هذه القارئة",
+      "shareMessage": "استمع إلى {{name}} على تطبيق {{appName}}"
+    }
+  },
+  "reader": {
+    "playerBar": {
+      "changeReciter": "تغيير القارئة",
+      "changeReciterButton": "تغيير القارئة"
+    },
+    "playback": {
+      "fromBeginning": "تُشغّل {{surah}} من البداية دون تتبّع الآيات لهذه القارئة.",
+      "untracked": "تُشغّل {{surah}} دون تمييز الآيات لهذه القارئة.",
+      "timestampsUnavailable": "توقيت الآيات غير متاح لهذه القارئة في هذه السورة. جرّب قارئة أخرى.",
+      "verseTimingUnavailable": "التشغيل آيةً بآية غير متاح لهذه القارئة في هذه السورة. جرّب قارئة أخرى.",
+      "rangeUnplayable": "لا توجد آيات قابلة للتشغيل في هذا النطاق لهذه القارئة. جرّب قارئة أخرى أو نطاقًا آخر."
+    },
+    "mushaf": {
+      "shareMessage": "اطّلع على الصفحة {{page}} من القرآن الكريم على تطبيق {{appName}}"
+    },
+    "shareCard": {
+      "madeWith": "صُنع باستخدام تطبيق {{appName}}"
+    }
+  },
+  "content": {
+    "errors": {
+      "timestampsUnavailable": "التوقيتات غير متوفرة لهذه القارئة في هذه السورة. جرّب قارئة أخرى."
+    },
+    "systemPlaylists": {
+      "selectReciters": "اختر القارئات للتشغيل"
+    },
+    "onboarding": {
+      "welcome": {
+        "title": "مرحبًا بك في تطبيق {{appName}}"
+      }
+    }
+  },
+  "collection": {
+    "favoriteRecitersScreen": {
+      "title": "القارئات المفضلات",
+      "emptyTitle": "لا توجد قارئات مفضلات بعد",
+      "emptySubtitle": "أضف قارئات ليظهرن هنا",
+      "addReciters": "إضافة قارئات",
+      "searchPlaceholder": "ابحث في القارئات المفضلات"
+    },
+    "searchModal": {
+      "placeholder": "ابحث في قوائم التشغيل والقارئات والسور والروايات…",
+      "emptySubtitle": "ابحث في قوائم التشغيل والقارئات والسور والروايات والتنزيلات",
+      "unknownReciter": "قارئة غير معروفة"
+    },
+    "reciterDownloads": {
+      "empty": "لا توجد تنزيلات لهذه القارئة"
+    },
+    "systemPlaylist": {
+      "noReciterTitle": "لا توجد قارئة متاحة",
+      "noReciterMessage": "تعذّر العثور على قارئة لديها جميع سور قائمة التشغيل هذه. يُرجى تجربة قائمة أخرى."
+    },
+    "notesScreen": {
+      "emptySubtitle": "أضف ملاحظات شخصية على الآيات لتظهر هنا."
+    }
+  },
+  "settings": {
+    "layout": {
+      "defaultReciter": "القارئة الافتراضية",
+      "reciterChoice": "اختيار القارئة",
+      "about": "عن تطبيق {{appName}}"
+    },
+    "index": {
+      "items": {
+        "defaultReciter": {
+          "title": "القارئة الافتراضية",
+          "description": "اختر القارئة المفضّلة لديك"
+        },
+        "reciterChoice": {
+          "title": "اختيار القارئة",
+          "description": "تخصيص طريقة اختيار القارئة"
+        },
+        "github": {
+          "description": "تطبيق {{appName}} مفتوح المصدر. أضف نجمة، أو أبلغ عن مشكلة، أو أرسل طلب دمج"
+        },
+        "support": {
+          "description": "احصل على المساعدة في استخدام تطبيق {{appName}}"
+        },
+        "about": {
+          "title": "عن تطبيق {{appName}}"
+        }
+      },
+      "sections": {
+        "about": "عن تطبيق {{appName}}"
+      },
+      "analytics": {
+        "description": "ساعد في تحسين تطبيق {{appName}} بإحصاءات استخدام مجهولة الهوية وغير شخصية. لا تتم مشاركة اسمك أو حسابك مطلقًا."
+      }
+    },
+    "about": {
+      "features": {
+        "highQualityAudio": {
+          "description": "تلاوات واضحة نقية لأفضل القارئات في العالم مع بث محسّن"
+        }
+      },
+      "missionBody": "يسعى تطبيق {{appName}} إلى إتاحة تلاوة القرآن الكريم العذبة للجميع. ونحرص على تقديم تجربة استماع هادئة وسهلة، تضم أشهر القرّاء في العالم وبعض التلاوات الحصرية على تطبيق {{appName}}.",
+      "commitmentBody": "نلتزم بالتحسين المستمر والحفاظ على أعلى معايير الجودة. ويعمل فريقنا بجد ليبقى تطبيق {{appName}} منصة موثوقة تليق بتلاوة القرآن الكريم. وإن شاء الله، وبعون الله، سنواصل تطوير هذه الميزات وتحسينها لخدمة الأمة على نحو أفضل. ونحن ممتنون لدعمكم وملاحظاتكم ونحن نمضي معًا في هذه الرحلة المباركة."
+    },
+    "defaultReciter": {
+      "changeHeader": "تغيير القارئة الافتراضية",
+      "searchPlaceholder": "ابحث عن القارئات…",
+      "completeOnly": "تُعرض فقط القارئات اللواتي لديهن تلاوة كاملة للقرآن",
+      "noResults": "لم يُعثر على قارئات"
+    },
+    "reciterChoice": {
+      "subtitle": "اختر طريقة اختيار القارئة عند تشغيل السور",
+      "askEveryTimeDescription": "اختر قارئة في كل مرة تشغّل فيها",
+      "browseAll": "تصفّح جميع القارئات",
+      "browseAllDescription": "ابحث في مجموعتنا الكاملة من القارئات",
+      "useDefault": "استخدام القارئة الافتراضية",
+      "useDefaultDescription": "استخدم دائمًا القارئة الافتراضية التي اخترتها"
+    },
+    "credits": {
+      "intro": "ما كان لتطبيق {{appName}} أن يرى النور لولا الجهود الرائعة لهذه المشاريع والجهات والأفراد. ونحن ممتنون لهم كثيرًا على إسهاماتهم في خدمة المجتمع المسلم وعالم التقنية.",
+      "items": {
+        "contributors": "كل من ساعد في تحسين تطبيق {{appName}}"
+      }
+    },
+    "whatsNew": {
+      "title": "ما الجديد في تطبيق <brand>{{appName}}</brand>"
+    },
+    "mushafSettings": {
+      "qcfBetaMessage": "مصحف 1440 هو أحدث مصاحف تطبيق {{appName}}، لكنه لا يزال في المرحلة التجريبية. تلوين التجويد متاح للمعاينة. تبديل الرواية لا يزال معطّلًا."
+    }
+  }
+}

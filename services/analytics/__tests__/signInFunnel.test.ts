@@ -7,7 +7,11 @@
  * The success path cannot be exercised on a local device without real QF
  * credentials, so these cases ARE the primary evidence that it is correct.
  */
-import {deriveSignInEvent, classifySignInFailure} from '../signInFunnel';
+import {
+  deriveSignInEvent,
+  classifySignInFailure,
+  signedInForStatus,
+} from '../signInFunnel';
 
 describe('deriveSignInEvent', () => {
   it('emits nothing on first observation — the provider boots in `loading`', () => {
@@ -155,5 +159,21 @@ describe('classifySignInFailure', () => {
     for (const s of samples) {
       expect(allowed).toContain(classifySignInFailure(s));
     }
+  });
+});
+
+describe('signedInForStatus', () => {
+  it('reports a restored or new session as signed in', () => {
+    expect(signedInForStatus('authenticated')).toBe(true);
+  });
+
+  it('reports no session, a failed attempt, or a sign-out as signed out', () => {
+    expect(signedInForStatus('unauthenticated')).toBe(false);
+  });
+
+  it('leaves the property unchanged while the status is not known', () => {
+    // `loading` is both the boot-hydrate state and the in-flight attempt
+    // state. Neither tells us whether a session exists.
+    expect(signedInForStatus('loading')).toBeNull();
   });
 });

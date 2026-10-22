@@ -1,9 +1,13 @@
+// app/mushaf/[page].tsx
 import React from 'react';
-import {Redirect} from 'expo-router';
+import {useLocalSearchParams} from 'expo-router';
+// @ai-start
+import {ReaderLinkRedirect} from '@/components/mushaf/ReaderLinkRedirect';
+// @ai-end
 
-// Stub: canonical /mushaf/{page} URL. No standalone mushaf reader in-app
-// yet, so deep links fall through to the home tab. Exists for Android App
-// Link autoverification on the /mushaf path prefix.
-export default function MushafPageStub(): React.ReactElement {
-  return <Redirect href="/(tabs)/(a.home)" />;
+// Canonical /mushaf/{page} URL (widgets, App Links). Hands off to the reader.
+export default function MushafPageLink(): React.ReactElement {
+  const {page} = useLocalSearchParams<{page: string}>();
+  // @ai Qariah (#282): to the open reader, if there is one (not a second).
+  return <ReaderLinkRedirect params={{page}} />;
 }

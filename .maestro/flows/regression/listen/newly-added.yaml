@@ -1,0 +1,83 @@
+# LST-06 (Sprint 48, S48.3) — the Listen "Newly Added Recitations" row lists recitations, and a tap on a
+# card plays that recitation.
+#
+# The row is `components/listen/NewlyAddedRecitationsRow.tsx` (testID
+# `newly-added-recitations-row`). Each card is `components/cards/RecitationCard.tsx` (testID
+# `recitation-card`; the accessibility label names the surah, the range of a partial
+# recitation and the reciter). The row content comes from the live catalog (`added_at`), so the
+# flow does not name a surah: it reads the label of the first card
+# (`subflows/recitation-card-label.js`) and checks the player against it.
+#
+# Checks:
+#   1. The row shows, with recitation cards.
+#   2. A tap on the first card starts that recitation: the mini player (`mini-player-expand`)
+#      names the surah and the reciter of the card. The state is fresh, so no mini player
+#      shows before the tap.
+#   3. Android only: the full player opens (`player-queue-button`). For a partial recitation,
+#      the track line shows the range of the card ("Hafs • Murattal • Ayahs 1–69"). On iOS the
+#      full player sheet is one opaque a11y element (as in player/queue-remove.yaml), so check
+#      the full player there by hand (LST-06 steps).
+#
+# Not checked here: that the ayah list starts at the first ayah of the range. The list follows
+# the audio, so the first row scrolls away while the flow runs (a first version failed on
+# "2:1" after 3 min of play on a slow emulator). Check it by hand (LST-06 steps).
+#
+# The row hides when the catalog has no dated recitations; then step 1 fails. That is a real
+# fail: the bundled catalog has `added_at` since Sprint 48 (contract test).
+appId: com.qariah.app
+tags:
+  - regression
+  - listen
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Listen'
+
+# 1. The row and its cards. centerElement keeps the cards clear of the tab bar for the tap.
+- scrollUntilVisible:
+    element:
+      id: 'newly-added-recitations-row'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- assertVisible: 'Newly Added Recitations'
+- assertVisible:
+    id: 'recitation-card'
+- assertNotVisible:
+    id: 'mini-player-bar'
+
+# 2. Read the first card, tap it, and check the mini player.
+- copyTextFrom:
+    id: 'recitation-card'
+    index: 0
+- runScript: ../../../subflows/recitation-card-label.js
+- assertTrue: ${output.card.ok}
+# A short settle wait: after the tap the player plays, and its time and verse list change all
+# the time, so the default settle wait can take minutes on a slow emulator (as in
+# player/playlist-session-restore.yaml).
+- tapOn:
+    id: 'recitation-card'
+    index: 0
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-expand'
+      text: '${output.card.surah}.*, .*${output.card.reciter}.*'
+    timeout: 20000
+
+# 3. The full player (Android only, see the header).
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: 'player-queue-button'
+          timeout: 10000
+      - runFlow:
+          when:
+            true: ${output.card.range != ''}
+          commands:
+            # Maestro text is case-insensitive: "ayahs 1–69" matches "Ayahs 1–69".
+            - assertVisible: '.* • ${output.card.range}'

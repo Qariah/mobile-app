@@ -42,6 +42,9 @@ const SLUG_TO_ISO: Record<string, string> = {
   'the-gambia': 'GM',
   tunisia: 'TN',
   'united-states-of-america': 'US',
+  // Sprint 47 — the catalog spells one reciter's country "USA" (Samia
+  // Mubarak, added in the ops console). Same country, same code.
+  usa: 'US',
   yemen: 'YE',
   // Sprint 21 S21.U3 — synthetic 'XJ' code (NOT real ISO 3166-1; ISO has no
   // assignment for East Turkistan / Xinjiang). Per-user editorial choice: use
@@ -58,4 +61,17 @@ const SLUG_TO_ISO: Record<string, string> = {
  */
 export function getCountryISO(slug: string): string | undefined {
   return SLUG_TO_ISO[slug.trim().toLowerCase()];
+}
+
+/**
+ * The kebab-case slug of a catalog `Reciter.country` value ("The Gambia" →
+ * "the-gambia"). `data/countryCollections.ts` uses it for the country ids.
+ */
+export function countrySlug(country: string): string {
+  return country.trim().toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-');
+}
+
+/** ISO code of a catalog `Reciter.country` value ("USA" → "US"). */
+export function getCountryISOForName(country: string): string | undefined {
+  return getCountryISO(countrySlug(country));
 }

@@ -17,6 +17,10 @@ import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {TabletDockedPlayer} from '@/components/tablet/TabletDockedPlayer';
+// @ai-start
+import {getAppDisplayName} from '@/i18n/qariahAppName'; // Qariah: Arabic name
+import {appLayoutDirection, isRTL} from '@/utils/rtl';
+// @ai-end
 
 const RAIL_WIDTH_COMPACT = 88;
 const RAIL_WIDTH_EXPANDED = 240;
@@ -117,6 +121,7 @@ const SidebarItem = React.memo(function SidebarItem({
   );
 });
 
+// @ai-start
 export const TabletSidebar: React.FC<BottomTabBarProps> = ({
   state,
   descriptors,
@@ -156,15 +161,16 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
   const containerStyle = useMemo(
     () => [
       styles.container,
+      appLayoutDirection,
       {
         width: railWidth,
         paddingTop: insets.top + 12,
         paddingBottom: insets.bottom + 8,
-        paddingLeft: Math.max(insets.left, 8),
+        paddingStart: Math.max(isRTL ? insets.right : insets.left, 8),
         backgroundColor: isDarkMode
           ? Color(theme.colors.background).lighten(0.05).toString()
           : Color(theme.colors.background).darken(0.02).toString(),
-        borderRightColor: Color(theme.colors.text).alpha(0.08).toString(),
+        borderEndColor: Color(theme.colors.text).alpha(0.08).toString(),
       },
     ],
     [
@@ -172,6 +178,7 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
       insets.top,
       insets.bottom,
       insets.left,
+      insets.right,
       isDarkMode,
       theme.colors.background,
       theme.colors.text,
@@ -183,7 +190,9 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
       <View style={[styles.header, expanded && styles.headerExpanded]}>
         <LogoIcon color={theme.colors.text} size={40} isDarkMode={isDarkMode} />
         {expanded ? (
-          <Text style={[styles.brand, {color: theme.colors.text}]}>Qariah</Text>
+          <Text style={[styles.brand, {color: theme.colors.text}]}>
+            {getAppDisplayName()}
+          </Text>
         ) : null}
       </View>
 
@@ -221,12 +230,14 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
     </View>
   );
 };
+// @ai-end
 
+// @ai-start
 const styles = StyleSheet.create({
   container: {
     height: '100%',
-    borderRightWidth: StyleSheet.hairlineWidth,
-    paddingRight: 8,
+    borderEndWidth: StyleSheet.hairlineWidth,
+    paddingEnd: 8,
   },
   header: {
     alignItems: 'center',
@@ -277,3 +288,4 @@ const styles = StyleSheet.create({
     borderTopColor: 'transparent',
   },
 });
+// @ai-end

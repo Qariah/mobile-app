@@ -14,6 +14,7 @@ interface DotIndicatorProps {
   pageWidth: number;
 }
 
+// @ai-start
 function DotIndicatorComponent({
   totalPages,
   scrollX,
@@ -21,8 +22,14 @@ function DotIndicatorComponent({
 }: DotIndicatorProps) {
   const {theme} = useTheme();
 
+  // Someone skipping several releases can get more pages than the row has
+  // room for at full size, so shrink the dots until they fit the modal.
+  const naturalWidth =
+    (totalPages - 1) * (DOT_SIZE_INACTIVE + DOT_GAP) + DOT_SIZE_ACTIVE;
+  const fit = naturalWidth > pageWidth ? pageWidth / naturalWidth : 1;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, {gap: DOT_GAP * fit}]}>
       {Array.from({length: totalPages}).map((_, i) => (
         <Dot
           key={i}
@@ -30,32 +37,41 @@ function DotIndicatorComponent({
           scrollX={scrollX}
           pageWidth={pageWidth}
           color={theme.colors.text}
+          fit={fit}
         />
       ))}
     </View>
   );
 }
+// @ai-end
 
 interface DotProps {
   index: number;
   scrollX: SharedValue<number>;
   pageWidth: number;
   color: string;
+  /** Scale applied to the dot sizes so the whole row fits (1 = full size). */
+  fit: number;
 }
 
 const DOT_SIZE_INACTIVE = moderateScale(8);
 const DOT_SIZE_ACTIVE = moderateScale(20);
 const DOT_PADDING_VERTICAL = moderateScale(16);
+const DOT_GAP = moderateScale(6);
 
 /**
  * Total laid-out height of the indicator row. Exported so the modal can
  * reserve exactly this much space for it and never let the card's content
- * spill past the rounded edge.
+ * spill past the rounded edge. (Qariah #351; the dots only shrink, so the
+ * full-size height stays the upper bound.)
  */
 export const DOT_INDICATOR_HEIGHT =
   DOT_SIZE_INACTIVE + DOT_PADDING_VERTICAL * 2;
 
-function Dot({index, scrollX, pageWidth, color}: DotProps) {
+function Dot({index, scrollX, pageWidth, color, fit}: DotProps) {
+  const inactiveSize = DOT_SIZE_INACTIVE * fit;
+  const activeSize = DOT_SIZE_ACTIVE * fit;
+
   const animatedStyle = useAnimatedStyle(() => {
     const inputRange = [
       (index - 1) * pageWidth,
@@ -66,7 +82,7 @@ function Dot({index, scrollX, pageWidth, color}: DotProps) {
     const width = interpolate(
       scrollX.value,
       inputRange,
-      [DOT_SIZE_INACTIVE, DOT_SIZE_ACTIVE, DOT_SIZE_INACTIVE],
+      [inactiveSize, activeSize, inactiveSize],
       'clamp',
     );
 
@@ -82,7 +98,14 @@ function Dot({index, scrollX, pageWidth, color}: DotProps) {
 
   return (
     <Animated.View
-      style={[styles.dot, {backgroundColor: color}, animatedStyle]}
+      style={[
+        {
+          height: inactiveSize,
+          borderRadius: inactiveSize / 2,
+          backgroundColor: color,
+        },
+        animatedStyle,
+      ]}
     />
   );
 }
@@ -94,11 +117,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: moderateScale(6),
     paddingVertical: DOT_PADDING_VERTICAL,
-  },
-  dot: {
-    height: DOT_SIZE_INACTIVE,
-    borderRadius: moderateScale(4),
   },
 });

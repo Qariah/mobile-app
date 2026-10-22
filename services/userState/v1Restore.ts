@@ -13,10 +13,12 @@
  *      plus a new lightweight @qariah:v1FavoriteSurahs AsyncStorage key for
  *      plain-surah favorites that have no v2 UI surface yet).
  *
- * Flag `@qariah:v1RestoreDone` is set on success, on skip, on empty-state,
- * and on 404 — so the flow runs exactly once per device. Network errors and
- * schema-validation failures do NOT set the flag, enabling retry from
- * Settings → Your Data.
+ * Flag `@qariah:v1RestoreDone:<account hash>` is set on success, on skip, on
+ * empty-state, and on 404 — so the flow runs once per QF account on this
+ * device (TECH_DEBT #244 M4; the flag was device-wide before, so a second
+ * account never got its own check). Sign-out keeps the flag. Network errors
+ * and schema-validation failures do NOT set the flag, enabling retry from
+ * Settings → Your Data. // @ai
  *
  * Pure functions (with side effects scoped to AsyncStorage + zustand) — no
  * React. UI lives in `components/auth/V1RestoreModal.tsx`.
@@ -32,11 +34,20 @@ import {
 } from 'expo-crypto';
 import {QariahUserStateV1Schema, type QariahUserStateV1} from './schema';
 import {fetchQfUserInfo} from './qfUserInfo';
+// @ai-start
+import {
+  V1_RESTORE_DONE_BASE_KEY,
+  accountFlagKey,
+  currentAccountFlagKey,
+} from './accountKeys';
+import {ensureAccountVerified} from './accountCleanup';
+// @ai-end
 import {useFavoriteRecitersStore} from '@/services/player/store/favoriteRecitersStore';
 import {useLovedStore} from '@/services/player/store/lovedStore';
 import {RECITERS, type Reciter, type Rewayat} from '@/data/reciterData';
 
-export const V1_RESTORE_FLAG_KEY = '@qariah:v1RestoreDone';
+/** Base key; the flag itself is per account (`accountKeys.ts`). // @ai */
+export const V1_RESTORE_FLAG_KEY = V1_RESTORE_DONE_BASE_KEY;
 export const V1_FAVORITE_SURAHS_KEY = '@qariah:v1FavoriteSurahs';
 const R2_PUBLIC_HOST_FALLBACK = '';
 
@@ -88,6 +99,8 @@ export interface RestoreCandidate {
  */
 export type V1RestoreFailureReason =
   | 'userinfo-failed'
+  /** M4 — the account-switch cleanup failed; the check stays open. // @ai */
+  | 'account-check-failed'
   | 'r2-fetch-failed'
   | 'r2-http-error'
   | 'invalid-json'
@@ -145,10 +158,27 @@ export type RestoreCheckResult =
  * flag for candidate (the user hasn't decided yet) or error kinds (allow retry).
  */
 export async function checkForV1Restore(): Promise<RestoreCheckResult> {
-  const flag = await AsyncStorage.getItem(V1_RESTORE_FLAG_KEY).catch(
-    () => null,
-  );
+  // @ai-start
+  // M4 (TECH_DEBT #244) — the flag is per account. The account check also
+  // removes a previous account's QF-linked data before this account's
+  // restore runs. With a stored account and no open check, it needs no
+  // network, as the old device-wide flag did.
+  const account = await ensureAccountVerified();
+  if (account.kind === 'no-auth') return {kind: 'no-auth'};
+  if (account.kind === 'error') {
+    return {
+      kind: 'network-error',
+      detail: `account check: ${account.detail}`,
+      reason:
+        account.stage === 'userinfo'
+          ? 'userinfo-failed'
+          : 'account-check-failed',
+    };
+  }
+  const flagKey = accountFlagKey(V1_RESTORE_FLAG_KEY, account.accountHash);
+  const flag = await AsyncStorage.getItem(flagKey).catch(() => null);
   if (flag) return {kind: 'already-done'};
+  // @ai-end
 
   let userInfo;
   try {
@@ -184,7 +214,7 @@ export async function checkForV1Restore(): Promise<RestoreCheckResult> {
   }
 
   if (res.status === 404) {
-    await AsyncStorage.setItem(V1_RESTORE_FLAG_KEY, '1').catch(() => {});
+    await AsyncStorage.setItem(flagKey, '1').catch(() => undefined); // @ai
     return {kind: 'not-found', emailHashPreview};
   }
   if (!res.ok) {
@@ -233,7 +263,7 @@ export async function checkForV1Restore(): Promise<RestoreCheckResult> {
     data.favorites.recitations.length;
 
   if (total === 0) {
-    await AsyncStorage.setItem(V1_RESTORE_FLAG_KEY, '1').catch(() => {});
+    await AsyncStorage.setItem(flagKey, '1').catch(() => undefined); // @ai
     return {kind: 'empty', emailHashPreview};
   }
 
@@ -262,7 +292,7 @@ export async function checkForV1Restore(): Promise<RestoreCheckResult> {
  *
  * Returns merged-count breakdown so the UI can show a confirmation toast.
  *
- * Sets `@qariah:v1RestoreDone = '1'` on success.
+ * Sets the stored account's v1-restore flag to '1' on success (M4). // @ai
  */
 export interface RestoreMergeResult {
   recitersAdded: number;
@@ -467,26 +497,38 @@ export async function mergeV1IntoLocalStores(
     }
   }
 
-  // Mark the migration done.
-  await AsyncStorage.setItem(V1_RESTORE_FLAG_KEY, '1').catch(() => {});
+  // Mark the migration done (for the stored account; M4). // @ai
+  await markV1RestoreDone();
   return result;
 }
 
+// @ai-start
+/**
+ * M4 — set the done flag of the stored account. Before the first account
+ * check on this build (for example an import while signed out), this is the
+ * device-wide key, which the first account to sign in takes over.
+ */
+async function markV1RestoreDone(): Promise<void> {
+  const flagKey = await currentAccountFlagKey(V1_RESTORE_FLAG_KEY);
+  await AsyncStorage.setItem(flagKey, '1').catch(() => undefined);
+}
+// @ai-end
+
 /** Mark the migration done WITHOUT merging (user tapped Skip). */
 export async function skipV1Restore(): Promise<void> {
-  await AsyncStorage.setItem(V1_RESTORE_FLAG_KEY, '1').catch(() => {});
+  await markV1RestoreDone(); // @ai
 }
 
 /** Clear the done-flag — used by Settings → Your Data → "Retry restore". */
 export async function clearV1RestoreFlag(): Promise<void> {
-  await AsyncStorage.removeItem(V1_RESTORE_FLAG_KEY).catch(() => {});
+  const flagKey = await currentAccountFlagKey(V1_RESTORE_FLAG_KEY); // @ai
+  await AsyncStorage.removeItem(flagKey).catch(() => undefined); // @ai
 }
 
-/** Has the flag been set already on this device? */
+/** Has the flag been set already for the stored account? */
 export async function isV1RestoreDone(): Promise<boolean> {
-  const flag = await AsyncStorage.getItem(V1_RESTORE_FLAG_KEY).catch(
-    () => null,
-  );
+  const flagKey = await currentAccountFlagKey(V1_RESTORE_FLAG_KEY); // @ai
+  const flag = await AsyncStorage.getItem(flagKey).catch(() => null);
   return flag === '1';
 }
 

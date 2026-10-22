@@ -13,6 +13,16 @@
 // that actually matter during a ramp: how many people, and did it work for them.
 // This prints those first and everything else only when it is not fine.
 //
+// THE LAYOUT (owner, 2026-10-11; the ANR block changed 2026-10-20): header
+// (date, what is counted, rollout), people and the journey, ACTIVE, USE,
+// FAILURES, FREEZES (ANR), the ops sections, NEEDS YOU last.
+// scripts/lib/card-layout.mjs explains what each block counts. FREEZES (ANR)
+// replaces the three ANR sections and the A/B section: one line of users who
+// froze per platform with a verdict, and Google's score
+// (scripts/lib/anr-card.mjs, planning/signals-anr-listens-design.md). The A/B
+// section prints only with --ab; while the rollout is active, a blocking stop
+// condition that FAILS puts one ⛔ line at the top of FREEZES (ANR).
+//
 // WHAT IT IS NOT. `rollout-engagement.mjs` stays the diagnostic instrument —
 // cohorts, activation, retention, per-OS splits, threshold alerts. This is the
 // headline. When they disagree, engagement is the one to debug.
@@ -21,8 +31,24 @@
 //   node scripts/daily-card.mjs --since=14d
 //   node scripts/daily-card.mjs --ios='20% ▲ rising' --android='50%'
 //   node scripts/daily-card.mjs --json
-//   node scripts/daily-card.mjs --anr                # the ANR section only
+//   node scripts/daily-card.mjs --anr                # the FREEZES (ANR) block only
 //   node scripts/daily-card.mjs --no-anr             # the card without it
+//   node scripts/daily-card.mjs --ab                 # the A/B section only, with
+//                                                    # its BLOCKING lines
+//                                                    # (scripts/lib/ab-card.mjs)
+//   node scripts/daily-card.mjs --no-ab              # accepted; does nothing (G-C8)
+//   node scripts/daily-card.mjs --release-watch      # the RELEASE WATCH section only
+//   node scripts/daily-card.mjs --no-owner           # the card without NEEDS YOU
+//                                                    # (scripts/owner-actions.mjs)
+//   node scripts/daily-card.mjs --sections=triage    # the card without SHIPPED (the
+//                                                    # cloud routine; SHIPPED reads a local file)
+//   node scripts/daily-card.mjs --sections=triage --post-issue='Daily card'
+//        # also post the card as a comment on the open `ops` issue with that exact
+//        # title (created and pinned when missing). Shadow mode posts only to
+//        # 'Daily card (shadow)'.
+//
+// In a cloud session (CLAUDE_CODE_REMOTE=true) the card reads no local file
+// under build/, and GitHub is read over REST only (scripts/lib/triage-common.mjs).
 //
 // Env: POSTHOG_PERSONAL_API_TOKEN + POSTHOG_PROJECT_ID (required)
 //      SENTRY_READ_TOKEN + SENTRY_ORG + SENTRY_PROJECT (optional — without them
@@ -32,13 +58,56 @@
 
 import {existsSync, readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
+import {classifyIntake, INTAKE_WINDOW_HOURS} from './lib/intake.mjs';
+import {shallowWatchBuilds} from './lib/release-watch.mjs';
+import {cardSection, evaluateOwnerActions} from './lib/owner-actions.mjs';
+import {
+  fixedInLabelled,
+  loadOwnerActions,
+  loadOwnerActionsWithReplies,
+  makeFacts,
+  noFixBuildsOf,
+} from './lib/owner-actions-facts.mjs';
+import {ownerDate} from './lib/run-health.mjs';
+import {
+  commentOnIssue,
+  findOrCreateIssue,
+  ghApi,
+  isCloudSession,
+  isShadowRun,
+  listIssues,
+  listOpenPulls,
+  SHADOW_CARD_TITLE,
+} from './lib/triage-common.mjs';
 import {
   fetchAscHang,
   fetchPlayAnr,
   fetchSentryAnr,
+  fetchSentryWeek,
+  freezeOptions,
   renderAnrCard,
 } from './lib/anr-card.mjs';
 import {labExclusionSQL, sqlList} from './lib/lab-exclusion.mjs';
+import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
+import {
+  abConfig,
+  blockingStopConditions,
+  collectAbModel,
+  renderAbCard,
+} from './lib/ab-card.mjs';
+import {
+  cardBuilds,
+  renderActive,
+  renderHeader,
+  renderJourney,
+  renderUse,
+  wrap,
+} from './lib/card-layout.mjs';
+import {
+  fixedInLabelOf,
+  parseTriageState,
+  resolveFixedIn,
+} from './lib/triage-taxonomy.mjs';
 
 const CONFIG_PATH = 'docs/operations/active-rollout.json';
 
@@ -60,12 +129,8 @@ const ARGS = Object.fromEntries(
   }),
 );
 
-const PH_TOKEN = process.env.POSTHOG_PERSONAL_API_TOKEN;
-const PH_PROJECT = process.env.POSTHOG_PROJECT_ID;
-const PH_HOST = (process.env.POSTHOG_HOST || 'https://us.posthog.com').replace(
-  /\/$/,
-  '',
-);
+const PH = posthogConfig();
+const {token: PH_TOKEN, project: PH_PROJECT} = PH;
 
 const SENTRY_TOKEN = process.env.SENTRY_READ_TOKEN;
 const SENTRY_ORG = process.env.SENTRY_ORG || 'qariah';
@@ -73,27 +138,15 @@ const SENTRY_HOST = (
   process.env.SENTRY_REGION_HOST || 'https://sentry.io'
 ).replace(/\/$/, '');
 
-async function hogql(query) {
-  const res = await fetch(`${PH_HOST}/api/projects/${PH_PROJECT}/query/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PH_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({query: {kind: 'HogQLQuery', query}}),
-    // eslint-disable-next-line no-undef -- Node 18+ global; the shared ESLint env is the RN app's
-    signal: AbortSignal.timeout(90_000),
+const posthog = createPosthogClient({...PH, timeoutMs: 90_000});
+
+// Every query here carries its own LIMIT ROW_CAP. A result that holds ROW_CAP
+// rows might be cut off, so it throws instead of returning a number.
+const hogql = query =>
+  posthog.hogql(query, {
+    cap: ROW_CAP,
+    capMessage: () => 'hit ROW_CAP — refusing to report truncated data',
   });
-  if (!res.ok) {
-    throw new Error(
-      `PostHog ${res.status}: ${(await res.text()).slice(0, 300)}`,
-    );
-  }
-  const rows = (await res.json()).results || [];
-  if (rows.length >= ROW_CAP)
-    throw new Error('hit ROW_CAP — refusing to report truncated data');
-  return rows;
-}
 
 // --- the journey -------------------------------------------------------------
 //
@@ -102,23 +155,41 @@ async function hogql(query) {
 // plain English: this card gets forwarded to people who do not know what a
 // `meaningful_listen` is.
 //
-// "Installed" is the honest ceiling of what PostHog can see, and it is NOT the
-// store download count: `Application Installed` fires on FIRST LAUNCH, so anyone
-// who downloaded and never opened the app is invisible here. True downloads need
-// App Store Connect (Sales & Trends, needs a vendor number) or the Play reports
-// bucket. The Installed→Opened gap below is real and IS worth watching.
+// "Installed" is NOT the store download count, and it is NOT a journey step:
+// `Application Installed` / `Application Updated` fire once, on the first
+// launch after an install or an update. A person who updated before the window
+// opens the app every day and never sends one in it, so "installed" can be far
+// below "opened" (2598 vs 4656 on 2026-10-11). The card prints it as its own
+// line under the people count (card-layout.mjs renderJourney); the journey
+// starts at Opened. True downloads need App Store Connect (Sales & Trends) or
+// the Play reports bucket.
+//
+// "Logged in" counts the people who signed in on a counted build. PostHog does
+// not know who is ALREADY signed in: the app never calls identify() and sends
+// no signed-in property, so a person who signed in on an older build and
+// stayed signed in does not count. The number is a floor until the app reports
+// its signed-in state on each launch.
 const STEPS = [
   {
     key: 'installed',
     label: 'Installed',
     events: ['Application Installed', 'Application Updated'],
   },
-  {key: 'opened', label: 'Opened it', events: ['cold_start_began']},
-  {key: 'past_loading', label: 'Past loading', events: ['splash_hidden']},
+  {key: 'opened', label: 'Opened', events: ['cold_start_began']},
+  // Past loading = a first screen rendered: splash_hidden OR
+  // screen_content_rendered, the cold-start completion that ColdStartBeganProps
+  // (services/analytics/qariahEvents.ts) defines. scripts/lib/ab-card.mjs and
+  // the engagement funnel (active-rollout.json) use the same two events.
   {
-    key: 'set_up',
-    label: 'Set up',
-    events: ['onboarding_completed', 'onboarding_skipped'],
+    key: 'past_loading',
+    label: 'Past loading',
+    events: ['splash_hidden', 'screen_content_rendered'],
+  },
+  {
+    key: 'logged_in',
+    label: 'Logged in',
+    events: ['sign_in_succeeded'],
+    or: "(event = 'onboarding_completed' AND properties.signed_in = true)",
   },
   {
     key: 'started',
@@ -131,6 +202,8 @@ const STEPS = [
     events: ['meaningful_listen', 'mushaf_page_read', 'playback_completed'],
   },
 ];
+const stepCond = s =>
+  [`event IN (${sqlList(s.events)})`, s.or].filter(Boolean).join(' OR ');
 
 // --- how much it is being used -----------------------------------------------
 //
@@ -191,72 +264,75 @@ function windowClause(cfg) {
   };
 }
 
+// The three trailing windows of ACTIVE and USE, ending now, one day ago and
+// two days ago. Trailing windows, not calendar days: "Today" is the last 24 h
+// before the run, so it is a full day at any hour.
+const ACTIVE_ROWS = [
+  {label: 'Today', shift: 0},
+  {label: 'Yesterday', shift: 1},
+  {label: 'Day before', shift: 2},
+];
+const trailing = (days, shift = 0) =>
+  `timestamp > now() - INTERVAL ${days + shift} DAY` +
+  (shift ? ` AND timestamp <= now() - INTERVAL ${shift} DAY` : '');
+
 async function collect(cfg) {
-  const release = (cfg && cfg.release) || '3.2.0';
+  const builds = cardBuilds(cfg);
+  if (!builds.length)
+    throw new Error(
+      'active-rollout.json names no production build (card.builds, sentryRelease)',
+    );
   const win = windowClause(cfg);
-  const scope = `properties.$app_version = '${release}' AND ${labExclusionSQL()}`;
+  const scope = `properties.$app_build IN (${sqlList(builds.map(b => b.build))}) AND ${labExclusionSQL()}`;
 
   // EVERY number here is derived from a PER-USER subquery, never from grouping
   // raw events. Bucketing per event double-counts anyone whose events disagree:
   // $os_name is not set on every event, so the same person lands in both the
-  // iPhone and Android groups and the platform columns sum to MORE than the
+  // iOS and Android groups and the platform columns sum to MORE than the
   // population. That is how a 329-person release first printed as "340 people ·
-  // iPhone 219 · Android 121". Resolve identity once per person (any() for
-  // platform, the LATEST build they were seen on), then aggregate.
+  // iPhone 219 · Android 121". Resolve identity once per person, then
+  // aggregate. iPadOS is iOS: before 2026-10-11 an iPad counted as Android.
   const perUserCols = STEPS.map(
-    s => `countIf(event IN (${sqlList(s.events)})) AS ${s.key}`,
+    s => `countIf(${stepCond(s)}) AS ${s.key}`,
   ).join(',\n         ');
   const reachCols = STEPS.map(s => `countIf(${s.key} > 0) AS ${s.key}`).join(
     ',\n       ',
   );
-
   const PER_USER = `SELECT person_id,
-         multiIf(any(properties.$os_name) = 'iOS', 'iPhone', 'Android') AS platform,
-         argMax(properties.$app_build, timestamp) AS build,
+         multiIf(any(properties.$os_name) IN ('iOS', 'iPadOS'), 'iOS', 'Android') AS platform,
          ${perUserCols}
        FROM events WHERE ${win.sql} AND ${scope}
        GROUP BY person_id`;
 
-  // Volume, unlike the journey, is a straight event count — grouping raw events
-  // is CORRECT here (we want every occurrence) and the $os_name double-count that
-  // ruins the per-user aggregates cannot bite, because we never split by platform.
-  const usageQuery = `SELECT event, count() AS n, uniq(person_id) AS people
+  // ACTIVE and USE count EVERY version, unlike the rest of the card. Scoping
+  // them to the counted builds would measure rollout ADOPTION, not activity: a
+  // person active every day on an older build is a real active user, and the
+  // numbers would dip whenever a new build starts rolling. Lab traffic is still
+  // excluded. Safe only because this PostHog project receives v2 traffic only
+  // (verified 2026-08-30: 3.2.0, 3.2.1, 3.1.8 and nothing else; v1 Flutter
+  // never shipped PostHog). IF ANOTHER APP EVER REPORTS HERE, a version filter
+  // becomes mandatory. One 32-day scan answers all nine ACTIVE numbers, and
+  // one 30-day scan all twelve USE numbers.
+  const activeCols = ACTIVE_ROWS.flatMap(({shift}) =>
+    [1, 7, 30].map(d => `uniqIf(person_id, ${trailing(d, shift)})`),
+  ).join(',\n       ');
+  const activeQuery = `SELECT ${activeCols}
      FROM events
-     WHERE ${win.sql} AND ${scope}
+     WHERE timestamp > now() - INTERVAL 32 DAY AND ${labExclusionSQL()}`;
+
+  // USE is a straight event count, so grouping raw events is CORRECT here (we
+  // want every occurrence).
+  const usageQuery = `SELECT event,
+       countIf(${trailing(1)}), countIf(${trailing(7)}), count()
+     FROM events
+     WHERE timestamp > now() - INTERVAL 30 DAY AND ${labExclusionSQL()}
        AND event IN (${sqlList(USAGE.flatMap(u => u.events))})
      GROUP BY event LIMIT ${ROW_CAP}`;
 
-  // Active users. DELIBERATELY NOT scoped to `release`, unlike everything else on
-  // this card. Scoping DAU to one $app_version measures rollout ADOPTION, not
-  // activity: a user who is active every day but still on 3.1.8 is a real active
-  // user and would vanish, and DAU would then dip whenever a new version starts
-  // rolling rather than when people stop showing up. Lab/simulator traffic is
-  // still excluded, so this stays comparable with the rest of the card.
-  //
-  // Unfiltered by version is only SAFE because this PostHog project receives v2
-  // traffic exclusively — verified 2026-08-30, where a 7-day scan of every
-  // $app_version returned 3.2.0, 3.2.1 and 3.1.8 and nothing else. v1 Flutter
-  // (3.0.1 / vc35) never shipped PostHog, so it cannot land here. IF v1 OR ANY
-  // OTHER APP EVER REPORTS TO THIS PROJECT, these two numbers silently stop
-  // meaning "v2 active users" and a version filter becomes mandatory.
-  //
-  // Trailing windows, not calendar days — "DAU" here is the last 24h and "WAU"
-  // the last 7x24h, both relative to run time. Read from the same 7-day scan so
-  // it costs one query, and so DAU is always a strict subset of WAU. Counting is
-  // per person, so someone who upgrades mid-week is one user, not two.
-  const activeQuery = `SELECT
-       uniqIf(person_id, timestamp > now() - INTERVAL 1 DAY) AS dau,
-       uniq(person_id) AS wau
-     FROM events
-     WHERE timestamp > now() - INTERVAL 7 DAY AND ${labExclusionSQL()}`;
-
-  const [byPlatform, byBuild, usageRows, activeRows] = await Promise.all([
+  const [byPlatform, usageRows, activeRows] = await Promise.all([
     hogql(`SELECT platform, count() AS total,
        ${reachCols}
      FROM (${PER_USER}) GROUP BY platform ORDER BY total DESC LIMIT ${ROW_CAP}`),
-    hogql(`SELECT build, platform, count() AS total,
-       ${reachCols}
-     FROM (${PER_USER}) GROUP BY build, platform ORDER BY total DESC LIMIT ${ROW_CAP}`),
     hogql(usageQuery),
     hogql(activeQuery),
   ]);
@@ -265,21 +341,29 @@ async function collect(cfg) {
   // are different claims, and the renderer prints them differently.
   let active = null;
   if (activeRows && activeRows.length) {
-    active = {dau: Number(activeRows[0][0]), wau: Number(activeRows[0][1])};
+    const v = activeRows[0].map(Number);
+    active = ACTIVE_ROWS.map(({label}, i) => ({
+      label,
+      dau: v[i * 3],
+      wau: v[i * 3 + 1],
+      mau: v[i * 3 + 2],
+    }));
   }
 
   // Absent event ⇒ 0, never undefined: a metric that never fired must print as a
   // real zero, not vanish from the block (an absent line reads as "not checked").
   const usageByEvent = Object.fromEntries(
-    usageRows.map(r => [String(r[0]), {n: Number(r[1]), people: Number(r[2])}]),
+    usageRows.map(r => [String(r[0]), r.slice(1).map(Number)]),
   );
   const usage = USAGE.map(u => {
     const hits = u.events.map(e => usageByEvent[e]).filter(Boolean);
+    const sum = i => hits.reduce((a, h) => a + h[i], 0);
     return {
       label: u.label,
       key: u.key,
-      n: hits.reduce((a, h) => a + h.n, 0),
-      people: Math.max(0, ...hits.map(h => h.people), 0),
+      day: sum(0),
+      week: sum(1),
+      month: sum(2),
     };
   });
 
@@ -298,7 +382,7 @@ async function collect(cfg) {
   const MIN_HUMAN_SESSION_MS = 2000;
   const stuck = await hogql(`SELECT build, platform, kind, count() AS n FROM (
        SELECT any(properties.$app_build) AS build,
-         multiIf(any(properties.$os_name) = 'iOS', 'iPhone', 'Android') AS platform,
+         multiIf(any(properties.$os_name) IN ('iOS', 'iPadOS'), 'iOS', 'Android') AS platform,
          person_id,
          countIf(event IN ('Application Installed','Application Updated')) AS installed,
          countIf(event = 'cold_start_began') AS opened,
@@ -316,7 +400,7 @@ async function collect(cfg) {
           AND (opened = 0 OR past = 0)
      ) GROUP BY build, platform, kind ORDER BY n DESC LIMIT ${ROW_CAP}`);
 
-  return {release, win, byPlatform, byBuild, stuck, usage, active};
+  return {builds, win, byPlatform, stuck, usage, active};
 }
 
 // --- failures ----------------------------------------------------------------
@@ -350,6 +434,9 @@ const CRASH_PHRASES = [
   [/Network request failed/i, 'network request failed'],
   [/WatchdogTermination/i, 'app froze, OS killed it'],
   [/OutOfMemoryError/i, 'ran out of memory'],
+  // QF API errors carry the URL and the server's JSON in the title.
+  [/^QF \S+ failed: 5\d\d/, 'QF server error'],
+  [/^QF \S+ failed/, 'QF request failed'],
 ];
 
 function humanizeCrash(raw) {
@@ -357,10 +444,18 @@ function humanizeCrash(raw) {
   for (const [re, phrase] of CRASH_PHRASES) if (re.test(s)) return phrase;
   const head = s.split(/(?<=[.!?])\s|:\s/)[0];
   if (head.length <= 30) return head;
-  return `${head.slice(0, 29).replace(/\s+\S*$/, '')}…`;
+  // Cut on a word boundary, unless that leaves only a stub ("QF…").
+  const cut = head.slice(0, 29).replace(/\s+\S*$/, '');
+  return `${cut.length >= 15 ? cut : head.slice(0, 29)}…`;
 }
 
-async function sentryFailures(release, builds, cfg) {
+// Sentry requests that failed in sentryFailures(). The card still prints the
+// rows it got; `--json` reports the count (crashesFailedRequests), so the
+// signals snapshot can mark its card section partial instead of trusting a
+// short list (planning/signals-phase1-design.md, gap 19).
+let sentryFailedRequests = 0;
+
+async function sentryFailures(builds, cfg) {
   if (!SENTRY_TOKEN) return null;
 
   // Sentry releases carry the BUILD suffix (com.qariah.app@3.2.0+1713), so a
@@ -378,7 +473,7 @@ async function sentryFailures(release, builds, cfg) {
     );
     url.searchParams.set(
       'query',
-      `release:com.qariah.app@${release}+${b} is:unresolved`,
+      `release:com.qariah.app@${b.version}+${b.build} is:unresolved`,
     );
     url.searchParams.set('statsPeriod', '14d');
     url.searchParams.set('limit', '25');
@@ -387,12 +482,19 @@ async function sentryFailures(release, builds, cfg) {
       const res = await fetch(url, {
         headers: {Authorization: `Bearer ${SENTRY_TOKEN}`},
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        sentryFailedRequests++;
+        continue;
+      }
       issues = await res.json();
     } catch {
+      sentryFailedRequests++;
       continue;
     }
-    if (!Array.isArray(issues)) continue;
+    if (!Array.isArray(issues)) {
+      sentryFailedRequests++;
+      continue;
+    }
 
     for (const i of issues) {
       // Warnings are the memory probe and assorted lint-grade noise — not
@@ -410,10 +512,10 @@ async function sentryFailures(release, builds, cfg) {
           title: humanizeCrash(
             (i.metadata && i.metadata.value) || i.title || '',
           ),
-          builds: [b],
+          builds: [b.build],
         });
       } else {
-        seen.get(i.shortId).builds.push(b);
+        seen.get(i.shortId).builds.push(b.build);
       }
     }
   }
@@ -423,11 +525,19 @@ async function sentryFailures(release, builds, cfg) {
 
 // --- ANR -----------------------------------------------------------------------
 //
-// Sentry sessions carry no OS, so each release's platform comes from PostHog:
-// the OS its cold starts report. A build number seen on both platforms (the
-// internal builds share numbers) gets no platform and is left out of the ANR
-// rates entirely, which also keeps the simulators and emulators out.
-async function collectAnr() {
+// The card prints sentry.week (users who froze in the last 7 complete UTC
+// days, the production builds of card.builds) and Play's 7-day rate, pooled
+// over the production versionCodes of card.builds (decision G-G4; before
+// 2026-10-20 the card pooled every v2 versionCode that Play had data for). The
+// JSON also keeps the daily Sentry rates and the App Store hang rate.
+//
+// The daily Sentry rates: Sentry sessions carry no OS, so each release's
+// platform comes from PostHog: the OS its cold starts report. A build number
+// seen on both platforms (the internal builds share numbers) gets no platform
+// and is left out of those rates entirely, which also keeps the simulators and
+// emulators out. sentry.week needs no such map: card.builds names the
+// platform of each production build.
+async function collectAnr(cfg) {
   const rows = await hogql(`SELECT properties.$app_build AS build,
        countIf(properties.$os IN ('iOS', 'iPadOS')) AS ios,
        countIf(properties.$os = 'Android') AS android
@@ -444,8 +554,13 @@ async function collectAnr() {
       platformOfBuild.set(String(build), 'Android');
     }
   }
-  const [play, sentry, appStore] = await Promise.all([
-    fetchPlayAnr(),
+  const builds = cardBuilds(cfg);
+  const androidCodes = builds
+    .filter(b => b.platform === 'Android')
+    .map(b => Number(b.build));
+  const [play, sentry, appStore, week] = await Promise.all([
+    // No Android production build: no Play line (null), not every v2 code.
+    androidCodes.length ? fetchPlayAnr({codes: androidCodes}) : null,
     fetchSentryAnr({
       token: SENTRY_TOKEN,
       org: SENTRY_ORG,
@@ -453,13 +568,52 @@ async function collectAnr() {
       platformOfBuild,
     }),
     fetchAscHang(),
+    fetchSentryWeek({
+      token: SENTRY_TOKEN,
+      org: SENTRY_ORG,
+      host: SENTRY_HOST,
+      builds,
+    }),
   ]);
-  return {play, sentry, appStore};
+  // Additive: anr.sentry.week sits beside the daily rates. It is kept when
+  // the daily rates failed ({error, week}), because it does not depend on them.
+  return {play, sentry: sentry ? {...sentry, week} : null, appStore};
+}
+
+// The FREEZES (ANR) block options: a staged rollout runs while `active` is
+// true and two Android production builds serve users; while active, a
+// blocking A/B stop condition that FAILS is one ⛔ line, and NO DATA is the
+// line `A/B check: no data` (ab is null when no rollout is active).
+const anrOptions = (cfg, ab) =>
+  freezeOptions({
+    active: !!(cfg && cfg.active === true),
+    builds: cardBuilds(cfg),
+    abConditions: ab ? blockingStopConditions(ab) : [],
+  });
+
+// --- A/B -----------------------------------------------------------------------
+//
+// The staged build's A/B (active-rollout.json → abTest). Null — and no section —
+// when no rollout is active or the JSON does not name the flag.
+function collectAb(cfg) {
+  const ab = abConfig(cfg);
+  if (!ab) return null;
+  return collectAbModel(ab, {
+    hogql,
+    sentry: {token: SENTRY_TOKEN, org: SENTRY_ORG, host: SENTRY_HOST},
+    // The files the build changed (GitHub REST compare; the cloud clone is
+    // shallow, so git cannot answer). Null when the JSON names no base.
+    changedFiles: ({baseSha, buildSha}) => {
+      if (!baseSha || !buildSha) return null;
+      const r = ghApi(`repos/${GH_REPO}/compare/${baseSha}...${buildSha}`);
+      return r && Array.isArray(r.files) ? r.files.map(f => f.filename) : null;
+    },
+  });
 }
 
 // --- ops sections (feedback graph) -------------------------------------------
 //
-// Four sections the daily auto-sprint and the fix loop hand the owner. Each
+// Five sections the daily auto-sprint and the fix loop hand the owner. Each
 // source is optional and independent: a missing file or an offline `gh` prints
 // `unavailable`, never a fabricated zero. `--no-ops` skips the block entirely
 // (the PostHog-only card the 1pm loop pastes when it has no shipping news).
@@ -469,21 +623,15 @@ async function collectAnr() {
 //   REPLY DRAFTS  `reply-draft` issues          — store-review replies awaiting the owner's numbers
 //   CI FOLLOW-UP  remediation-drafted drafts blocked by a red check OR a base
 //                 conflict — the loop's Step 3.5 queue
+//   RELEASE WATCH issues whose fix is built but not in production, and each new
+//                 build that no issue names as its fix build (releaseWatchLines)
 
 const GH_REPO = process.env.GH_REPO || 'omar-zarka/qariah-v2';
 const BUILD_DIR = process.env.QARIAH_BUILD_DIR || 'build';
 
-function gh(args) {
-  return JSON.parse(
-    execFileSync('gh', [...args, '-R', GH_REPO], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 30000,
-    }),
-  );
-}
-
 function shippedLines() {
+  if (isCloudSession())
+    return ['not available in a cloud session (build/ is a local file)'];
   const f = `${BUILD_DIR}/auto-sprint-last.json`;
   if (!existsSync(f)) return ['none today (no build/auto-sprint-last.json)'];
   let a;
@@ -512,18 +660,11 @@ function shippedLines() {
 
 function heldLines() {
   try {
-    const rows = gh([
-      'issue',
-      'list',
-      '--state',
-      'open',
-      '--label',
-      'needs-decision',
-      '--limit',
-      '20',
-      '--json',
-      'number,title',
-    ]);
+    const rows = listIssues({
+      state: 'open',
+      labels: 'needs-decision',
+      limit: 20,
+    });
     if (!rows.length) return ['none'];
     return rows.map(r => `#${r.number} ${r.title.slice(0, 70)}`);
   } catch {
@@ -533,18 +674,7 @@ function heldLines() {
 
 function replyDraftLines() {
   try {
-    const rows = gh([
-      'issue',
-      'list',
-      '--state',
-      'open',
-      '--label',
-      'reply-draft',
-      '--limit',
-      '20',
-      '--json',
-      'number,title',
-    ]);
+    const rows = listIssues({state: 'open', labels: 'reply-draft', limit: 20});
     if (!rows.length) return ['none'];
     return rows
       .map(
@@ -561,23 +691,14 @@ function replyDraftLines() {
 
 function ciFollowUpLines() {
   try {
-    const all = gh([
-      'pr',
-      'list',
-      '--state',
-      'open',
-      '--limit',
-      '60',
-      '--json',
-      'number,title,headRefName,labels,statusCheckRollup,mergeable',
-    ]);
     // A loop draft = label OR branch pattern (the label sat on the issues only until
     // 2026-09-07, so a label-only query saw nothing). ops/* and repro-* are not fixes.
     const isLoop = r =>
       ((r.labels || []).some(l => l.name === 'remediation-drafted') ||
         /^qariah\/(fix|triage)-/.test(r.headRefName || '')) &&
       !/^(ops\/|qariah\/repro-)/.test(r.headRefName || '');
-    const rows = all.filter(isLoop);
+    // REST: the checks and `mergeable` are read only for the loop drafts.
+    const rows = listOpenPulls({limit: 60, filter: isLoop});
     // A draft is blocked by a red check OR by a conflict with the base. The
     // auto-sprint adopts neither, so reporting only checks called a CONFLICTING
     // draft "green" and parked it silently (observed on #331, 2026-09-08).
@@ -603,91 +724,323 @@ function ciFollowUpLines() {
   }
 }
 
-function opsBlock() {
+// RELEASE WATCH. Two deterministic lines.
+//   1. How many open issues wait for a release: a build carries the fix
+//      (`fixed-in:<build>` label or a triage-state ledger row), but production
+//      does not yet. These are NOT open work — the digest leaves them out too.
+//   2. Each new build in `engagement.buildsToWatch` that no issue names as its
+//      fix build. A hand-made build (hotfix, manual publish) skips post-sprint
+//      Step 14b, so nothing records what it fixes unless someone runs
+//      scripts/stamp-fixed-in.mjs. Build 1975 (PR #451) was the first miss.
+// Cost: one listing of the open issues + one REST call per new build.
+
+const RECENT_DAYS = 14;
+
+// When did each build join buildsToWatch? From the git history of the rollout
+// file. Returns null when the history is missing (a shallow CI or cloud
+// checkout); the caller then uses shallowWatchBuilds().
+function buildAddedDates() {
+  try {
+    if (
+      execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() === 'true'
+    )
+      return null;
+    const log = execFileSync(
+      'git',
+      ['log', '-p', '--reverse', '--format=@@COMMIT %cI', '--', CONFIG_PATH],
+      {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64e6},
+    );
+    const added = new Map();
+    let date = null;
+    for (const line of log.split('\n')) {
+      const c = line.match(/^@@COMMIT (\S+)/);
+      if (c) date = new Date(c[1]);
+      const b = line.match(/^\+\s*"(\d{3,5})",?\s*$/);
+      if (b && date && !added.has(b[1])) added.set(b[1], date);
+    }
+    return added.size ? added : null;
+  } catch {
+    return null;
+  }
+}
+
+function openIssueLabels() {
+  return listIssues({state: 'open'}).map(i => [
+    i.number,
+    i.labels.map(l => l.name),
+  ]);
+}
+
+function releaseWatchLines(cfg) {
   const L = [];
-  const section = (title, lines) => {
+  let ledger = new Map();
+  try {
+    ledger = parseTriageState(
+      readFileSync('docs/operations/triage-state.md', 'utf8'),
+    ).fixedInBuild;
+  } catch {
+    /* no ledger — the labels alone still count */
+  }
+
+  try {
+    let waiting = 0;
+    let behindFlag = 0;
+    for (const [num, labels] of openIssueLabels()) {
+      if (!resolveFixedIn(fixedInLabelOf(labels), ledger.get(num) || null))
+        continue;
+      waiting++;
+      if (labels.some(l => l.startsWith('behind-flag:'))) behindFlag++;
+    }
+    L.push(
+      `Waiting for a release: ${waiting} issues (fix built, not yet in production)` +
+        (behindFlag ? `, ${behindFlag} of them also wait for a flag` : ''),
+    );
+  } catch {
+    L.push(
+      'Waiting for a release: unavailable (gh offline or unauthenticated)',
+    );
+  }
+
+  const builds = (cfg && cfg.engagement && cfg.engagement.buildsToWatch) || [];
+  const prod = Number(cfg && cfg.build) || 0;
+  const dates = buildAddedDates();
+  const since = Date.now() - RECENT_DAYS * 86_400_000;
+  // No git history (a shallow clone, as in Claude Cloud): the rollout file
+  // decides (scripts/lib/release-watch.mjs). When it cannot, list no builds.
+  const recent = dates
+    ? builds.filter(b =>
+        dates.has(String(b))
+          ? dates.get(String(b)).getTime() >= since
+          : Number(b) > prod,
+      )
+    : shallowWatchBuilds(cfg) || [];
+  const ledgerBuilds = new Set([...ledger.values()].map(String));
+  // A build recorded in noFixBuilds (owner-actions.json, triage-loop Step 1.6).
+  let noFix = new Set();
+  try {
+    noFix = new Set(noFixBuildsOf(loadOwnerActions()));
+  } catch {
+    /* a broken list file: the NEEDS YOU section says so */
+  }
+  for (const b of recent) {
+    if (ledgerBuilds.has(String(b)) || noFix.has(String(b))) continue;
+    let n;
+    try {
+      n = fixedInLabelled(b);
+    } catch {
+      L.push(`Build ${b}: could not check its fixed-in label (gh offline)`);
+      continue;
+    }
+    if (!n)
+      L.push(
+        `Build ${b} has no fix record yet. The Mac loop records it itself (Step 1.6).`,
+      );
+  }
+  return L;
+}
+
+// INTAKE. Does new work still enter the queue? (scripts/lib/intake.mjs)
+// Three REST reads: the last Diagnostics Watch runs, the issues updated in the
+// window, and the comments that github-actions[bot] wrote in the window.
+function intakeLines() {
+  try {
+    const now = Date.now();
+    const since = new Date(now - INTAKE_WINDOW_HOURS * 3_600_000).toISOString();
+    const runs =
+      (
+        ghApi(`repos/${GH_REPO}/actions/workflows/diagnostics-watch.yml/runs`, {
+          query: {per_page: 10},
+        }) || {}
+      ).workflow_runs || [];
+    const issues = listIssues({state: 'all', since});
+    const botComments = ghApi(`repos/${GH_REPO}/issues/comments`, {
+      query: {since, per_page: 100},
+      paginate: true,
+    })
+      .filter(c => c.user && c.user.login === 'github-actions[bot]')
+      .map(c => ({issueNumber: Number(c.issue_url.split('/').pop())}));
+    return [classifyIntake({now, runs, issues, botComments}).line];
+  } catch (e) {
+    return [
+      `Intake: unknown — could not read GitHub (${String(e.message).slice(0, 80)})`,
+    ];
+  }
+}
+
+// --sections=all (default) | triage. `triage` leaves out SHIPPED: that section
+// reads build/auto-sprint-last.json on the Mac, and the 3pm auto-sprint posts
+// its own ship card.
+const SECTIONS = String(ARGS.sections || 'all');
+if (!['all', 'triage'].includes(SECTIONS)) {
+  console.error(`❌ --sections=${SECTIONS}: use all or triage`);
+  process.exit(2);
+}
+if (ARGS['post-issue'] === true || ARGS['post-issue'] === '') {
+  console.error(
+    "❌ --post-issue needs a title, e.g. --post-issue='Daily card'",
+  );
+  process.exit(2);
+}
+
+// Every line fits the phone width (44): a prose line wraps, and a HELD issue
+// title is cut, because its number is what Omar acts on.
+const cutTo = (l, w = 44) => (l.length > w ? `${l.slice(0, w - 1)}…` : l);
+
+function opsBlock(cfg) {
+  const L = [];
+  const section = (title, lines, {cut = false} = {}) => {
     L.push('');
     L.push(title);
-    for (const l of lines) L.push(`  ${l}`);
+    for (const l of lines)
+      L.push(...(cut ? [cutTo(`  ${l}`)] : wrap(`  ${l}`, 44, '    ')));
   };
-  section('SHIPPED', shippedLines());
-  section('HELD (needs your decision)', heldLines());
+  if (SECTIONS === 'all') section('SHIPPED', shippedLines());
+  // The lines start with "Intake:", which the title already says.
+  section(
+    'INTAKE',
+    intakeLines().map(l => l.replace(/^Intake: /, '')),
+  );
+  section('HELD (needs your decision)', heldLines(), {cut: true});
   section('REPLY DRAFTS', replyDraftLines());
   section('CI FOLLOW-UP', ciFollowUpLines());
+  section('RELEASE WATCH', releaseWatchLines(cfg));
   return L;
+}
+
+// --post-issue=<title>. One comment for each run, on the open `ops` issue with
+// that title. The first line is the marker that scripts/run-health.mjs reads.
+const OWNER_TZ = process.env.QARIAH_TZ || 'America/Los_Angeles';
+const FENCE = '`'.repeat(3);
+function postCard(text) {
+  const title = String(ARGS['post-issue']);
+  if (isShadowRun() && title !== SHADOW_CARD_TITLE) {
+    throw new Error(
+      `shadow mode posts the card only to "${SHADOW_CARD_TITLE}", not to "${title}"`,
+    );
+  }
+  const opts = {allowInShadow: title === SHADOW_CARD_TITLE};
+  const issue = findOrCreateIssue(
+    {
+      title,
+      label: 'ops',
+      body:
+        'One comment for each scheduled run: the daily card (`scripts/daily-card.mjs --post-issue`) ' +
+        'and the `run-health` lines (`scripts/run-end.sh`). `scripts/run-health.mjs` reads them. ' +
+        'See planning/claude-cloud-migration-plan.md §8 and §11.',
+    },
+    opts,
+  );
+  if (issue.created)
+    console.error(
+      `daily-card: created issue #${issue.number} "${title}"${issue.pinned ? ' (pinned)' : ' (could not pin it; pin it by hand)'}`,
+    );
+  const date = new Date().toLocaleDateString('en-CA', {timeZone: OWNER_TZ});
+  const host = isCloudSession() ? 'cloud' : 'mac';
+  const body = [
+    `<!-- daily-card date=${date} sections=${SECTIONS} host=${host} -->`,
+    `**Daily card** · ${date} · ${SECTIONS} · ${host}`,
+    '',
+    `${FENCE}text`,
+    text.split(FENCE).join("'''"),
+    FENCE,
+  ].join('\n');
+  const url = commentOnIssue(issue.number, body, opts);
+  console.error(`daily-card: posted on ${url}`);
+}
+
+// NEEDS YOU. The owner's next steps of the Claude Cloud migration
+// (docs/operations/owner-actions.json, scripts/owner-actions.mjs). Each check
+// reads live state, so a prompt appears only on the days Omar must act, and
+// it goes away by itself when the step is done. REST reads only.
+function ownerActions() {
+  try {
+    // Omar's `owner-reply:` comments on the card issue apply first
+    // (scripts/lib/owner-replies.mjs), so an answered step does not come back.
+    const {list, repliesError} = loadOwnerActionsWithReplies();
+    if (!list) return {error: 'docs/operations/owner-actions.json is missing'};
+    return {
+      results: evaluateOwnerActions(list, {
+        today: ownerDate(Date.now()),
+        cloud: isCloudSession(),
+        facts: makeFacts(list),
+      }),
+      repliesError,
+    };
+  } catch (e) {
+    return {error: String(e.message || e).slice(0, 120)};
+  }
+}
+
+function ownerLines(owner) {
+  if (!owner) return [];
+  // 42 + the 2-space indent the caller adds = the card's 44.
+  if (owner.error) return wrap(`unavailable (${owner.error})`, 42);
+  const lines = cardSection(owner.results, 42).flatMap(l =>
+    l.length > 42 ? wrap(l, 42, '   ') : [l],
+  );
+  if (owner.repliesError)
+    lines.push(...wrap(`owner replies not read (${owner.repliesError})`, 42));
+  return lines;
 }
 
 // --- render ------------------------------------------------------------------
 
-const bar = (v, width = 8) =>
-  '▓'.repeat(Math.round(v * width)).padEnd(width, ' ');
-
+// The owner's layout (2026-10-11; FREEZES (ANR) since 2026-10-20), top to
+// bottom: the header, people and the journey, ACTIVE, USE, FAILURES, FREEZES
+// (ANR), the ops sections, NEEDS YOU.
 function render(
-  {release, win, byPlatform, usage, active},
-  idx,
+  {builds, win, byPlatform, usage, active},
   failures,
   crashes,
   cfg,
   anr,
+  owner,
+  ab,
 ) {
   const L = [];
   const platforms = byPlatform.map(r => ({
-    name: r[0],
+    name: String(r[0]),
     total: Number(r[1]),
-    steps: Object.fromEntries(STEPS.map(s => [s.key, Number(r[idx[s.key]])])),
+    steps: Object.fromEntries(STEPS.map((s, i) => [s.key, Number(r[i + 2])])),
   }));
 
-  const grand = STEPS.map(s => ({
-    label: s.label,
-    n: platforms.reduce((a, p) => a + p.steps[s.key], 0),
-  }));
-  const people = platforms.reduce((a, p) => a + p.total, 0);
-  const top = grand[0].n || 1;
+  // The owner's date, not toISOString(): the loop runs in the evening Pacific,
+  // which is already tomorrow in UTC, and a card stamped with tomorrow's date
+  // reads as stale data from the future.
+  const now = new Date();
+  const today = now.toLocaleDateString('en-CA', {timeZone: OWNER_TZ});
+  const weekday = now.toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: OWNER_TZ,
+  });
+  L.push(
+    ...renderHeader({
+      date: today,
+      weekday,
+      windowLabel: win.label,
+      builds,
+      ios: ARGS.ios || (cfg && cfg._cardIos),
+      android: ARGS.android || (cfg && cfg._cardAndroid),
+    }),
+  );
 
-  // Local date, not toISOString() — the loop runs in the evening Pacific, which
-  // is already tomorrow in UTC, and a card stamped with tomorrow's date reads as
-  // stale data from the future.
-  const today = new Date().toLocaleDateString('en-CA');
-  L.push(`QARIAH ${release} · ${today}`);
-  L.push(win.label);
   L.push('');
   L.push(
-    `${people} people · ${platforms.map(p => `${p.name} ${p.total}`).join(' · ')}`,
+    ...renderJourney({
+      total: platforms.reduce((a, p) => a + p.total, 0),
+      byPlatform: Object.fromEntries(platforms.map(p => [p.name, p.total])),
+      installed: platforms.reduce((a, p) => a + p.steps.installed, 0),
+      steps: STEPS.filter(s => s.key !== 'installed').map(s => ({
+        label: s.label,
+        n: platforms.reduce((a, p) => a + p.steps[s.key], 0),
+      })),
+    }),
   );
-  L.push('');
-  for (const s of grand) {
-    L.push(
-      `${s.label.padEnd(13)}${String(s.n).padStart(4)}  ${bar(s.n / top)}${String(Math.round((s.n / top) * 100)).padStart(4)}%`,
-    );
-  }
-
-  // Volume. The funnel above says how many people got in; this says how hard they
-  // are using it, which no reach percentage can show. Per-day is over calendar
-  // days in the window, so it is a plain average and dips on the day it is read.
-  if (usage && usage.length) {
-    const days = win.days || 1;
-    L.push('');
-    L.push(
-      `${'HOW MUCH'.padEnd(15)}${'total'.padStart(6)}${'/day'.padStart(7)}`,
-    );
-    for (const u of usage) {
-      L.push(
-        `${u.label.padEnd(15)}${String(u.n).padStart(6)}${String(Math.round(u.n / days)).padStart(7)}`,
-      );
-    }
-  }
-
-  // Active users. Sits apart from the two blocks above on purpose: the journey is
-  // cumulative since launch and the volume block is an average over that window,
-  // so neither says whether anyone came back THIS WEEK. These are the only two
-  // numbers on the card that move down when people leave.
-  if (active) {
-    L.push('');
-    L.push(`${'ACTIVE'.padEnd(15)}${'people'.padStart(6)}`);
-    L.push(`${'Today (24h)'.padEnd(15)}${String(active.dau).padStart(6)}`);
-    L.push(`${'This week (7d)'.padEnd(15)}${String(active.wau).padStart(6)}`);
-    L.push('all versions, lab excluded');
-  }
+  L.push('', ...renderActive(active));
+  L.push('', ...renderUse(usage));
 
   // Failures: enumerated when present, one clean line when not. The shape of this
   // block is deliberately allowed to change day to day — a fixed empty table is
@@ -704,26 +1057,34 @@ function render(
       );
     }
     for (const c of crashes || []) {
-      L.push(
-        `${String(c.users).padStart(3)} ${c.title} (b${c.builds.join('/')})`,
-      );
+      // The title gives way, so the builds always fit the phone width.
+      const tail = ` (b${c.builds.join('/')})`;
+      const room = 44 - 4 - tail.length;
+      const title =
+        c.title.length > room ? `${c.title.slice(0, room - 1)}…` : c.title;
+      L.push(`${String(c.users).padStart(3)} ${title}${tail}`);
     }
   }
 
-  const ios = ARGS.ios || (cfg && cfg._cardIos);
-  const android = ARGS.android || (cfg && cfg._cardAndroid);
-  if (ios || android) {
-    L.push('');
-    if (ios) L.push(`iPhone  ${ios}`);
-    if (android) L.push(`Android ${android}`);
+  // The A/B section no longer prints here (--ab prints it); a blocking FAIL
+  // shows as the ⛔ line at the top of FREEZES (ANR).
+  if (anr) L.push('', ...renderAnrCard(anr, anrOptions(cfg, ab)));
+  if (!ARGS['no-ops']) L.push(...opsBlock(cfg));
+  // NEEDS YOU comes last (owner, 2026-10-11).
+  if (owner) {
+    L.push('', 'NEEDS YOU');
+    for (const l of ownerLines(owner)) L.push(`  ${l}`);
   }
-  if (anr) L.push('', ...renderAnrCard(anr, today));
-  if (!ARGS['no-ops']) L.push(...opsBlock());
   return L.join('\n');
 }
 
+function emit(text) {
+  console.log(text);
+  if (ARGS['post-issue'] && !ARGS.json) postCard(text);
+}
+
 async function main() {
-  if (!PH_TOKEN || !PH_PROJECT) {
+  if ((!PH_TOKEN || !PH_PROJECT) && !ARGS['release-watch']) {
     console.error(
       '❌ POSTHOG_PERSONAL_API_TOKEN + POSTHOG_PROJECT_ID required. Source .env.local.',
     );
@@ -731,37 +1092,60 @@ async function main() {
   }
   const cfg = loadConfig();
 
+  // `--release-watch` prints only that section. It needs gh, not PostHog.
+  if (ARGS['release-watch']) {
+    emit(['RELEASE WATCH', ...releaseWatchLines(cfg)].join('\n  '));
+    return;
+  }
+
   if (ARGS.anr) {
-    const anr = await collectAnr();
+    const [anr, ab] = await Promise.all([
+      collectAnr(cfg),
+      ARGS.json ? null : collectAb(cfg),
+    ]);
     if (ARGS.json) console.log(JSON.stringify(anr, null, 2));
     else {
-      console.log(
-        renderAnrCard(anr, new Date().toLocaleDateString('en-CA')).join('\n'),
-      );
+      emit(renderAnrCard(anr, anrOptions(cfg, ab)).join('\n'));
     }
     return;
   }
 
-  const [data, anr] = await Promise.all([
-    collect(cfg),
-    ARGS['no-anr'] ? null : collectAnr(),
-  ]);
-
-  // Column offsets: byPlatform is [platform, total, ...steps];
-  // byBuild is [build, platform, total, ...steps].
-  const idx = Object.fromEntries(STEPS.map((s, i) => [s.key, i + 2]));
-
-  const failures = journeyFailures(data.stuck);
-  const builds = [...new Set(data.byBuild.map(r => String(r[0])))].filter(
-    Boolean,
-  );
-  const crashes = await sentryFailures(data.release, builds, cfg);
-
-  if (ARGS.json) {
-    console.log(JSON.stringify({...data, failures, crashes, anr}, null, 2));
+  if (ARGS.ab) {
+    const ab = await collectAb(cfg);
+    if (ARGS.json) console.log(JSON.stringify(ab, null, 2));
+    else emit(ab ? renderAbCard(ab).join('\n') : 'A/B · no active A/B');
     return;
   }
-  console.log(render(data, idx, failures, crashes, cfg, anr));
+
+  const [data, anr, ab] = await Promise.all([
+    collect(cfg),
+    ARGS['no-anr'] ? null : collectAnr(cfg),
+    collectAb(cfg),
+  ]);
+  const owner = ARGS['no-owner'] ? null : ownerActions();
+
+  const failures = journeyFailures(data.stuck);
+  const crashes = await sentryFailures(data.builds, cfg);
+
+  if (ARGS.json) {
+    console.log(
+      JSON.stringify(
+        {
+          ...data,
+          failures,
+          crashes,
+          crashesFailedRequests: sentryFailedRequests,
+          anr,
+          owner,
+          ab,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  emit(render(data, failures, crashes, cfg, anr, owner, ab));
 }
 
 main().catch(e => {

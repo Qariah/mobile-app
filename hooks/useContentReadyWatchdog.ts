@@ -20,10 +20,11 @@
 // diagnostics cohort. It does NOT touch the screen's loading logic, force any
 // ready state, or change what the user sees — pure telemetry.
 
-import {useEffect, useRef} from 'react';
+import {useEffect, useRef, type RefObject} from 'react';
 import {Platform} from 'react-native';
 import * as Sentry from '@sentry/react-native';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import type {Reciter} from '@/data/reciterData';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import {markFirstContentReady} from '@/services/diagnostics/bootSentinel';
 
 interface ContentReadyWatchdogOptions {
@@ -85,7 +86,7 @@ export function useContentReadyWatchdog({
         extra: ctx,
       });
       // PostHog — discrete product-fault event (per-build/screen tripwire).
-      analyticsService.trackScreenContentStalled(ctx);
+      qariahAnalytics.trackScreenContentStalled(ctx);
     }, budgetMs);
     return () => clearTimeout(t);
   }, [ready, screen, awaiting, cold, budgetMs]);
@@ -95,7 +96,7 @@ export function useContentReadyWatchdog({
   useEffect(() => {
     if (!ready || renderedFiredRef.current) return;
     renderedFiredRef.current = true;
-    analyticsService.trackScreenContentRendered({
+    qariahAnalytics.trackScreenContentRendered({
       screen,
       awaiting,
       elapsed_ms: Date.now() - mountedAtRef.current,
@@ -104,4 +105,109 @@ export function useContentReadyWatchdog({
     });
     if (cold) markFirstContentReady();
   }, [ready, screen, awaiting, cold]);
+}
+
+// ---------------------------------------------------------------------------
+// Reciter-profile surah-list watchdog (the original, bespoke variant)
+// ---------------------------------------------------------------------------
+// @ai Qariah (TECH_DEBT #243) — moved out of
+// components/reciter-profile/ReciterProfile.tsx (an upstream file) without a
+// behaviour change. The event names, tags, props, budget and effect
+// dependencies are the same as before the move, so the triage matchers
+// (`reciter-profile-surahs-stalled` / `reciter_profile_surahs_stalled` in
+// scripts/sentry-triage.mjs, scripts/posthog-triage.mjs and
+// scripts/lib/incident-knowledge.mjs) need no change.
+
+const RECITER_SURAHS_STALL_MS = 5000;
+
+interface ReciterProfileSurahsWatchdogOptions {
+  /** ReciterProfile's surah-list gate (`neighborsReady`). */
+  neighborsReady: boolean;
+  reciterId: string;
+  /** The reciter object. A new object restarts the budget, as before. */
+  reciter: Pick<Reciter, 'name'> | null;
+  /** The selected rewayah id (ReciterProfile's `selectedRewayatId`). */
+  rewayaId: string | undefined;
+  tabsCount: number;
+  /** Read when the watchdog fires, not when it arms. */
+  pagerScrolledRef: RefObject<boolean>;
+}
+
+/**
+ * @ai REPORT-ONLY render/skeleton watchdog
+ * (planning/observability-gap-samsung-hang-2026-06-08.md §1). The reciter
+ * profile's surah list is gated behind `neighborsReady`, lifted by either
+ * handlePagerContentSizeChange (multi-tab) or the single-tab useEffect in
+ * ReciterProfile. The 2026-06-04 hotfix bug was exactly that single-tab path
+ * being dropped → on Android single-tab reciters the gate never lifted →
+ * skeleton FOREVER (a silent hang: no throw, no crash, so both Sentry and
+ * PostHog were blind). This watchdog observes the OUTCOME (gate still false
+ * after the budget) regardless of WHICH lift path failed, and emits ONE
+ * discrete fault signal per mount. It does NOT touch the gate or change how it
+ * lifts (hard constraint) — purely making the hang queryable. It also fires
+ * the companion SUCCESS event once when the gate DOES lift, so PostHog can
+ * compute a stall RATE (stalled / (stalled + rendered)) per build.
+ */
+export function useReciterProfileSurahsWatchdog({
+  neighborsReady,
+  reciterId,
+  reciter,
+  rewayaId,
+  tabsCount,
+  pagerScrolledRef,
+}: ReciterProfileSurahsWatchdogOptions): void {
+  const stallFiredRef = useRef(false);
+  useEffect(() => {
+    if (neighborsReady) return; // already rendered — nothing to watch
+    const t = setTimeout(() => {
+      if (stallFiredRef.current) return;
+      stallFiredRef.current = true;
+      const ctx = {
+        reciter_id: reciterId,
+        reciter_name: reciter?.name ?? null,
+        rewaya_id: rewayaId ?? null,
+        tabs_count: tabsCount,
+        neighbors_ready: neighborsReady, // expected false here
+        pager_scrolled: pagerScrolledRef.current,
+        platform: Platform.OS,
+      };
+      // Sentry — warning-level message (NOT an exception; nothing threw).
+      // release/dist come from Sentry.init; device_tier from diagnostics context.
+      Sentry.captureMessage('reciter-profile-surahs-stalled', {
+        level: 'warning',
+        tags: {
+          scope: 'reciter-profile',
+          tabs_count: String(tabsCount),
+          rp_platform: Platform.OS,
+        },
+        extra: ctx,
+      });
+      // PostHog — discrete product-fault event (drives the per-build tripwire).
+      qariahAnalytics.trackReciterProfileSurahsStalled(ctx);
+    }, RECITER_SURAHS_STALL_MS);
+    return () => clearTimeout(t);
+    // pagerScrolledRef is a stable ref object: it is listed only for the lint
+    // rule, and it never restarts the budget.
+  }, [
+    neighborsReady,
+    reciterId,
+    reciter,
+    rewayaId,
+    tabsCount,
+    pagerScrolledRef,
+  ]);
+
+  // @ai REPORT-ONLY companion SUCCESS event — fire once when the gate DOES
+  // lift (§1). Telemetry only.
+  const renderedFiredRef = useRef(false);
+  useEffect(() => {
+    if (!neighborsReady || renderedFiredRef.current) return;
+    renderedFiredRef.current = true;
+    qariahAnalytics.trackReciterProfileSurahsRendered({
+      reciter_id: reciterId,
+      rewaya_id: rewayaId ?? null,
+      tabs_count: tabsCount,
+      platform: Platform.OS,
+    });
+  }, [neighborsReady, reciterId, rewayaId, tabsCount]);
 }

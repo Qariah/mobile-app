@@ -15,6 +15,14 @@
  * funnel from transitions. `AuthContext.tsx` and `qfOAuth.ts` keep a zero-line
  * diff.
  *
+ * SIGNED-IN SUPER PROPERTY
+ *   The same observer also sets the `signed_in` super property from the
+ *   current status (authenticated → true, unauthenticated → false), on the
+ *   first observation too. That covers the boot restore of a saved session,
+ *   sign-in success and sign-out, so every event says whether a QF session
+ *   exists. It is a super property, never identify() — see
+ *   AnalyticsService.setSignedIn().
+ *
  * TRANSITION TABLE
  *   unauthenticated → loading          sign_in_started
  *   loading → authenticated            sign_in_succeeded
@@ -40,7 +48,8 @@ import {useEffect, useRef} from 'react';
 import {Platform} from 'react-native';
 import {useAuth} from '@/services/auth';
 import {analyticsService} from './AnalyticsService';
-import {deriveSignInEvent} from './signInFunnel';
+import {qariahAnalytics} from './qariahEvents';
+import {deriveSignInEvent, signedInForStatus} from './signInFunnel';
 
 export function AuthTelemetry(): null {
   const {status, lastError} = useAuth();
@@ -51,6 +60,20 @@ export function AuthTelemetry(): null {
   // duration. A rising tail here is the signal behind "sign-in feels broken"
   // reports that never produce an error.
   const startedAt = useRef<number | null>(null);
+
+  // `signed_in` super property, so EVERY event says whether a QF session
+  // exists — including the cold-start restore, which emits no funnel event.
+  // Declared BEFORE the funnel effect: React runs effects in order, so
+  // `sign_in_succeeded` already carries `signed_in: true`. Same safety
+  // properties as below: try/catch'd, nothing awaited, reads context only.
+  useEffect(() => {
+    try {
+      const signedIn = signedInForStatus(status);
+      if (signedIn !== null) analyticsService.setSignedIn(signedIn);
+    } catch {
+      // Telemetry must never break authentication.
+    }
+  }, [status]);
 
   useEffect(() => {
     try {
@@ -75,14 +98,14 @@ export function AuthTelemetry(): null {
       switch (event.type) {
         case 'started':
           startedAt.current = Date.now();
-          analyticsService.trackSignInStarted({platform});
+          qariahAnalytics.trackSignInStarted({platform});
           break;
         case 'succeeded':
-          analyticsService.trackSignInSucceeded({platform, duration_ms});
+          qariahAnalytics.trackSignInSucceeded({platform, duration_ms});
           startedAt.current = null;
           break;
         case 'failed':
-          analyticsService.trackSignInFailed({
+          qariahAnalytics.trackSignInFailed({
             platform,
             duration_ms,
             reason: event.reason,
@@ -90,7 +113,7 @@ export function AuthTelemetry(): null {
           startedAt.current = null;
           break;
         case 'abandoned':
-          analyticsService.trackSignInAbandoned({platform, duration_ms});
+          qariahAnalytics.trackSignInAbandoned({platform, duration_ms});
           startedAt.current = null;
           break;
       }

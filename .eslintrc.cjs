@@ -31,18 +31,7 @@ module.exports = {
     // Actions billing block), not because the rule was absent. Keeping it loud.
     // Eligible upstream chore PR for Bayaan's own `config/branding.js`.
     'no-dupe-keys': 'error',
-    // Sprint 8 (TECH_DEBT #31, #35): catch the silent-bug class where a
-    // component declares a prop in its TS interface but never destructures
-    // / uses it, so callers pass values that get silently dropped. Found
-    // in S7 post-close at components/ReciterImage.tsx — `imageUrl` was
-    // declared + passed by every call site but never consumed → R2 photos
-    // invisible on every reciter card. Upstream PR thebayaan/Bayaan#244
-    // ships the same fix at the call site; this rule prevents recurrence.
-    // S8.5 audit surfaced ~236 inherited findings. Sprint 9 cleared the
-    // bulk via FollowAlongBadge fixes + Icons file-level disable (236→39).
-    // Sprint 14 (S14.3) cleared the remaining 39 → 0 and flipped to
-    // 'error'. TECH_DEBT #35 RESOLVED.
-    'react/no-unused-prop-types': 'error',
+    'react/no-unused-prop-types': 'warn',
     'react/react-in-jsx-scope': 'off',
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',

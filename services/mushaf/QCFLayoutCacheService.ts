@@ -1,15 +1,19 @@
+// @ai-start
 import {createMMKV, type MMKV} from 'react-native-mmkv';
 
-const SCHEMA_VERSION = 2;
+// @ai Pass C: 3. Upstream's v2 keyed a cached `fontSize` by content width;
+// Qariah's v2 cached `widestRef` keyed by (font, page). The merge keeps
+// Qariah's shape under upstream's key, so neither v2 store may be reused.
+const SCHEMA_VERSION = 3;
 
 export interface QCFPageLayoutMetrics {
   /**
    * Width (at `REF_FONT_SIZE`) of the line the page font is calibrated
    * against. Deliberately orientation-independent: the render font size is
    * derived from this and the LIVE content width at render time. Caching a
-   * concrete `fontSize` here would be wrong, because the cache key is
-   * `(fontFamily, pageNumber)` only — a page measured in portrait would
-   * hand a portrait font size back to a landscape render.
+   * concrete `fontSize` keyed by `(fontFamily, pageNumber)` would hand a
+   * portrait font size back to a landscape render. (Upstream now also keys
+   * by content width; the derived size stays correct either way.)
    */
   widestRef: number;
   lineWidthsAtRef: Array<{
@@ -18,8 +22,12 @@ export interface QCFPageLayoutMetrics {
   }>;
 }
 
-function mmkvKey(fontFamily: string, pageNumber: number): string {
-  return `qcf:${fontFamily}:${pageNumber}`;
+function mmkvKey(
+  fontFamily: string,
+  pageNumber: number,
+  contentWidth: number,
+): string {
+  return `qcf:${fontFamily}:${pageNumber}:${contentWidth}`;
 }
 
 class QCFLayoutCacheService {
@@ -39,8 +47,9 @@ class QCFLayoutCacheService {
   getPageLayout(
     pageNumber: number,
     fontFamily: string,
+    contentWidth: number,
   ): QCFPageLayoutMetrics | undefined {
-    const key = mmkvKey(fontFamily, pageNumber);
+    const key = mmkvKey(fontFamily, pageNumber, contentWidth);
     const memHit = this.memCache.get(key);
     if (memHit) return memHit;
 
@@ -67,9 +76,10 @@ class QCFLayoutCacheService {
   setPageLayout(
     pageNumber: number,
     fontFamily: string,
+    contentWidth: number,
     data: QCFPageLayoutMetrics,
   ): void {
-    const key = mmkvKey(fontFamily, pageNumber);
+    const key = mmkvKey(fontFamily, pageNumber, contentWidth);
     this.memCache.set(key, data);
     this.mmkv.set(key, JSON.stringify(data));
   }
@@ -82,3 +92,4 @@ class QCFLayoutCacheService {
 }
 
 export const qcfLayoutCacheService = new QCFLayoutCacheService();
+// @ai-end

@@ -15,7 +15,6 @@ export function usePlayerActions() {
     () => ({
       play: () => usePlayerStore.getState().play(),
       pause: () => usePlayerStore.getState().pause(),
-      stop: () => usePlayerStore.getState().stop(),
       skipToNext: () => usePlayerStore.getState().skipToNext(),
       skipToPrevious: () => usePlayerStore.getState().skipToPrevious(),
       seekTo: (position: number) => usePlayerStore.getState().seekTo(position),

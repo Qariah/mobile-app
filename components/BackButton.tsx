@@ -4,7 +4,9 @@ import {Feather} from '@expo/vector-icons';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {useNavigation} from 'expo-router';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+// @ai-start
+import {flipX} from '@/utils/rtl';
+// @ai-end
 
 interface BackButtonProps {
   onPress?: () => void;
@@ -12,6 +14,7 @@ interface BackButtonProps {
   iconSize?: number;
 }
 
+// @ai-start
 export const BackButton: React.FC<BackButtonProps> = ({
   onPress,
   style,
@@ -19,7 +22,6 @@ export const BackButton: React.FC<BackButtonProps> = ({
 }) => {
   const {theme} = useTheme();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
 
   const handlePress = () => {
     if (onPress) {
@@ -29,18 +31,23 @@ export const BackButton: React.FC<BackButtonProps> = ({
     }
   };
 
+  // @ai — the button does not add the safe-area inset. Its container
+  // owns the inset: the Mushaf reader header (its only user) pads both
+  // sides by the inset. A second inset here made the button wider than its
+  // header slot in landscape, and the "Search surahs" button then covered
+  // it (TECH_DEBT #274).
   return (
-    <Pressable
-      style={[styles.backButton, style, {marginLeft: insets.left}]}
-      onPress={handlePress}>
+    <Pressable style={[styles.backButton, style]} onPress={handlePress}>
       <Feather
         name="arrow-left"
         color={theme.colors.text}
         size={moderateScale(iconSize)}
+        style={flipX}
       />
     </Pressable>
   );
 };
+// @ai-end
 
 const styles = ScaledSheet.create({
   backButton: {

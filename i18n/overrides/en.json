@@ -1,0 +1,24 @@
+{
+  "home": {
+    "home": {
+      "exploreByRewayah": "Browse by Rewaya"
+    }
+  },
+  "settings": {
+    "index": {
+      "items": {
+        "github": {
+          "description": "{{appName}} is open source. Star, report issues, or submit a PR"
+        }
+      }
+    },
+    "defaultReciter": {
+      "completeOnly": "Only reciters with the complete Quran are shown"
+    }
+  },
+  "collection": {
+    "notesScreen": {
+      "emptySubtitle": "Add personal notes to verses to see them here."
+    }
+  }
+}

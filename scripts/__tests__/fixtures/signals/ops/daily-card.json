@@ -1,0 +1,337 @@
+{
+ "builds": [
+  {
+   "platform": "iOS",
+   "version": "3.2.1",
+   "build": "1718"
+  },
+  {
+   "platform": "Android",
+   "version": "3.2.0",
+   "build": "1717"
+  },
+  {
+   "platform": "Android",
+   "version": "3.2.1",
+   "build": "2027"
+  }
+ ],
+ "win": {
+  "sql": "timestamp >= toDateTime('2026-09-28 00:00:00')",
+  "label": "since launch (2026-09-28)",
+  "days": 21
+ },
+ "byPlatform": [
+  [
+   "iOS",
+   3615,
+   2101,
+   3609,
+   3529,
+   179,
+   2421,
+   2299
+  ],
+  [
+   "Android",
+   2856,
+   2043,
+   2819,
+   2764,
+   194,
+   2062,
+   1943
+  ]
+ ],
+ "stuck": [
+  [
+   "2027",
+   "Android",
+   "never got in",
+   4
+  ]
+ ],
+ "usage": [
+  {
+   "label": "Recitations",
+   "key": "plays",
+   "day": 2802,
+   "week": 21998,
+   "month": 91990
+  },
+  {
+   "label": "Heard properly",
+   "key": "heard",
+   "day": 2192,
+   "week": 17646,
+   "month": 74173
+  },
+  {
+   "label": "Finished",
+   "key": "finished",
+   "day": 1573,
+   "week": 14507,
+   "month": 64615
+  },
+  {
+   "label": "Mushaf pages",
+   "key": "pages",
+   "day": 2570,
+   "week": 17963,
+   "month": 79958
+  }
+ ],
+ "active": [
+  {
+   "label": "Today",
+   "dau": 748,
+   "wau": 3174,
+   "mau": 8101
+  },
+  {
+   "label": "Yesterday",
+   "dau": 686,
+   "wau": 3174,
+   "mau": 8069
+  },
+  {
+   "label": "Day before",
+   "dau": 859,
+   "wau": 3200,
+   "mau": 8052
+  }
+ ],
+ "failures": [
+  {
+   "n": 4,
+   "platform": "Android",
+   "build": "2027",
+   "what": "never got in"
+  }
+ ],
+ "crashes": [
+  {
+   "id": "QARIAHV2-20",
+   "level": "error",
+   "users": 8,
+   "title": "phone storage full",
+   "builds": [
+    "1718"
+   ]
+  },
+  {
+   "id": "QARIAHV2-19",
+   "level": "fatal",
+   "users": 6,
+   "title": "ANR",
+   "builds": [
+    "1717"
+   ]
+  },
+  {
+   "id": "QARIAHV2-C",
+   "level": "error",
+   "users": 5,
+   "title": "Call to function…",
+   "builds": [
+    "1718",
+    "1717"
+   ]
+  },
+  {
+   "id": "QARIAHV2-1Z",
+   "level": "fatal",
+   "users": 4,
+   "title": "The OS watchdog terminated…",
+   "builds": [
+    "1718"
+   ]
+  },
+  {
+   "id": "QARIAHV2-2S",
+   "level": "fatal",
+   "users": 4,
+   "title": "Background ANR",
+   "builds": [
+    "1717"
+   ]
+  }
+ ],
+ "anr": {
+  "play": {
+   "codes": [
+    1717,
+    2027
+   ],
+   "date": "2026-10-15",
+   "day": 0.0099,
+   "d7": 0.0219,
+   "d28": 0.0171,
+   "users": "200",
+   "series": [
+    {
+     "date": "2026-10-09",
+     "rate": 0.0435
+    },
+    {
+     "date": "2026-10-10",
+     "rate": 0.0106
+    },
+    {
+     "date": "2026-10-11",
+     "rate": 0.0169
+    },
+    {
+     "date": "2026-10-12",
+     "rate": 0.0207
+    },
+    {
+     "date": "2026-10-13",
+     "rate": 0.0244
+    },
+    {
+     "date": "2026-10-14",
+     "rate": 0.025
+    },
+    {
+     "date": "2026-10-15",
+     "rate": 0.0099
+    }
+   ]
+  },
+  "sentry": {
+   "date": "2026-10-18",
+   "observed28": 28,
+   "android": {
+    "day": 0.005405405405405406,
+    "d7": 0.0073200488003253355,
+    "d28": 0.0074553228812630195,
+    "active": 370
+   },
+   "hangs": {
+    "day": 0.0022675736961451248,
+    "d7": 0.0006369426751592356,
+    "d28": 0.0014986262592623428,
+    "active": 441
+   },
+   "killed": {
+    "day": 0,
+    "d7": 0.0003184713375796178,
+    "d28": 0.0007493131296311714,
+    "active": 441
+   },
+   "week": {
+    "from": "2026-10-12",
+    "to": "2026-10-18",
+    "prevFrom": "2026-10-05",
+    "prevTo": "2026-10-11",
+    "android": {
+     "users": 1496,
+     "frozeUsers": 15,
+     "prevUsers": 1472,
+     "prevFrozeUsers": 17,
+     "verdict": "SAME",
+     "byBuild": [
+      {
+       "build": "2027",
+       "users": 694,
+       "frozeUsers": 3
+      },
+      {
+       "build": "1717",
+       "users": 883,
+       "frozeUsers": 12
+      }
+     ]
+    },
+    "ios": {
+     "users": 2049,
+     "frozeUsers": 3,
+     "prevUsers": 1957,
+     "prevFrozeUsers": 7,
+     "verdict": "BETTER",
+     "byBuild": [
+      {
+       "build": "1718",
+       "users": 2049,
+       "frozeUsers": 3
+      }
+     ]
+    }
+   }
+  },
+  "appStore": {
+   "none": true,
+   "newestAny": "3.0.1"
+  }
+ },
+ "owner": null,
+ "ab": {
+  "ab": {
+   "build": "2027",
+   "flag": "nonblocking_splash_v2",
+   "flagId": 914347,
+   "sentryRelease": "com.qariah.app@3.2.1+2027",
+   "baseSha": "beb35bb3",
+   "buildSha": "b5b032f9",
+   "minEnrolled": 30,
+   "since": "2026-09-28",
+   "cleared": []
+  },
+  "users": 761,
+  "enrolled": 48,
+  "groups": {
+   "treatment": {
+    "devices": 17,
+    "anr": 4,
+    "fallback": 0,
+    "stalled": 13,
+    "noBoot": 0
+   },
+   "control": {
+    "devices": 27,
+    "anr": 1,
+    "fallback": 0,
+    "stalled": 24,
+    "noBoot": 0
+   },
+   "noArm": {
+    "devices": 4,
+    "anr": 0,
+    "fallback": 0,
+    "stalled": 4,
+    "noBoot": 0
+   },
+   "notEnrolled": {
+    "devices": 713,
+    "anr": 0,
+    "fallback": 0,
+    "stalled": 0,
+    "noBoot": 5
+   }
+  },
+  "byProcessArm": {
+   "control": {
+    "anr": 4,
+    "ran": 29,
+    "exits": 59,
+    "anrInSplash": 0,
+    "anrAfterSplash": 4
+   },
+   "unknown": {
+    "anr": 0,
+    "ran": 0,
+    "exits": 0,
+    "anrInSplash": 0,
+    "anrAfterSplash": 0
+   },
+   "treatment": {
+    "anr": 1,
+    "ran": 8,
+    "exits": 43,
+    "anrInSplash": 0,
+    "anrAfterSplash": 1
+   }
+  }
+ }
+}

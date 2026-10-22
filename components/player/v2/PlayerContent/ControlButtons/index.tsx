@@ -24,6 +24,10 @@ import {
 import {Ionicons} from '@expo/vector-icons';
 import {useAmbientStore} from '@/store/ambientStore';
 import Color from 'color';
+// @ai-start
+import {localizeDigits} from '@/i18n/format';
+import {useTranslation} from 'react-i18next'; // Qariah: the queue label
+// @ai-end
 
 interface ControlButtonsProps {
   onSpeedPress: () => void;
@@ -45,6 +49,7 @@ interface Styles {
   speedButtonText: TextStyle;
 }
 
+// @ai-start
 export const ControlButtons: React.FC<ControlButtonsProps> = ({
   onSpeedPress,
   onSleepTimerPress,
@@ -57,6 +62,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
   followAlongAvailable,
 }) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(); // Qariah: the queue label
   const glassColorScheme = useGlassColorScheme();
   const {updateSettings} = usePlayerActions();
   const playbackRate = usePlayerStore(s => s.playback.rate);
@@ -125,7 +131,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
               color: playbackRate !== 1 ? activeIconColor : defaultIconColor,
             },
           ]}>
-          {`${playbackRate}x`}
+          {localizeDigits(`${playbackRate}x`)}
         </Text>
       </Pressable>
 
@@ -199,7 +205,14 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
       </Pressable>
 
       <PillWrapper style={styles.glassButton} {...pillProps}>
-        <Pressable onPress={onQueuePress} style={styles.glassButtonInner}>
+        {/* @ai TECH_DEBT #258: a testID and a label, so the Maestro queue
+         * flow (PLY-06) and a screen reader can find the queue control. */}
+        <Pressable
+          onPress={onQueuePress}
+          style={styles.glassButtonInner}
+          testID="player-queue-button"
+          accessibilityRole="button"
+          accessibilityLabel={t('terms.queue')}>
           <QueueIcon
             size={moderateScale(20)}
             color={showQueue ? activeIconColor : defaultIconColor}
@@ -209,6 +222,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
     </View>
   );
 };
+// @ai-end
 
 const styles = StyleSheet.create<Styles>({
   wrapper: {

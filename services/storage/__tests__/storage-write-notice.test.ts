@@ -19,8 +19,8 @@ import {
   guardedJSONStorage,
 } from '../hydrationGuardedStorage';
 import {
-  OUT_OF_SPACE_NOTICE_MESSAGE,
-  OUT_OF_SPACE_NOTICE_TITLE,
+  OUT_OF_SPACE_NOTICE_MESSAGE_KEY,
+  OUT_OF_SPACE_NOTICE_TITLE_KEY,
   __resetStorageWriteNoticeForTests,
   classifyStorageWriteError,
   notifyStorageWriteFailure,
@@ -217,9 +217,16 @@ describe('out-of-storage write notice', () => {
     await storeB.setItem('b', '{}');
 
     expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(OUT_OF_SPACE_NOTICE_TITLE_KEY).toBe(
+      'qariah:storage.outOfSpaceTitle',
+    );
+    expect(OUT_OF_SPACE_NOTICE_MESSAGE_KEY).toBe(
+      'qariah:storage.outOfSpaceMessage',
+    );
+    // English, from i18n/locales/en/qariah.json.
     expect(mockShowToast).toHaveBeenCalledWith(
-      OUT_OF_SPACE_NOTICE_TITLE,
-      OUT_OF_SPACE_NOTICE_MESSAGE,
+      'Your device is out of storage',
+      "Changes aren't being saved. Free up space.",
       'error',
     );
 

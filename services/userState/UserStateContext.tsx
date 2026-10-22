@@ -48,8 +48,9 @@ import {getLatestReadingSession} from './readingSessions';
 import {checkForV1Restore, type RestoreCandidate} from './v1Restore';
 import {restoreQfNotesOnce} from './notesRestore';
 import {syncQfPostsToLocal} from './postsRestore';
+import {ensureAccountVerified} from './accountCleanup'; // @ai
 import {V1RestoreModal} from '@/components/auth/V1RestoreModal';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import * as Sentry from '@sentry/react-native';
 
 interface UserStateContextValue {
@@ -91,7 +92,7 @@ export function UserStateProvider({children}: {children: React.ReactNode}) {
         result.kind === 'candidate'
           ? result.candidate.counts
           : {reciters: 0, surahs: 0, recitations: 0, recitationsWithoutSlug: 0};
-      analyticsService.trackV1RestoreChecked({
+      qariahAnalytics.trackV1RestoreChecked({
         platform: Platform.OS,
         kind: result.kind,
         reciters: checkedCounts.reciters,
@@ -169,12 +170,26 @@ export function UserStateProvider({children}: {children: React.ReactNode}) {
     if (initialPullDoneForUserRef.current === userMarker) return;
     initialPullDoneForUserRef.current = userMarker;
     (async () => {
-      try {
-        await pullQfStateIntoCache();
-        if (cancelled) return;
-      } catch (e) {
-        if (__DEV__) console.warn('[userState] initial QF pull failed:', e);
+      // @ai-start
+      // M4 (TECH_DEBT #244) — before any pull or restore for this account,
+      // make sure that the local QF-linked data is this account's. On a
+      // different account this removes the previous account's data. If the
+      // check fails (for example offline), skip the cache pull. The restores
+      // and the queue flush below run the check again themselves and do
+      // nothing until it succeeds, so their telemetry stays as before.
+      const account = await ensureAccountVerified();
+      if (cancelled) return;
+      if (account.kind === 'ok') {
+        try {
+          await pullQfStateIntoCache();
+          if (cancelled) return;
+        } catch (e) {
+          if (__DEV__) console.warn('[userState] initial QF pull failed:', e);
+        }
+      } else if (__DEV__) {
+        console.warn('[userState] account check did not pass:', account.kind);
       }
+      // @ai-end
       // Sprint 13 (TECH_DEBT #50) — Sprint-4 migration shim removed; it was
       // dead code post-Sprint-11 and added a round-trip on every auth event.
       // Sprint 11 — v1 restore check (idempotent; sets done-flag on terminal states).

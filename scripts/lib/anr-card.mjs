@@ -2,10 +2,24 @@
 //
 // scripts/lib/anr-card.mjs
 // ------------------------
-// The ANR section of the daily card: what share of people hit a freeze, from
-// three independent sources, as a daily rate, a trailing 7-day rate and a
-// trailing 28-day rate. v2 builds only.
+// The FREEZES (ANR) block of the daily card, and the sources behind it. v2
+// builds only. planning/signals-anr-listens-design.md section 1 defines the
+// block (owner, 2026-10-20).
 //
+// THE CARD BLOCK (renderAnrCard) prints two measures, one definition each:
+//   users who froze   Sentry, production: the distinct users with at least
+//                     one freeze in the last 7 complete UTC days, out of the
+//                     distinct session users of the same releases in the same
+//                     days, and the same for the 7 days before, with a fixed
+//                     verdict (freezeVerdict). The releases are the
+//                     production builds (active-rollout.json card.builds).
+//                     Android freeze = ApplicationNotResponding; iOS freeze =
+//                     "App Hanging" or WatchdogTermination. fetchSentryWeek.
+//   Google's score    Play, Android only: the user-perceived ANR rate over 7
+//                     days, against Google's 0.47% limit. fetchPlayAnr.
+//
+// THE JSON keeps every source (daily-card.mjs --json → anr), also the ones the
+// card no longer prints:
 //   ANDROID  Play Reporting API  userPerceivedAnrRate (+7d/+28d user-weighted)
 //            Sentry              ApplicationNotResponding users / session users
 //   IPHONE   Sentry              "App Hanging" users and WatchdogTermination
@@ -24,11 +38,9 @@
 //
 // Pure functions are exported for scripts/__tests__/anr-card.test.mjs.
 
-import {Buffer} from 'node:buffer';
-import {createSign} from 'node:crypto';
-import {existsSync, readFileSync} from 'node:fs';
-import {homedir} from 'node:os';
+import {ANDROID_PACKAGE_NAME, APP_STORE_ID} from './app-ids.mjs';
 import {ascJwt} from './asc-client.mjs';
+import {getPlayAccessToken} from './google-play-auth.mjs';
 
 // Google's "bad behavior" threshold for user-perceived ANR rate.
 export const PLAY_BAD_BAR = 0.0047;
@@ -134,123 +146,186 @@ export function latestV2Hang(body, minVersion = IOS_V2_MIN_VERSION) {
   return newest || {none: true, newestAny};
 }
 
-const pct = v => (v == null ? '—' : (v * 100).toFixed(2));
 const mmdd = d => String(d).slice(5, 10);
-const row = (label, a, b, c) =>
-  `${label.padEnd(17)}${pct(a).padStart(5)}${pct(b).padStart(7)}${pct(c).padStart(7)}`;
-const head = label =>
-  `${label.padEnd(17)}${'day'.padStart(5)}${'7d'.padStart(7)}${'28d'.padStart(7)}`;
-const blocks = r =>
-  r > 0 ? '▓'.repeat(Math.min(16, Math.max(1, Math.round(r / 0.005)))) : '';
 
-// model: see collectAnr(). Every source may be null (not configured) or carry
-// `error`; either prints as a line of its own, never as a zero.
-export function renderAnrCard(model, today) {
-  const {play, sentry, appStore} = model;
-  const L = [];
-  L.push(`ANR · ${today}`);
-  L.push('people who hit a freeze, % of daily users');
+// --- the FREEZES (ANR) block ---------------------------------------------------
+//
+// planning/signals-anr-listens-design.md section 1 and its "Decisions from the
+// test-plan review (2026-10-20)", which replace the text above them.
 
-  L.push('');
-  L.push(head('ANDROID · v2 only'));
-  if (play && !play.error) {
-    L.push(row('Play · seen', play.day, play.d7, play.d28));
-  } else {
-    L.push(
-      `${'Play · seen'.padEnd(17)}${play ? `error: ${play.error}` : 'unavailable'}`.slice(
-        0,
-        44,
-      ),
-    );
-  }
-  if (sentry && !sentry.error) {
-    const a = sentry.android;
-    L.push(row('Sentry', a.day, a.d7, a.d28));
-  } else {
-    L.push(
-      `${'Sentry'.padEnd(17)}${sentry ? `error: ${sentry.error}` : 'unavailable'}`.slice(
-        0,
-        44,
-      ),
-    );
-  }
-  if (play && !play.error && play.d7 != null) {
-    const over = play.d7 / PLAY_BAD_BAR;
-    L.push(
-      `${'Play bad bar'.padEnd(17)}${pct(PLAY_BAD_BAR).padStart(5)}   ${
-        over > 1 ? `⛔ 7d is ${over.toFixed(1)}× over` : '✅ 7d under'
-      }`,
-    );
-  }
+// The card's phone width.
+const W = 44;
 
-  L.push('');
-  L.push(head('IPHONE'));
-  if (sentry && !sentry.error) {
-    L.push(
-      row(
-        'Sentry · hangs',
-        sentry.hangs.day,
-        sentry.hangs.d7,
-        sentry.hangs.d28,
-      ),
-    );
-    L.push(
-      row(
-        'Sentry · killed',
-        sentry.killed.day,
-        sentry.killed.d7,
-        sentry.killed.d28,
-      ),
-    );
-  } else {
-    L.push(
-      `${'Sentry'.padEnd(17)}${sentry ? `error: ${sentry.error}` : 'unavailable'}`.slice(
-        0,
-        44,
-      ),
-    );
-  }
-  L.push(`${'App Store'.padEnd(17)}per version only`);
-  if (!appStore) {
-    L.push(`${''.padEnd(17)}unavailable`);
-  } else if (appStore.error) {
-    L.push(`${''.padEnd(17)}error: ${appStore.error}`.slice(0, 44));
-  } else if (appStore.none) {
-    L.push(`${''.padEnd(17)}v2: no data yet`);
-  } else {
-    // p90, not p50: the median user of a healthy app hangs for 0 s, so p50
-    // stays at 0 and says nothing.
-    L.push(
-      `${''.padEnd(17)}${appStore.version} hangs ${appStore.p90 ?? '—'} s/h p90`,
-    );
-  }
+// A count from 1 to this prints as "fewer than 5", and its share is not
+// printed (the small-cell rule of the signals snapshot).
+const SMALL_MAX = 4;
+const isSmall = n => n >= 1 && n <= SMALL_MAX;
 
-  if (play && !play.error && play.series.length) {
-    L.push('');
-    L.push('LAST 7 DAYS · Android v2, Play · seen');
-    for (const s of play.series) {
-      L.push(`${mmdd(s.date)}  ${pct(s.rate).padStart(5)}  ${blocks(s.rate)}`);
+// The verdict rule (owner, 2026-10-20, G-V1): with a of b users this week and
+// c of d the week before, BETTER when 5·a·d <= 4·c·b (at most 80% of last
+// week's share), WORSE when 5·a·d >= 6·c·b (at least 120%), else SAME.
+// TOO FEW when a < 5 and c < 5.
+export const TOO_FEW_BELOW = 5;
+
+/**
+ * The fixed verdict of one platform's 7-day freeze share.
+ * w: {users, frozeUsers, prevUsers, prevFrozeUsers} (exact counts; a/b this
+ *   week = frozeUsers/users, c/d the week before = prevFrozeUsers/prevUsers).
+ * → 'TOO FEW' when both weeks have fewer than 5 users who froze; else
+ *   'BETTER' | 'WORSE' | 'SAME' by integer arithmetic only, so a share of
+ *   exactly 80% or 120% of last week's has no rounding error. Last week 0 and
+ *   this week 5 or more is WORSE. 'NO DATA' when a week has no session users
+ *   (fetchSentryWeek marks such a platform unavailable, so the card never
+ *   prints it).
+ */
+export function freezeVerdict(w) {
+  const b = Number(w && w.users) || 0;
+  const a = Number(w && w.frozeUsers) || 0;
+  const d = Number(w && w.prevUsers) || 0;
+  const c = Number(w && w.prevFrozeUsers) || 0;
+  if (a < TOO_FEW_BELOW && c < TOO_FEW_BELOW) return 'TOO FEW';
+  if (!b || !d) return 'NO DATA';
+  if (5 * a * d <= 4 * c * b) return 'BETTER';
+  if (5 * a * d >= 6 * c * b) return 'WORSE';
+  return 'SAME';
+}
+
+// A share for the card: "0%" for 0, else one decimal ("0.4%"). The caller
+// prints no share for a count from 1 to 4.
+const shareText = (n, d) => (n ? `${((n / d) * 100).toFixed(1)}%` : '0%');
+
+// Google's score: always two decimals ("2.19%", G-G1). The text and
+// overLimit() round the same integer (basis points), so the printed score and
+// OVER/UNDER cannot disagree (0.00475 prints "0.48%" and is OVER).
+export const scorePct = v => `${(Math.round(v * 1e4) / 100).toFixed(2)}%`;
+
+/**
+ * OVER or UNDER Google's limit (G-G2): OVER when the rate rounded to 4
+ * decimals is above 0.0047; exactly 0.47% is UNDER. Integer compare, so
+ * 0.0047000001 is not OVER.
+ */
+export const overLimit = (rate, limit = PLAY_BAD_BAR) =>
+  Math.round(rate * 1e4) > Math.round(limit * 1e4);
+
+// "15 of 1496 users froze (1.0%)", "fewer than 5 of 707 users froze" or
+// "0 of 707 users froze (0%)".
+function countLine(p) {
+  if (isSmall(p.frozeUsers)) return `fewer than 5 of ${p.users} users froze`;
+  return `${p.frozeUsers} of ${p.users} users froze (${shareText(p.frozeUsers, p.users)})`;
+}
+
+// "week before 1.4% · BETTER" or "week before: fewer than 5 · TOO FEW".
+function weekBeforeLine(p) {
+  const v = p.verdict || freezeVerdict(p);
+  if (isSmall(p.prevFrozeUsers)) return `week before: fewer than 5 · ${v}`;
+  return `week before ${shareText(p.prevFrozeUsers, p.prevUsers)} · ${v}`;
+}
+
+// "2027 0.4% · 1717 1.4%": this week's share of each production build.
+function byBuildLine(byBuild) {
+  return byBuild
+    .map(b => {
+      if (!b.users) return `${b.build} no users`;
+      if (isSmall(b.frozeUsers)) return `${b.build} fewer than 5`;
+      return `${b.build} ${shareText(b.frozeUsers, b.users)}`;
+    })
+    .join(' · ');
+}
+
+// Break a line longer than the card width at its last space that fits; the
+// next lines get `indent`. A line that fits is not changed (its column
+// spaces stay).
+function wrapTo(text, indent) {
+  const out = [];
+  let rest = String(text);
+  while (rest.length > W) {
+    const cut = rest.lastIndexOf(' ', W);
+    if (cut <= indent.length) break; // one word longer than the width
+    out.push(rest.slice(0, cut).trimEnd());
+    rest = indent + rest.slice(cut + 1).trimStart();
+  }
+  out.push(rest);
+  return out;
+}
+
+/**
+ * The options of renderAnrCard from the rollout state.
+ *   active        active-rollout.json `active === true`
+ *   builds        the production builds (card-layout.mjs cardBuilds)
+ *   abConditions  ab-card.mjs blockingStopConditions() of the A/B model ([]
+ *                 when no A/B runs)
+ * → {staged, abFailed, abNoData}, all off while the rollout is not active:
+ *   staged = two or more Android production builds; abFailed = the labels of
+ *   the FAIL conditions; abNoData = a blocking condition has NO DATA.
+ */
+export function freezeOptions({active, builds = [], abConditions = []}) {
+  const android = builds.filter(b => b.platform === 'Android');
+  const on = !!active;
+  return {
+    staged: on && android.length >= 2,
+    abFailed: on
+      ? abConditions.filter(c => c.state === 'FAIL').map(c => c.label)
+      : [],
+    abNoData: on && abConditions.some(c => c.state === 'NO DATA'),
+  };
+}
+
+/**
+ * The card's FREEZES (ANR) block. Every line fits 44 columns.
+ *
+ * model: {play, sentry, appStore} from collectAnr(); the block reads
+ *   sentry.week (fetchSentryWeek) and play (fetchPlayAnr, the production
+ *   versionCodes pooled). A source that is null (no key), carries `error`, or
+ *   a platform that is {unavailable: true} prints `unavailable` on its own
+ *   line, never 0.
+ * opts.staged:   a staged rollout runs (active-rollout.json `active: true` and
+ *   two Android production builds): one more line gives each build's share.
+ * opts.abFailed: the labels of the blocking A/B stop conditions that FAIL
+ *   while the rollout is active: one ⛔ line for each, directly under the
+ *   header.
+ * opts.abNoData: while active, a blocking condition has NO DATA: the line
+ *   `A/B check: no data` under the header.
+ * The App Store hang rate stays in the JSON only (the Engagement page shows
+ * it under Details).
+ */
+export function renderAnrCard(
+  model,
+  {staged = false, abFailed = [], abNoData = false} = {},
+) {
+  const {play, sentry} = model || {};
+  const L = ['FREEZES (ANR) · last 7 days'];
+  for (const label of abFailed)
+    L.push(...wrapTo(`⛔ A/B: ${label} FAILED · see page`, '  '));
+  if (abNoData) L.push('A/B check: no data');
+  const week = sentry && sentry.week && !sentry.week.error ? sentry.week : null;
+
+  const platform = (label, p) => {
+    const head = label.padEnd(9);
+    const pad = ' '.repeat(9);
+    if (!p || p.unavailable) {
+      L.push(`${head}unavailable`);
+      return;
     }
-    L.push(`       ${pct(PLAY_BAD_BAR).padStart(5)}  ┆ bad bar`);
-  }
+    L.push(...wrapTo(`${head}${countLine(p)}`, pad));
+    L.push(...wrapTo(`${pad}${weekBeforeLine(p)}`, pad));
+    if (staged && (p.byBuild || []).length >= 2)
+      L.push(...wrapTo(`  ${byBuildLine(p.byBuild)}`, '  '));
+  };
 
-  L.push('');
-  const users = [];
-  if (play && !play.error) users.push(`Play ~${play.users}`);
-  if (sentry && !sentry.error) {
-    users.push(
-      `Android ${sentry.android.active}`,
-      `iPhone ${sentry.hangs.active}`,
-    );
+  // A platform with no production build is left out (week[platform] is null).
+  if (!week || week.android) {
+    platform('Android', week && week.android);
+    // Google's score: Play's 7-day rate of the production versionCodes.
+    if (play && !play.error && play.d7 != null) {
+      L.push(
+        `  Google's score ${scorePct(play.d7)} · limit ${scorePct(PLAY_BAD_BAR)} · ${
+          overLimit(play.d7) ? 'OVER' : 'UNDER'
+        }`,
+      );
+      L.push(`  (7-day; a sample of users; data to ${mmdd(play.date)})`);
+    } else L.push("  Google's score unavailable");
   }
-  L.push(`${'users/day'.padEnd(11)}${users.join(' · ') || 'unavailable'}`);
-  const upTo = [];
-  if (play && !play.error) upTo.push(`Play ${mmdd(play.date)}`);
-  if (sentry && !sentry.error) upTo.push(`Sentry ${mmdd(sentry.date)}`);
-  if (upTo.length) L.push(`${'data to'.padEnd(11)}${upTo.join(' · ')}`);
-  if (sentry && !sentry.error && sentry.observed28 < 28) {
-    L.push(`${''.padEnd(11)}Sentry saw ${sentry.observed28} of 28 days`);
-  }
+  if (!week || week.ios) platform('iOS', week && week.ios);
   return L;
 }
 
@@ -266,39 +341,35 @@ const ymd = d => ({
 const isoOf = t =>
   `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
 
-async function playToken(saPath) {
-  const sa = JSON.parse(readFileSync(saPath, 'utf8'));
-  const now = Math.floor(Date.now() / 1000);
-  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const unsigned = `${b64({alg: 'RS256', typ: 'JWT'})}.${b64({
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/playdeveloperreporting',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  })}`;
-  const sig = createSign('RSA-SHA256')
-    .update(unsigned)
-    .sign(sa.private_key)
-    .toString('base64url');
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${encodeURIComponent(`${unsigned}.${sig}`)}`,
-  });
-  const tok = await res.json();
-  if (!tok.access_token) throw new Error('Play token mint failed');
-  return tok.access_token;
-}
-
+/**
+ * Play's user-perceived ANR rate for a pooled list of v2 versionCodes: the
+ * last day, the user-weighted 7-day and 28-day rates, and the daily series.
+ *   codes       the versionCodes to pool. Omit it to pool every v2 versionCode
+ *               that Play has data for (the card); the signals focus passes
+ *               the production versionCodes of active-rollout.json.
+ *   seriesDays  how many of the newest Play days `series` keeps (default 7)
+ *   token       a reporting-scope token that the caller minted already
+ * → null when no service account is configured, {error} on a failure.
+ */
 export async function fetchPlayAnr({
-  saPath = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ||
-    `${homedir()}/.android/play-service-account.json`,
-  pkg = process.env.PLAY_PACKAGE || 'com.qariah.app',
+  saPath, // a file path; omit it to use the helper's default order
+  pkg = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME,
+  codes: onlyCodes = null,
+  seriesDays = 7,
+  token = null,
 } = {}) {
-  if (!existsSync(saPath)) return null;
   try {
-    const tk = await playToken(saPath);
+    let tk = token;
+    if (!tk)
+      try {
+        tk = await getPlayAccessToken({scope: 'reporting', saFile: saPath});
+      } catch (e) {
+        // No service account configured: no Play line on the card, not an error.
+        if (e.code === 'no-service-account') return null;
+        if (e.code === 'token-mint-failed')
+          throw new Error('Play token mint failed');
+        throw e;
+      }
     let end = new Date();
     // Play publishes on a lag and rejects a window that ends past its freshness
     // date; the error names that date, so clamp to it once and retry.
@@ -330,16 +401,22 @@ export async function fetchPlayAnr({
       return out.rows || [];
     };
 
-    const byCode = await query({
-      dimensions: ['versionCode'],
-      metrics: ['distinctUsers'],
-    });
-    const codes = v2VersionCodes(
-      byCode.map(
-        r => r.dimensions?.[0]?.int64Value ?? r.dimensions?.[0]?.stringValue,
-      ),
-    );
-    if (!codes.length) return {error: 'no v2 versionCode in Play data'};
+    let codes;
+    if (Array.isArray(onlyCodes)) {
+      codes = v2VersionCodes(onlyCodes);
+      if (!codes.length) return {error: 'no v2 versionCode given'};
+    } else {
+      const byCode = await query({
+        dimensions: ['versionCode'],
+        metrics: ['distinctUsers'],
+      });
+      codes = v2VersionCodes(
+        byCode.map(
+          r => r.dimensions?.[0]?.int64Value ?? r.dimensions?.[0]?.stringValue,
+        ),
+      );
+      if (!codes.length) return {error: 'no v2 versionCode in Play data'};
+    }
 
     const rows = (
       await query({
@@ -375,15 +452,17 @@ export async function fetchPlayAnr({
       d7: last.d7,
       d28: last.d28,
       users: last.users,
-      series: rows.slice(-7).map(r => ({date: r.date, rate: r.rate})),
+      series: rows.slice(-seriesDays).map(r => ({date: r.date, rate: r.rate})),
     };
   } catch (e) {
     return {error: e.message};
   }
 }
 
-// --- Sentry ------------------------------------------------------------------
+// --- Sentry: daily rates (JSON only) -------------------------------------------
 
+// The card no longer prints these rates; the JSON keeps them for the signals
+// snapshot (scripts/signals/sections/card.mjs).
 // platformOfBuild: Map<build, 'iPhone'|'Android'>. Sentry sessions carry no OS,
 // so the platform of each release comes from PostHog. A build number used on
 // BOTH platforms (internal builds) is absent from the map and left out of the
@@ -487,9 +566,214 @@ export async function fetchSentryAnr({
   }
 }
 
+// --- Sentry: users who froze in the last 7 days -------------------------------
+
+// Each platform's freeze, as a Sentry search term.
+export const FREEZE_QUERY = {
+  android: 'error.type:ApplicationNotResponding',
+  ios: 'error.type:["App Hanging",WatchdogTermination]',
+};
+
+// Why a platform is unavailable (week.<platform> = {unavailable: true,
+// reason}). The signals snapshot keeps only these fixed texts.
+export const UNAVAILABLE = {
+  failed: 'the Sentry request failed',
+  missed: 'Sentry missed days in the two weeks',
+  noUsers: 'no session users in a week',
+};
+
+const utcPlus = (d, n) =>
+  new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+/**
+ * The last 7 complete UTC days and the 7 days before them, as UTC dates
+ * (YYYY-MM-DD, both ends included). Today (UTC) is still filling, so it is
+ * never in a window.
+ */
+export function weekWindows(now = new Date()) {
+  const today = now.toISOString().slice(0, 10);
+  return {
+    from: utcPlus(today, -7),
+    to: utcPlus(today, -1),
+    prevFrom: utcPlus(today, -14),
+    prevTo: utcPlus(today, -8),
+  };
+}
+
+/** The Sentry release of a card build: com.qariah.app@<version>+<build>. */
+export const releaseOf = b => `com.qariah.app@${b.version}+${b.build}`;
+
+/**
+ * The days of the two weeks that Sentry did not really see (the observed-days
+ * check of fetchSentryAnr: markObserved on the users with any production
+ * error, 30 complete UTC days).
+ * daily: {date: users with any production error}; win: weekWindows().
+ * → the missed dates of prevFrom..to (a date with no bucket is missed).
+ */
+export function missedDays(daily, win) {
+  const observed = markObserved(daily);
+  const out = [];
+  for (let d = win.prevFrom; d <= win.to; d = utcPlus(d, 1))
+    if (!observed[d]) out.push(d);
+  return out;
+}
+
+/**
+ * Users who froze, for each platform, in the last 7 complete UTC days and the
+ * 7 days before (planning/signals-anr-listens-design.md, section 1 and the
+ * decisions G-C1, G-C5, G-C6, G-M1).
+ *   builds  the production builds, [{platform: 'iOS'|'Android', version,
+ *           build}] (scripts/lib/card-layout.mjs cardBuilds)
+ * Each count is ONE distinct-user count over the whole window and all the
+ * production releases of the platform (the union), never a sum of days or of
+ * releases: a user who updated from 1717 to 2027 in the week is one user.
+ * Production environment only.
+ * → {from, to, prevFrom, prevTo, android, ios}. A platform with no production
+ *   build is null. Else {users, frozeUsers, prevUsers, prevFrozeUsers,
+ *   verdict, byBuild: [{build, users, frozeUsers}]} (byBuild = this week,
+ *   newest build first), or {unavailable: true, reason} when a request
+ *   failed, when Sentry missed a day of the two weeks, or when a week has no
+ *   session users. null without a token.
+ * Requests: 1 for the observed days, 1 for the build sessions, then 5 for
+ * each platform (one platform at a time).
+ */
+export async function fetchSentryWeek({
+  token,
+  org,
+  host = 'https://sentry.io',
+  builds,
+  now = new Date(),
+}) {
+  if (!token) return null;
+  const win = weekWindows(now);
+  const all = (builds || []).map(b => ({...b, release: releaseOf(b)}));
+  const ofPlatform = label =>
+    all
+      .filter(b => b.platform === label)
+      .sort((a, b) => Number(b.build) - Number(a.build));
+  const down = reason => ({unavailable: true, reason});
+  try {
+    const get = async path => {
+      const r = await fetch(`${host}/api/0/organizations/${org}/${path}`, {
+        headers: {Authorization: `Bearer ${token}`},
+      });
+      if (!r.ok) throw new Error(`Sentry ${r.status}`);
+      return r.json();
+    };
+    const enc = encodeURIComponent;
+    const span = (from, to) =>
+      `start=${from}T00:00:00&end=${utcPlus(to, 1)}T00:00:00`;
+    const thisWeek = span(win.from, win.to);
+    const prevWeek = span(win.prevFrom, win.prevTo);
+    const inReleases = rs =>
+      `release:[${rs.map(r => `"${r.replace(/"/g, '')}"`).join(',')}]`;
+    const USERS = enc('count_unique(user)');
+    const BASE = 'project=-1&environment=production';
+
+    // The observed-days check over 30 complete UTC days.
+    const today = now.toISOString().slice(0, 10);
+    const stats = await get(
+      `events-stats/?yAxis=${USERS}&dataset=errors&${BASE}&${span(utcPlus(today, -30), utcPlus(today, -1))}&interval=1d`,
+    );
+    const daily = Object.fromEntries(
+      (stats?.data || [])
+        .map(([t, v]) => [
+          new Date(Number(t) * 1000).toISOString().slice(0, 10),
+          Number(v?.[0]?.count) || 0,
+        ])
+        .filter(([d]) => d < today),
+    );
+    const missed = missedDays(daily, win);
+
+    // Distinct users with the freeze, all the releases together.
+    const frozeUsers = async (p, rs, s) => {
+      const j = await get(
+        `events/?field=${USERS}&dataset=errors&${BASE}&query=${enc(`${FREEZE_QUERY[p]} ${inReleases(rs)}`)}&${s}`,
+      );
+      return Number(j?.data?.[0]?.['count_unique(user)']) || 0;
+    };
+    // Distinct session users, all the releases together.
+    const sessionUsers = async (rs, s) => {
+      const j = await get(
+        `sessions/?field=${USERS}&${BASE}&query=${enc(inReleases(rs))}&${s}&interval=1d`,
+      );
+      return Number(j?.groups?.[0]?.totals?.['count_unique(user)']) || 0;
+    };
+
+    // Session users of each release, this week.
+    const sessByRelease = new Map();
+    if (all.length) {
+      const j = await get(
+        `sessions/?field=${USERS}&groupBy=release&${BASE}&query=${enc(inReleases(all.map(b => b.release)))}&${thisWeek}&interval=1d`,
+      );
+      for (const g of j?.groups || [])
+        sessByRelease.set(
+          g.by?.release,
+          Number(g.totals?.['count_unique(user)']) || 0,
+        );
+    }
+
+    const platform = async (p, label) => {
+      const bs = ofPlatform(label);
+      if (!bs.length) return null;
+      if (missed.length) return down(UNAVAILABLE.missed);
+      const rs = bs.map(b => b.release);
+      const [users, froze, prevUsers, prevFroze, byRelease] = await Promise.all(
+        [
+          sessionUsers(rs, thisWeek),
+          frozeUsers(p, rs, thisWeek),
+          sessionUsers(rs, prevWeek),
+          frozeUsers(p, rs, prevWeek),
+          get(
+            `events/?field=release&field=${USERS}&dataset=errors&${BASE}&query=${enc(`${FREEZE_QUERY[p]} ${inReleases(rs)}`)}&${thisWeek}`,
+          ),
+        ],
+      );
+      if (!users || !prevUsers) return down(UNAVAILABLE.noUsers);
+      const frozeOf = new Map(
+        (byRelease?.data || []).map(r => [
+          r.release,
+          Number(r['count_unique(user)']) || 0,
+        ]),
+      );
+      const counts = {
+        users,
+        frozeUsers: froze,
+        prevUsers,
+        prevFrozeUsers: prevFroze,
+      };
+      return {
+        ...counts,
+        verdict: freezeVerdict(counts),
+        byBuild: bs.map(b => ({
+          build: String(b.build),
+          users: sessByRelease.get(b.release) || 0,
+          frozeUsers: frozeOf.get(b.release) || 0,
+        })),
+      };
+    };
+
+    // One platform at a time: at most 5 Sentry requests run together.
+    const android = await platform('android', 'Android');
+    const ios = await platform('ios', 'iOS');
+    return {...win, android, ios};
+  } catch (e) {
+    // A failed request: each platform that has a production build is
+    // unavailable, never a zero.
+    const reason = `${UNAVAILABLE.failed} (${String(e.message || e).slice(0, 40)})`;
+    return {
+      ...win,
+      android: ofPlatform('Android').length ? down(reason) : null,
+      ios: ofPlatform('iOS').length ? down(reason) : null,
+    };
+  }
+}
+
 // --- App Store Connect -------------------------------------------------------
 
-export async function fetchAscHang({appId = '1594917787'} = {}) {
+export async function fetchAscHang({appId = APP_STORE_ID} = {}) {
   if (!process.env.APP_STORE_CONNECT_API_KEY_ID) return null;
   try {
     const r = await fetch(

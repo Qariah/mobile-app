@@ -81,6 +81,11 @@ export const BUCKETS = {
     heading: 'Needs owner decision (design / copy / product)',
     loopEligible: false,
   },
+  'awaiting-release': {
+    emoji: '📦',
+    heading: 'Waiting for a release (fix built, not yet in production)',
+    loopEligible: false,
+  },
   wontfix: {emoji: '🗑️', heading: "Won't fix / not-a-bug", loopEligible: false},
   other: {emoji: '❔', heading: 'Uncategorised', loopEligible: false},
 };
@@ -105,6 +110,47 @@ export function incidentKeyOf(labels) {
   return l ? l.slice('incident:'.length) : null;
 }
 
+// A `fixed-in:<versionCode>` LABEL is a fix record too. post-sprint Step 14b
+// stamps it on every issue a published build fixes, and `scripts/prod-close.mjs`
+// + `scripts/triage-lifecycle.mjs` already read it. Before this existed the
+// taxonomy read ONLY the hand-kept triage-state ledger, so a labelled-but-not-yet-
+// ledgered issue stayed in the loop queue and the loop re-investigated a fix it
+// had already shipped (#409 / `fixed-in:1922` on 2026-09-11).
+const FIXED_IN_LABEL = /^fixed-in:(\d+)$/;
+export function fixedInLabelOf(labels) {
+  const l = (labels || []).find(x => FIXED_IN_LABEL.test(x));
+  return l ? l.match(FIXED_IN_LABEL)[1] : null;
+}
+
+/**
+ * Merge the two fix records into ONE value.
+ *
+ * Rule (documented, deliberate): when both sides carry a build number, the
+ * HIGHER build wins — it is the later fix record, and a later record supersedes
+ * an earlier one. When only one side parses as a number, that side wins. When
+ * neither does, the ledger wins, because it is the only side that can hold the
+ * non-numeric `merged` sentinel `parseTriageState` writes.
+ *
+ * Both sides always agree on the BOOLEAN ("is there a fix?"), so this rule only
+ * decides which build string the digest shows. `scripts/prod-close.mjs` prefers
+ * the label; that is boolean-equivalent and stays as it is.
+ *
+ * @param {?string} labelValue  from `fixedInLabelOf()`
+ * @param {?string} ledgerValue from `parseTriageState().fixedInBuild`
+ * @returns {?string}
+ */
+export function resolveFixedIn(labelValue, ledgerValue) {
+  if (!labelValue) return ledgerValue || null;
+  if (!ledgerValue) return labelValue;
+  const a = Number(labelValue);
+  const b = Number(ledgerValue);
+  if (Number.isFinite(a) && Number.isFinite(b))
+    return a > b ? labelValue : ledgerValue;
+  if (Number.isFinite(a)) return labelValue;
+  if (Number.isFinite(b)) return ledgerValue;
+  return ledgerValue;
+}
+
 /**
  * Classify ONE issue into exactly one bucket + decide loop-eligibility.
  *
@@ -116,6 +162,9 @@ export function incidentKeyOf(labels) {
  *        fixedInBuild — number→versionCode in triage-state "Fixed in build" (a fix
  *          already merged, pending device-verify + close; the loop must NOT re-draft
  *          it → loopEligible=false, surfaced under "fixed — pending close").
+ *          The issue's own `fixed-in:<build>` LABEL counts the same way. Either
+ *          source alone sets `fixedIn`; `resolveFixedIn()` picks the value when
+ *          both are present.
  * @returns {{bucket:string, loopEligible:boolean, pinned:boolean, fixedIn:?string,
  *            incident:?string, severity:string, isFeature:boolean, reason:string}}
  */
@@ -130,7 +179,10 @@ export function classify(issue, ledger = {}) {
   const incident = incidentKeyOf(labels);
   const severity = severityOf(labels);
   const pinned = pinnedOpen.has(num);
-  const fixedIn = fixedInBuild.get(num) || null;
+  const fixedIn = resolveFixedIn(
+    fixedInLabelOf(labels),
+    fixedInBuild.get(num) || null,
+  );
 
   const out = (bucket, reason, extra = {}) => ({
     bucket,
@@ -150,6 +202,19 @@ export function classify(issue, ledger = {}) {
     return out(
       'incident',
       'incident umbrella (grouping thread, not a fix target)',
+    );
+
+  // 1a. Fix already built — a `fixed-in:<build>` label or a ledger row. This is
+  //     not open work: nobody can act on it until the build reaches production
+  //     (scripts/prod-close.mjs closes it then, and waits for the flag when the
+  //     issue also has `behind-flag:<key>`). It wins over `remediation-drafted`,
+  //     because an adopted draft keeps that label after its fix ships. Before
+  //     this rule, 32 fixed Play ANRs sat in `native-crash` and the digest
+  //     counted them as open work the robot "cannot act on".
+  if (fixedIn)
+    return out(
+      'awaiting-release',
+      `fix built in ${/^\d+$/.test(fixedIn) ? `build ${fixedIn}` : 'a merged PR'} — waits for production (loop skips)`,
     );
 
   // 2. Already drafted — a human owes the merge + device check. Never re-draft.

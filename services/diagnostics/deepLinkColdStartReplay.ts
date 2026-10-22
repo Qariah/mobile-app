@@ -32,7 +32,10 @@ import {useEffect, useRef} from 'react';
 import * as ExpoLinking from 'expo-linking';
 import {useNavigationContainerRef, useRouter} from 'expo-router';
 import * as Sentry from '@sentry/react-native';
-import {deepLinkTargetPath} from '@/services/diagnostics/deepLinkWatchdog';
+import {
+  deepLinkTargetPath,
+  linkTargetReached,
+} from '@/services/diagnostics/deepLinkWatchdog';
 
 // Capture the launch URL ONCE, at module evaluation (before React renders), so
 // the cold-start link is held in our own promise and survives anything else
@@ -47,40 +50,35 @@ const initialUrlPromise: Promise<string | null> = ExpoLinking.getInitialURL()
 // the life of the process, independent of component remounts.
 let coldStartHandled = false;
 
-// Cached classification of the cold-start URL, resolved once getInitialURL
-// settles. `undefined` = not yet known; `string` = a navigational deep link;
-// `null` = no link / non-navigational (bare launch, OAuth/share redirect).
-// Lets the boot sequence query "is a cold-start deep link pending?" SYNCHRONOUSLY
-// (the mushaf-restore redirect in app/_layout.tsx uses it to yield to the link).
-let coldStartTargetPath: string | null | undefined;
-initialUrlPromise.then(url => {
-  coldStartTargetPath = deepLinkTargetPath(url ?? '');
-});
+// Classification of the cold-start URL, once getInitialURL settles: true for
+// a navigational deep link; false for no link or a non-navigational one (bare
+// launch, OAuth or share redirect). The mushaf-restore redirect in
+// app/_layout.tsx awaits it to yield to the link. (@ai Sprint 46: the old
+// synchronous query had no caller after the Pass B merge and is removed.)
+const coldStartClassified: Promise<boolean> = initialUrlPromise.then(
+  url => typeof deepLinkTargetPath(url ?? '') === 'string',
+);
 
 /**
- * True once the launch URL is known to be a navigational deep link (cold start).
- * Synchronous; returns false until getInitialURL() settles AND classifies the
- * URL as navigational. Used by the boot sequence to let the cold-start deep-link
- * replay win over the last-session mushaf restore (a share-link open should land
- * on the link target, not the user's previous mushaf page).
+ * Resolves once getInitialURL() has settled and the launch URL is classified:
+ * true for a navigational deep link (a share link, a widget tap). Never
+ * rejects. The mushaf-restore redirect in app/_layout.tsx awaits it, so a
+ * slow getInitialURL() cannot let the restore push land over the link target
+ * (upstream fca03eed awaits the launch URL at the same point).
  */
-export function hasColdStartDeepLink(): boolean {
-  return typeof coldStartTargetPath === 'string';
+export function whenColdStartDeepLinkKnown(): Promise<boolean> {
+  return coldStartClassified;
 }
 
 // How long to wait for the navigator to become ready before giving up. A slow
 // cold boot (the #105 case) can take >6s; 20s comfortably outlasts the splash
-// force-reveal (12s, app/_layout.tsx) with headroom, and a 250ms poll is cheap.
+// force-reveal (12s, hooks/useSplashRevealWatchdog.ts) with headroom, and a
+// 250ms poll is cheap.
 const NAV_READY_POLL_MS = 250;
 const NAV_READY_TIMEOUT_MS = 20000;
 
-function normalizeFirstSegment(p: string | null | undefined): string {
-  const trimmed = (p ?? '').replace(/^\/+|\/+$/g, '').toLowerCase();
-  return trimmed.split('/')[0];
-}
-
 /**
- * Mount-once hook (lives in AnalyticsConnector, inside the router context).
+ * Mount-once hook (lives in QariahRootEffects, inside the router context).
  * `pathname` is the live expo-router pathname; read at replay time to detect
  * whether expo-router already navigated to the cold-start target (no double-nav).
  */
@@ -108,9 +106,9 @@ export function useDeepLinkColdStartReplay(pathname: string): void {
     const replayIfDropped = (targetPath: string): void => {
       // No double-nav: if expo-router already drove us to the target's first
       // segment, the initial-URL nav succeeded — leave it alone.
-      const landedSeg = normalizeFirstSegment(pathnameRef.current);
-      const targetSeg = normalizeFirstSegment(targetPath);
-      if (landedSeg && landedSeg === targetSeg) {
+      // @ai Qariah (Sprint 46): a redirect route's landing counts too
+      // (`qariah://player` lands on Home, `qariah://quran/…` on the Mushaf).
+      if (linkTargetReached(pathnameRef.current, targetPath)) {
         finish();
         return;
       }

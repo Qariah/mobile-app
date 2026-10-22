@@ -38,7 +38,15 @@ function sqlRows(db, sql) {
   // Arabic text). Field separator 0x1f, row separator 0x1e.
   const out = execFileSync(
     'sqlite3',
-    ['-bail', '-noheader', '-separator', '\x1f', '-newline', '\x1e', db],
+    [
+      '-bail',
+      '-noheader',
+      '-separator',
+      '\x1f',
+      '-newline',
+      '\x1e',
+      db,
+    ],
     {input: sql, maxBuffer: 200 * 1024 * 1024},
   ).toString();
 
@@ -74,13 +82,7 @@ function main() {
     const surahN = Number(surah);
     const ayahN = Number(ayah);
     const wordN = Number(word);
-    wordById.set(idN, {
-      location,
-      surah: surahN,
-      ayah: ayahN,
-      word: wordN,
-      text,
-    });
+    wordById.set(idN, {location, surah: surahN, ayah: ayahN, word: wordN, text});
     const key = `${surahN}:${ayahN}`;
     const cur = maxWordPerVerse.get(key) ?? 0;
     if (wordN > cur) maxWordPerVerse.set(key, wordN);
@@ -113,7 +115,8 @@ function main() {
         );
         continue;
       }
-      const isEnd = w.word === maxWordPerVerse.get(`${w.surah}:${w.ayah}`);
+      const isEnd =
+        w.word === maxWordPerVerse.get(`${w.surah}:${w.ayah}`);
       lineWords.push({
         c: w.text,
         l: w.location,

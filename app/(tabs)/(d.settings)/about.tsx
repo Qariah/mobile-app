@@ -6,6 +6,33 @@ import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 import {VersionDisplay} from '@/components/VersionDisplay';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+import branding from '@/config/branding';
+// @ai-end
+
+// @ai-start
+const FEATURE_KEYS = [
+  'offlineDownloads',
+  'customPlaylists',
+  'browseByJuz',
+  'audioControls',
+  'highQualityAudio',
+  'curatedCollections',
+  'personalization',
+] as const;
+// @ai-end
+
+// @ai-start
+const COMING_SOON_KEYS = [
+  'translations',
+  'wordByWord',
+  'bookmarking',
+  'learningTools',
+  'community',
+] as const;
+// @ai-end
 
 interface FeatureProps {
   title: string;
@@ -20,6 +47,14 @@ const Feature = ({title, description, styles}: FeatureProps) => (
   </View>
 );
 
+// @ai Qariah (Sprint 32 About rewrite) drops these upstream rows. Filtered at
+// render so upstream's key lists stay byte-identical.
+const QARIAH_HIDDEN_ABOUT_KEYS: ReadonlySet<string> = new Set([
+  'personalization',
+  'wordByWord',
+  'learningTools',
+]);
+
 // Sprint 8 (S8.3, TECH_DEBT #34): hidden 5-tap-on-version gesture sends a
 // synthetic exception to Sentry. Used to validate the crash-reporting
 // path end-to-end (event arrival, source-map symbolication, release
@@ -29,9 +64,12 @@ const Feature = ({title, description, styles}: FeatureProps) => (
 const SYNTHETIC_CRASH_TAP_COUNT = 5;
 const SYNTHETIC_CRASH_TAP_WINDOW_MS = 2000;
 
+// @ai-start
 export default function AboutScreen() {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const {t} = useTranslation(['settings', 'qariah']);
+  const appName = branding.appName;
 
   const tapCountRef = useRef(0);
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,7 +115,7 @@ export default function AboutScreen() {
           <Pressable
             onPress={handleVersionTap}
             hitSlop={12}
-            accessibilityLabel="App version (tap 5 times for diagnostics)">
+            accessibilityLabel={t('qariah:about.versionA11y')}>
             {/* showBuildNumber → "Version 3.1.8 (1315)"; the (NNNN) is the
                 versionCode/build number users need when reporting issues.
                 NOT showBuildType — getBuildTypeLabel() tags every prod build
@@ -85,103 +123,72 @@ export default function AboutScreen() {
             <VersionDisplay showBuildNumber style={styles.version} />
           </Pressable>
 
-          <Text style={styles.tagline}>
-            Your Companion for Quranic Recitation
-          </Text>
+          <Text style={styles.tagline}>{t('about.tagline')}</Text>
 
           <View style={styles.section}>
-            <Text style={styles.contentHeading}>Alhamdulillah</Text>
+            <Text style={styles.contentHeading}>
+              {t('about.alhamdulillahHeading')}
+            </Text>
             <Text style={styles.bodyText}>
-              All praise belongs to Allah, who revealed His Book and made it
-              easy to remember. Qariah was built out of love for the Qur&apos;an
-              and for the women whose voices carry it. We ask Allah to accept
-              this small effort and make it a source of good for our daughters
-              and for the whole Ummah.
+              {/* @ai Qariah copy (Sprint 32). */}
+              {t('qariah:about.alhamdulillahBody')}
             </Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.contentHeading}>Our Mission</Text>
+            <Text style={styles.contentHeading}>
+              {t('about.missionHeading')}
+            </Text>
             <Text style={styles.bodyText}>
-              Qariah celebrates the recitation of the Holy Qur&apos;an by women
-              — contemporary and historical, gathered from across the world and
-              across many narrations. We&apos;ve brought over 60 reciters into
-              one calm, beautiful space, so that every listener — and especially
-              the next generation of girls — can hear the Qur&apos;an in a voice
-              that feels like their own.
+              {/* @ai Qariah copy (Sprint 32). */}
+              {t('qariah:about.missionBody')}
             </Text>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>FEATURES</Text>
+            <Text style={styles.sectionHeader}>
+              {t('about.featuresHeader')}
+            </Text>
             <View style={styles.featureList}>
-              <Feature
-                title="Offline Downloads"
-                description="Download surahs for offline listening anytime, anywhere without internet connection"
-                styles={styles}
-              />
-              <Feature
-                title="Custom Playlists"
-                description="Create and manage your own personalized playlists of your favorite recitations"
-                styles={styles}
-              />
-              <Feature
-                title="Browse by Juz"
-                description="Easily navigate through the Quran with Juz-based organization and grouping"
-                styles={styles}
-              />
-              <Feature
-                title="Advanced Audio Controls"
-                description="Precise playback control with continuous play and adjustable recitation speed"
-                styles={styles}
-              />
-              <Feature
-                title="High-Quality Audio"
-                description="Crystal clear recitations from the world's best Qaris with optimized streaming"
-                styles={styles}
-              />
-              <Feature
-                title="Curated Collections"
-                description="Thoughtfully organized surahs for different occasions and themes"
-                styles={styles}
-              />
+              {FEATURE_KEYS.filter(
+                key => !QARIAH_HIDDEN_ABOUT_KEYS.has(key),
+              ).map(key => (
+                <Feature
+                  key={key}
+                  title={t(`about.features.${key}.title`)}
+                  description={t(`about.features.${key}.description`)}
+                  styles={styles}
+                />
+              ))}
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.sectionHeader}>COMING SOON</Text>
-            <Text style={styles.bodyText}>
-              We&apos;re working hard to bring you even more features to enhance
-              your Quranic journey, including:
+            <Text style={styles.sectionHeader}>
+              {t('about.comingSoonHeader')}
             </Text>
+            <Text style={styles.bodyText}>{t('about.comingSoonIntro')}</Text>
             <View style={[styles.featureList, {marginTop: moderateScale(12)}]}>
-              <Feature
-                title="Multiple Translations"
-                description="Access Quran translations in various languages to better understand the meanings"
-                styles={styles}
-              />
-              <Feature
-                title="Smart Bookmarking"
-                description="Save your favorite verses and track your progress across surahs"
-                styles={styles}
-              />
-              <Feature
-                title="Community Features"
-                description="Connect with others, share your journey, and grow together in your Quranic experience"
-                styles={styles}
-              />
+              {COMING_SOON_KEYS.filter(
+                key => !QARIAH_HIDDEN_ABOUT_KEYS.has(key),
+              ).map(key => (
+                <Feature
+                  key={key}
+                  title={t(`about.comingSoon.${key}.title`)}
+                  description={t(`about.comingSoon.${key}.description`)}
+                  styles={styles}
+                />
+              ))}
             </View>
           </View>
 
           <View style={styles.section}>
-            <Text style={styles.contentHeading}>Our Commitment</Text>
+            <Text style={styles.contentHeading}>
+              {t('about.commitmentHeading')}
+            </Text>
             <Text style={styles.bodyText}>
-              We&apos;re committed to honoring these reciters, and the Book they
-              recite, with the care it deserves. Qariah will stay a respectful,
-              thoughtfully curated home for the Qur&apos;an, and we&apos;ll keep
-              adding reciters and refining the experience, insha&apos;Allah.
-              Thank you for being part of this journey. May Allah accept it from
-              us all.
+              {/* @ai Qariah copy (Sprint 32). */}
+              {t('qariah:about.commitmentBody')}
             </Text>
           </View>
         </View>
@@ -189,7 +196,9 @@ export default function AboutScreen() {
     </View>
   );
 }
+// @ai-end
 
+// @ai-start
 const createStyles = (theme: Theme) =>
   ScaledSheet.create({
     container: {
@@ -233,7 +242,7 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(10.5),
       fontFamily: 'Manrope-SemiBold',
       color: Color(theme.colors.textSecondary).alpha(0.5).toString(),
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2),
       textTransform: 'uppercase',
       marginBottom: moderateScale(10),
       marginLeft: moderateScale(2),
@@ -273,3 +282,4 @@ const createStyles = (theme: Theme) =>
       lineHeight: moderateScale(17),
     },
   });
+// @ai-end

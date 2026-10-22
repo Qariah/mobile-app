@@ -16,6 +16,10 @@
  */
 
 import branding from '@/config/branding';
+// @ai-start
+import i18n from '@/i18n';
+import {getQariahReleasePages} from './qariahReleasePages';
+// @ai-end
 
 export interface OnboardingPage {
   id: string;
@@ -27,6 +31,11 @@ export interface OnboardingPage {
   description: string;
   /** The minimum app version where this page was introduced (e.g. "2.0") */
   minVersion: string;
+  /**
+   * Release announcement: shown to people updating from an earlier version
+   * and left out of the first-launch tour.
+   */
+  updateOnly?: boolean;
 }
 
 /**
@@ -36,24 +45,31 @@ export interface OnboardingPage {
  * const, but top-level const arrays evaluate before any `branding`
  * resolution, baking the upstream brand name into the bundle.
  */
+// @ai-start
 export function getOnboardingPages(): OnboardingPage[] {
   return [
+    // @ai Qariah keeps its own page set (Sprint 12/13 onboarding): no uploads,
+    // ambient, adhkar or word-by-word pages, and none of upstream's 2.3
+    // release pages (widgets, CarPlay, Arabic, adhkar playback, Mushaf 1440,
+    // search, iPad), which describe a Bayaan release. Pages whose text matches
+    // upstream use upstream's keys; Qariah's own copy uses the qariah
+    // i18n namespace.
     {
       id: 'welcome',
       icon: 'app-icon',
-      title: `Welcome to ${branding.appName}`,
-      subtitle: 'Hear the Qurʾan in her voice',
-      description:
-        'The first Qurʾan app celebrating contemporary and historical women reciters — bringing voices long unheard to a global audience.',
+      title: i18n.t('content:onboarding.welcome.title', {
+        appName: branding.appName,
+      }),
+      subtitle: i18n.t('qariah:onboarding.tagline'),
+      description: i18n.t('qariah:onboarding.welcomeBody'),
       minVersion: '2.0',
     },
     {
       id: 'reciters',
       icon: 'people-outline',
       gradientColors: ['#EC4899', '#BE185D'],
-      title: 'A Curated Catalog',
-      description:
-        'Curated with over 60 women reciters across the world and across several narrations. And more on the way.',
+      title: i18n.t('qariah:onboarding.catalogTitle'),
+      description: i18n.t('qariah:onboarding.catalogBody'),
       minVersion: '2.0',
     },
     {
@@ -61,18 +77,16 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'book-outline',
       isCustomIcon: true,
       gradientColors: ['#3B82F6', '#1D4ED8'],
-      title: 'The Mushaf',
-      description:
-        'A dedicated reading screen with the full Uthmani script, beautiful tajweed coloring, and an immersive reading mode.',
+      title: i18n.t('content:onboarding.mushaf.title'),
+      description: i18n.t('content:onboarding.mushaf.description'),
       minVersion: '2.0',
     },
     {
       id: 'highlighting',
       icon: 'locate-outline',
       gradientColors: ['#8B5CF6', '#6D28D9'],
-      title: 'Follow Along',
-      description:
-        'Each ayah highlights in sync with the recitation so you never lose your place. Available for Zaynab Talha, expanding soon insha Allah.',
+      title: i18n.t('content:onboarding.highlighting.title'),
+      description: i18n.t('qariah:onboarding.followAlongBody'),
       minVersion: '2.0',
     },
     {
@@ -80,9 +94,8 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'repeat-outline',
       isCustomIcon: true,
       gradientColors: ['#6366F1', '#4338CA'],
-      title: 'Listen to Memorize',
-      description:
-        'Repeat a single ayah, play a range of verses, or loop an entire page. Built for hifdh and review.',
+      title: i18n.t('content:onboarding.memorize.title'),
+      description: i18n.t('qariah:onboarding.memorizeBody'),
       minVersion: '2.0',
     },
     {
@@ -90,9 +103,8 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'language-outline',
       isCustomIcon: true,
       gradientColors: ['#A855F7', '#7C3AED'],
-      title: 'Translations & Tafseer',
-      description:
-        'Browse dozens of translations and scholarly commentaries in multiple languages, all downloadable for offline use.',
+      title: i18n.t('content:onboarding.translations.title'),
+      description: i18n.t('content:onboarding.translations.description'),
       minVersion: '2.0',
     },
     {
@@ -100,18 +112,16 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'color-palette-outline',
       isCustomIcon: true,
       gradientColors: ['#F43F5E', '#E11D48'],
-      title: 'Thematic Highlighting',
-      description:
-        'Verses are color-coded by theme so you can see the structure and topics of each surah at a glance.',
+      title: i18n.t('content:onboarding.themes.title'),
+      description: i18n.t('content:onboarding.themes.description'),
       minVersion: '2.0',
     },
     {
       id: 'indopak',
       icon: 'globe-outline',
       gradientColors: ['#22D3EE', '#06B6D4'],
-      title: 'IndoPak Script',
-      description:
-        'Switch to the IndoPak Nastaliq script in the mushaf for the style used across South Asia.',
+      title: i18n.t('content:onboarding.indopak.title'),
+      description: i18n.t('content:onboarding.indopak.description'),
       minVersion: '2.0',
     },
     {
@@ -119,9 +129,8 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'download-outline',
       isCustomIcon: true,
       gradientColors: ['#14B8A6', '#0D9488'],
-      title: 'Offline Downloads',
-      description:
-        'Download individual surahs or entire playlists so you can listen without an internet connection.',
+      title: i18n.t('content:onboarding.downloads.title'),
+      description: i18n.t('content:onboarding.downloads.description'),
       minVersion: '2.0',
     },
     {
@@ -129,10 +138,13 @@ export function getOnboardingPages(): OnboardingPage[] {
       icon: 'list-outline',
       isCustomIcon: true,
       gradientColors: ['#F97316', '#EA580C'],
-      title: 'Playlists',
-      description:
-        'Create custom playlists, reorder tracks, and build your own listening routines.',
+      title: i18n.t('content:onboarding.playlists.title'),
+      description: i18n.t('content:onboarding.playlists.description'),
       minVersion: '2.0',
     },
+    // @ai Qariah (Sprint 48, S48.8): the update pages of the next release
+    // (updateOnly; data/qariahReleasePages.ts).
+    ...getQariahReleasePages(),
   ];
 }
+// @ai-end

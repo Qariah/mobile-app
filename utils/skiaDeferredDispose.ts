@@ -1,5 +1,3 @@
-import {runOnUIAsync} from 'react-native-worklets';
-
 /**
  * An object that owns Skia native memory and exposes the JSI `dispose()`.
  * `SkParagraph`, `SkImage`, `SkPaint` and `SkFont` all match this shape.
@@ -104,6 +102,13 @@ export function disposeAfterPendingDraws(
   };
 
   try {
+    // Required here, not imported at the top: loading react-native-worklets
+    // initializes its native part, which throws where there is none (the
+    // inherited Jest suites that render Skia verse text do not mock it). The
+    // catch below then disposes at once. `require` is synchronous and
+    // module-cached, so the device path is unchanged.
+    const {runOnUIAsync} =
+      require('react-native-worklets') as typeof import('react-native-worklets');
     // `runOnUIAsync` builds its promise with a resolve callback only. It has
     // no reject path, so this call needs no rejection handler.
     //
@@ -117,5 +122,24 @@ export function disposeAfterPendingDraws(
     // The worklets runtime is unavailable, so no UI-thread draw is in flight.
     // Dispose now. This is the pre-fix behaviour.
     disposeAll();
+  }
+}
+
+/**
+ * @ai — Calls `fn` on the JS thread after the UI thread runs every Skia draw
+ * that is already in the worklets UI queue. The rotation stage
+ * (components/mushaf/MushafRotationStage.tsx) uses it to report a page as
+ * painted only after its draw has run. Same barrier, and the same stated
+ * limit, as `disposeAfterPendingDraws` above.
+ */
+export function runAfterPendingDraws(fn: () => void): void {
+  try {
+    // Required here for the reason given in `disposeAfterPendingDraws`.
+    const {runOnUIAsync} =
+      require('react-native-worklets') as typeof import('react-native-worklets');
+    runOnUIAsync(uiQueueBarrier).then(fn);
+  } catch {
+    // No worklets runtime, so no UI-thread draw is in flight.
+    fn();
   }
 }

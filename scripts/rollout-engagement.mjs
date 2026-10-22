@@ -25,7 +25,22 @@
 //   4. Cohort split                  first-seen day × OS version; a cohort with
 //                                    zero value across ALL THREE is the alert
 //   5. Retention                     maturity-gated (users must be old enough
-//                                    to HAVE a day 2 before they count against it)
+//                                    to HAVE a day 2 before they count against it).
+//                                    Three measures (planning/signals-phase1-design.md):
+//                                    "came back on a 2nd day" (JSON `retention`:
+//                                    active on 2+ distinct UTC days in the window,
+//                                    mature at retentionMaturityHours), and D7 / D28
+//                                    (JSON `retentionD7` / `retentionD28`: active on
+//                                    any of days 6–8 / 27–29; day 0 = the LA day of
+//                                    the user's first event on the build since
+//                                    INSTRUMENTED_SINCE; only users whose day 0 is
+//                                    inside the window count, so a user who was on
+//                                    the build before the window cannot pass as new;
+//                                    mature when day 8 / day 29 is complete, in LA,
+//                                    at run time). Each is null below
+//                                    retentionMinMaturedUsers. D28 needs a window
+//                                    of 32+ days (--days=45): with the default 30
+//                                    it reads "too few matured users".
 //   6. Instrumentation presence      "instrumented and zero" vs "not in this
 //                                    build" — never conflate the two
 //
@@ -74,7 +89,10 @@
 //
 //   node scripts/rollout-engagement.mjs             # human summary
 //   node scripts/rollout-engagement.mjs --json      # machine-readable
-//   node scripts/rollout-engagement.mjs --days=30   # lookback (default 30)
+//   node scripts/rollout-engagement.mjs --days=30   # lookback (default 30).
+//        When PostHog answers that the query hit its max execution time, the
+//        script retries ONCE with half the days and prints the window it used
+//        (`window=15d (asked 30d; PostHog timed out)`).
 //   node scripts/rollout-engagement.mjs --builds=1712,1713   # override config
 //   node scripts/rollout-engagement.mjs --fraction=0.15      # live Android
 //        rollout fraction, for the volume sanity note. Pass what
@@ -88,10 +106,6 @@
 // Env: POSTHOG_PROJECT_ID, POSTHOG_PERSONAL_API_TOKEN, POSTHOG_HOST
 //      (default https://us.posthog.com). Config: docs/operations/active-rollout.json.
 
-// The repo's eslint config is React-Native-oriented and declares no Node
-// globals; AbortSignal is a Node 18+ builtin used here for request timeouts.
-/* global AbortSignal */
-
 import {readFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -101,16 +115,25 @@ import {fileURLToPath} from 'node:url';
 // card excluded correctly, so the two disagreed about who counted as a person
 // for the whole of the 3.2.0 rollout. See that file's header for the incidents.
 import {isLabDevice, sqlList} from './lib/lab-exclusion.mjs';
+import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
+import {withWindowFallback} from './lib/posthog-window.mjs';
+import {addDays, daysBetween, laDate, laDaySQL} from './signals/lib/rules.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG_PATH = resolve(ROOT, 'docs/operations/active-rollout.json');
 
-const HOST = (process.env.POSTHOG_HOST || 'https://us.posthog.com').replace(
-  /\/$/,
-  '',
-);
-const PROJECT = process.env.POSTHOG_PROJECT_ID;
-const TOKEN = process.env.POSTHOG_PERSONAL_API_TOKEN;
+const POSTHOG = posthogConfig();
+const {token: TOKEN, project: PROJECT} = POSTHOG;
+
+// The lower bound of the "has this event EVER appeared on this build" query in
+// collect(), and of the "first day on this build" query (D7 / D28 day 0). The
+// first is read only as present / absent (count > 0), and the second as a
+// minimum, so the bound changes nothing while it predates every watched build's
+// first event.
+// Checked 2026-10-16: no event of any build in `buildsToWatch` (1712 and later)
+// exists before 2026-07-20. Build numbers only rise, so a build added later is
+// newer still. Move this date back only if an OLDER build is ever watched.
+const INSTRUMENTED_SINCE = '2026-07-01';
 
 function parseArgs(argv) {
   const args = {json: false, days: 30, builds: null, fraction: null};
@@ -162,42 +185,18 @@ const ARGS = parseArgs(process.argv);
 // instead of quietly under-counting.
 const ROW_LIMIT = 100_000;
 
-async function hogql(query, {limit = ROW_LIMIT} = {}) {
-  // Appending unconditionally is safe: every call site here builds its own query
-  // text and none of them set a LIMIT. If one ever does, this throws rather than
-  // producing a query with two LIMIT clauses.
-  if (/\blimit\s+\d/i.test(query)) {
-    throw new Error(
-      'hogql(): query already carries a LIMIT — pass {limit} instead so the ' +
-        'truncation guard can see it.',
-    );
-  }
-  const res = await fetch(`${HOST}/api/projects/${PROJECT}/query/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query: {kind: 'HogQLQuery', query: `${query}\nLIMIT ${limit}`},
-    }),
-    signal: AbortSignal.timeout(90_000),
+const posthog = createPosthogClient({...POSTHOG, timeoutMs: 90_000});
+
+// The client appends the LIMIT (it refuses a query that already has one) and
+// throws when the result fills it.
+const hogql = (query, {limit = ROW_LIMIT} = {}) =>
+  posthog.hogql(query, {
+    limit,
+    capMessage: (rows, cap) =>
+      `PostHog returned ${rows} rows at the ${cap}-row cap — the result ` +
+      'is truncated and every per-user figure derived from it would under-count. ' +
+      'Raise ROW_LIMIT or narrow the window; do NOT report these numbers.',
   });
-  if (!res.ok) {
-    throw new Error(
-      `PostHog ${res.status}: ${(await res.text()).slice(0, 300)}`,
-    );
-  }
-  const rows = (await res.json()).results || [];
-  if (rows.length >= limit) {
-    throw new Error(
-      `PostHog returned ${rows.length} rows at the ${limit}-row cap — the result ` +
-        'is truncated and every per-user figure derived from it would under-count. ' +
-        'Raise ROW_LIMIT or narrow the window; do NOT report these numbers.',
-    );
-  }
-  return rows;
-}
 
 // --- helpers -----------------------------------------------------------------
 
@@ -224,11 +223,11 @@ function loadConfig() {
 
 // --- checks ------------------------------------------------------------------
 
-async function collect(cfg) {
+async function collect(cfg, days) {
   const eng = cfg.engagement;
   const builds = ARGS.builds || eng.buildsToWatch || [];
   const B = `properties.$app_build IN (${sqlList(builds)})`;
-  const WINDOW = `timestamp > now() - INTERVAL ${ARGS.days} DAY`;
+  const WINDOW = `timestamp > now() - INTERVAL ${days} DAY`;
 
   // Every event we care about, in one pass: per-user reach is derivable from
   // this, and one query beats seven round-trips.
@@ -246,11 +245,18 @@ async function collect(cfg) {
     .join(', ');
   const idx = new Map(allEvents.map((e, i) => [e, i]));
   // First event column offset in each per-user row. The fixed prefix is
-  // build, person_id, first_seen, active_days, os, os_version, device_name.
-  // It was 6 until device_name was added on 2026-09-20 — if you add another
+  // build, person_id, first_seen, active_days, os, os_version, device_name,
+  // la_days. It was 6 until device_name was added on 2026-09-20, and 7 until
+  // la_days (for D7/D28) was added — if you add another
   // fixed column, move it too, because an off-by-one here reads an event count
   // out of an OS-version string and every funnel figure silently becomes zero.
-  const BASE = 7;
+  const BASE = 8;
+  // The first LA day that lies wholly inside the window (D7/D28 count only
+  // users whose first day on the build is on or after it).
+  const windowFrom = addDays(
+    laDate(new Date(Date.now() - days * 86_400_000)),
+    1,
+  );
 
   const [perBuild, perUser, everSeen] = await Promise.all([
     hogql(
@@ -269,6 +275,7 @@ async function collect(cfg) {
               count(DISTINCT toDate(timestamp)) AS active_days,
               any(properties.$os) AS os, any(properties.$os_version) AS os_version,
               any(properties.$device_name) AS device_name,
+              groupUniqArray(${laDaySQL()}) AS la_days,
               ${COLS}
        FROM events WHERE ${WINDOW} AND ${B}
        GROUP BY build, person_id`,
@@ -281,9 +288,16 @@ async function collect(cfg) {
     // this binary", and a boot-gate run firing it answers that as well as a
     // person does — better, on an internal build no person ever ran. Filtering
     // here would relabel shipped instrumentation as missing.
+    //
+    // "All time" starts at INSTRUMENTED_SINCE: without a time bound this query
+    // scanned the project's whole history and hit PostHog's max execution time
+    // (HTTP 504 on 2026-10-16), and halving the window could not help because
+    // this query ignores the window. The bound changes no result; see the
+    // constant.
     hogql(
       `SELECT properties.$app_build AS build, event, count() AS n
        FROM events WHERE ${B} AND event IN (${sqlList(allEvents)})
+         AND timestamp >= toDateTime('${INSTRUMENTED_SINCE} 00:00:00')
        GROUP BY build, event`,
     ),
   ]);
@@ -303,13 +317,48 @@ async function collect(cfg) {
     );
   }
 
-  return {builds, perBuild, perUser, everSeen, coreEvents, idx, BASE};
+  // D7 / D28 day 0: each user's first LA day on the build since
+  // INSTRUMENTED_SINCE (the per-user query sees the window only). Run after the
+  // three above, so this script never holds more than three PostHog queries.
+  const firstOnBuild = await hogql(
+    `SELECT properties.$app_build AS build, person_id, toString(min(${laDaySQL()})) AS first_day
+     FROM events WHERE ${B} AND timestamp >= toDateTime('${INSTRUMENTED_SINCE} 00:00:00')
+     GROUP BY build, person_id`,
+  );
+
+  return {
+    builds,
+    perBuild,
+    perUser,
+    everSeen,
+    coreEvents,
+    idx,
+    BASE,
+    firstOnBuild,
+    windowFrom,
+  };
 }
 
 function analyse(cfg, data) {
   const eng = cfg.engagement;
   const T = eng.thresholds;
-  const {perBuild, perUser, everSeen, coreEvents, idx, BASE} = data;
+  const {
+    perBuild,
+    perUser,
+    everSeen,
+    coreEvents,
+    idx,
+    BASE,
+    firstOnBuild,
+    windowFrom,
+  } = data;
+  const firstDay = new Map(
+    (firstOnBuild || []).map(([b, p, d]) => [
+      `${b}|${p}`,
+      String(d).slice(0, 10),
+    ]),
+  );
+  const todayLA = laDate();
 
   const seenMap = new Map(
     everSeen.map(([b, e, n]) => [`${b}|${e}`, Number(n)]),
@@ -502,7 +551,7 @@ function analyse(cfg, data) {
           `SPLASH REACH — build ${build}: only ${(splashReach * 100).toFixed(
             0,
           )}% of ` +
-            `${launched.users} launchers reached splash_hidden ` +
+            `${launched.users} launchers reached a first screen ` +
             `(floor ${(T.splashReachFloor * 100).toFixed(
               0,
             )}%) — the cold-start-hang shape`,
@@ -521,6 +570,31 @@ function analyse(cfg, data) {
       matured.length >= T.retentionMinMaturedUsers
         ? pct(matured.filter(r => Number(r[3]) >= 2).length, matured.length)
         : null;
+    // D7 / D28. day 0 = the user's first LA day on the build; a user whose day 0
+    // is before the window may predate it, so only day 0 >= windowFrom counts.
+    // Mature when day 8 / day 29 is complete in LA (before today's LA date).
+    // Same minimum sample as the measure above.
+    const day0 = r => {
+      const d = firstDay.get(`${r[0]}|${r[1]}`);
+      return d && d >= windowFrom ? d : null;
+    };
+    const activeOnDays = (r, a, b) => {
+      const d0 = day0(r);
+      return (Array.isArray(r[7]) ? r[7] : []).some(d => {
+        const k = daysBetween(d0, String(d).slice(0, 10));
+        return k >= a && k <= b;
+      });
+    };
+    const maturedAt = n =>
+      organic.filter(r => day0(r) && addDays(day0(r), n) < todayLA);
+    const share = (pop, a, b) =>
+      pop.length >= T.retentionMinMaturedUsers
+        ? pct(pop.filter(r => activeOnDays(r, a, b)).length, pop.length)
+        : null;
+    const maturedD7 = maturedAt(8);
+    const maturedD28 = maturedAt(29);
+    const retentionD7 = share(maturedD7, 6, 8);
+    const retentionD28 = share(maturedD28, 27, 29);
     const androidUsers = organic.filter(
       r => String(r[4] || '').toLowerCase() === 'android',
     ).length;
@@ -550,6 +624,10 @@ function analyse(cfg, data) {
       splashReach,
       retention,
       retentionSample: matured.length,
+      retentionD7,
+      retentionD7Sample: maturedD7.length,
+      retentionD28,
+      retentionD28Sample: maturedD28.length,
       cohorts: cohortList,
       notInstrumented,
     });
@@ -627,7 +705,11 @@ function render(cfg, res) {
     `▶ rollout-engagement  release=${cfg.release} builds=[${res.builds
       .map(b => b.build)
       .join(', ')}] ` +
-      `window=${ARGS.days}d  rollout=${
+      `window=${res.window.days}d${
+        res.window.retried
+          ? ` (asked ${res.window.requestedDays}d; PostHog timed out)`
+          : ''
+      }  rollout=${
         res.rolloutActive ? 'IN FLIGHT' : 'not in flight'
       }  verdict=${res.verdict}`,
   );
@@ -714,14 +796,26 @@ function render(cfg, res) {
             } matured organic users`
       }`,
     );
+    const retLine = (label, v, n) =>
+      `     ${label}: ${
+        v === null
+          ? `too few matured users to judge (${n})`
+          : `${(v * 100).toFixed(0)}% of ${n} matured organic users`
+      }`;
+    L.push(retLine('came back on a 2nd day', b.retention, b.retentionSample));
     L.push(
-      `     retention (day-2): ${
-        b.retention === null
-          ? `too few matured users to judge (${b.retentionSample})`
-          : `${(b.retention * 100).toFixed(0)}% of ${
-              b.retentionSample
-            } matured organic users`
-      }`,
+      retLine(
+        'D7 (active on day 6, 7 or 8)',
+        b.retentionD7,
+        b.retentionD7Sample,
+      ),
+    );
+    L.push(
+      retLine(
+        'D28 (active on day 27, 28 or 29)',
+        b.retentionD28,
+        b.retentionD28Sample,
+      ),
     );
     if (b.splashReach !== null) {
       L.push(
@@ -815,7 +909,15 @@ async function main() {
 
   let res;
   try {
-    res = analyse(cfg, await collect(cfg));
+    const run = await withWindowFallback(ARGS.days, d => collect(cfg, d));
+    res = {
+      ...analyse(cfg, run.result),
+      window: {
+        days: run.days,
+        requestedDays: run.requestedDays,
+        retried: run.retried,
+      },
+    };
   } catch (err) {
     // Advisory tool: a PostHog hiccup must never fail the loop that calls it.
     const msg = `rollout-engagement: query failed — ${err.message}`;

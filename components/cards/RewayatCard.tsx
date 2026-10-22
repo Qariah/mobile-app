@@ -12,6 +12,11 @@ import {
   SurahGradientMesh,
   paletteForKey,
 } from '@/components/hero/SurahGradientMesh';
+// @ai-start
+import {latinLetterSpacing} from '@/utils/rtl';
+import {getRewayatPersonLabel} from '@/data/rewayat';
+import {useTranslation} from 'react-i18next';
+// @ai-end
 
 interface RewayatCardProps {
   rewayat: RewayatInfo;
@@ -20,6 +25,7 @@ interface RewayatCardProps {
   height?: number;
 }
 
+// @ai-start
 function RewayatCard({
   rewayat,
   onPress,
@@ -27,6 +33,7 @@ function RewayatCard({
   height = moderateScale(92),
 }: RewayatCardProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['home', 'common']);
   const glassColorScheme = useGlassColorScheme();
   const styles = useMemo(
     () => createStyles(theme, width, height),
@@ -65,7 +72,7 @@ function RewayatCard({
         viewBoxHeight={height}
       />
       <Text style={styles.teacherLabel} numberOfLines={1}>
-        {rewayat.teacher}
+        {getRewayatPersonLabel(rewayat.teacher)}
       </Text>
       <View style={styles.glyphContainer}>
         {arabicGlyph ? (
@@ -87,7 +94,7 @@ function RewayatCard({
           {rewayat.displayName}
         </Text>
         <Text style={styles.subtitle}>
-          {rewayat.reciterCount} reciter{rewayat.reciterCount !== 1 && 's'}
+          {t('common:counts.reciters', {count: rewayat.reciterCount})}
         </Text>
       </View>
     </View>
@@ -119,7 +126,9 @@ function RewayatCard({
     </Link>
   );
 }
+// @ai-end
 
+// @ai-start
 function createStyles(
   theme: {
     colors: {
@@ -159,7 +168,7 @@ function createStyles(
       fontFamily: 'Manrope-SemiBold',
       color: Color(theme.colors.textSecondary).alpha(0.45).toString(),
       textTransform: 'uppercase',
-      letterSpacing: 0.8,
+      letterSpacing: latinLetterSpacing(0.8),
     },
     glyphContainer: {
       flex: 1,
@@ -188,7 +197,7 @@ function createStyles(
       fontSize: moderateScale(14),
       fontFamily: theme.fonts.semiBold,
       color: theme.colors.text,
-      letterSpacing: -0.3,
+      letterSpacing: latinLetterSpacing(-0.3),
       lineHeight: moderateScale(18),
     },
     subtitleName: {
@@ -207,5 +216,6 @@ function createStyles(
     },
   });
 }
+// @ai-end
 
 export default React.memo(RewayatCard);

@@ -6,12 +6,14 @@
  * another QF-backed app) sees them in Qariah without having to
  * re-create them.
  *
- * Idempotent — gated by AsyncStorage key `@qariah:notesRestoredAt`.
- * Re-running the same user on the same device is a no-op. Different
- * users on the same device: the flag is preserved (we don't want a
- * sign-in-sign-out cycle to re-pull and duplicate). For the
- * cross-user case the per-note `qf_note_id` dedupe protects against
- * duplicate inserts regardless.
+ * Idempotent — gated by a per-account AsyncStorage flag,
+ * `@qariah:notesRestoredAt:<account hash>` (TECH_DEBT #244 M4; the flag
+ * was device-wide before). Re-running the same account on the same device
+ * is a no-op, also after a sign-out. When a different account signs in,
+ * `accountCleanup.ts` removes the previous account's QF-linked notes and
+ * its flag, so that account's next sign-in restores its notes again. The
+ * per-note `qf_note_id` dedupe still protects against duplicate inserts.
+ * The restore runs only after `ensureAccountVerified()` returns `ok`. // @ai
  *
  * Pattern parallels Sprint 11's `v1Restore.ts` — pure functions, side
  * effects scoped to the DB + AsyncStorage. UI hook lives in
@@ -24,11 +26,22 @@ import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
 import * as Auth from '@/services/auth/qfOAuth';
 import * as qfNotes from './notes';
 import type {QfNote} from './notes';
+// @ai-start
+import {
+  NOTES_RESTORED_AT_BASE_KEY,
+  accountFlagKey,
+  currentAccountFlagKey,
+} from './accountKeys';
+import {ensureAccountVerified} from './accountCleanup';
 
-export const NOTES_RESTORED_AT_KEY = '@qariah:notesRestoredAt';
+/** Base key; the flag itself is per account (`accountKeys.ts`). */
+export const NOTES_RESTORED_AT_KEY = NOTES_RESTORED_AT_BASE_KEY;
+// @ai-end
 
 export type NotesRestoreResult =
-  | {kind: 'restored'; count: number}
+  // @ai `incomplete`: QF had more notes than the listing read. The restore
+  // merged what it read and did not set the done flag, so it runs again.
+  | {kind: 'restored'; count: number; incomplete?: true}
   | {kind: 'already-done'; count: number | null}
   | {kind: 'no-auth'}
   | {kind: 'empty'}
@@ -66,11 +79,11 @@ function readFlag(
   return {at: Date.now(), count: null};
 }
 
-function writeFlag(count: number): Promise<void> {
+function writeFlag(flagKey: string, count: number): Promise<void> {
   return AsyncStorage.setItem(
-    NOTES_RESTORED_AT_KEY,
+    flagKey,
     JSON.stringify({at: Date.now(), count}),
-  ).catch(() => {});
+  ).catch(() => undefined); // @ai
 }
 
 /**
@@ -80,9 +93,8 @@ function writeFlag(count: number): Promise<void> {
  * build that didn't persist the count.
  */
 export async function getLastNotesRestoreCount(): Promise<number | null> {
-  const raw = await AsyncStorage.getItem(NOTES_RESTORED_AT_KEY).catch(
-    () => null,
-  );
+  const flagKey = await currentAccountFlagKey(NOTES_RESTORED_AT_KEY); // @ai
+  const raw = await AsyncStorage.getItem(flagKey).catch(() => null);
   const parsed = readFlag(raw);
   return parsed ? parsed.count : null;
 }
@@ -179,14 +191,31 @@ export async function restoreQfNotesOnce(): Promise<NotesRestoreResult> {
       return {kind: 'no-auth'} as const;
     }
 
-    const doneRaw = await AsyncStorage.getItem(NOTES_RESTORED_AT_KEY);
+    // @ai-start
+    // M4 — a different account's notes must leave the device before this
+    // account's notes arrive, and the flag is per account.
+    const account = await ensureAccountVerified();
+    if (account.kind === 'no-auth') return {kind: 'no-auth'} as const;
+    if (account.kind === 'error') {
+      return {
+        kind: 'error',
+        detail: `account check (${account.stage}): ${account.detail}`,
+      } as const;
+    }
+    const flagKey = accountFlagKey(NOTES_RESTORED_AT_KEY, account.accountHash);
+    // @ai-end
+
+    const doneRaw = await AsyncStorage.getItem(flagKey);
     const done = readFlag(doneRaw);
     if (done) return {kind: 'already-done', count: done.count} as const;
 
     try {
-      const list = await qfNotes.listNotes();
-      if (list.length === 0) {
-        await writeFlag(0);
+      // @ai A truncated listing must not set the done flag (it would never
+      // run again). It still merges what it read; the qf_note_id dedupe
+      // makes the next run safe.
+      const {notes: list, complete} = await qfNotes.listAllNotes();
+      if (list.length === 0 && complete) {
+        await writeFlag(flagKey, 0);
         return {kind: 'empty'} as const;
       }
 
@@ -203,7 +232,12 @@ export async function restoreQfNotesOnce(): Promise<NotesRestoreResult> {
         }
       }
 
-      await writeFlag(inserted);
+      // @ai-start
+      if (!complete) {
+        return {kind: 'restored', count: inserted, incomplete: true} as const;
+      }
+      // @ai-end
+      await writeFlag(flagKey, inserted);
       return {kind: 'restored', count: inserted} as const;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -219,5 +253,7 @@ export async function restoreQfNotesOnce(): Promise<NotesRestoreResult> {
 
 /** Test-only: clear the done flag so the next call re-runs the restore. */
 export async function clearNotesRestoredFlag(): Promise<void> {
-  await AsyncStorage.removeItem(NOTES_RESTORED_AT_KEY);
+  await AsyncStorage.removeItem(
+    await currentAccountFlagKey(NOTES_RESTORED_AT_KEY),
+  ); // @ai
 }

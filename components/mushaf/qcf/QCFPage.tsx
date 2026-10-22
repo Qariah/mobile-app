@@ -1,4 +1,4 @@
-// QCF V2 mushaf renderer.
+// QCF V2 / V4 tajweed mushaf renderer.
 //
 // Per-line Skia paragraphs, each at its own y position from
 // calculateLineYPositions(). TextAlign.Center, layout to CONTENT_WIDTH.
@@ -17,7 +17,14 @@
 // surah-start pages look identical between DK and QCF modes.
 
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {View, Platform} from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Platform,
+  Text,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native'; // @ai
 import {
   Canvas,
   Group,
@@ -51,18 +58,20 @@ import {PAGE_WIDTH, FONTSIZE} from '@/services/mushaf/QuranTextService';
 import {
   qcfFontFamilyForPage,
   qcfFontLoader,
+  getQCFFontVariant, // @ai
 } from '@/services/mushaf/QCFFontLoader';
 import {qcfLayoutCacheService} from '@/services/mushaf/QCFLayoutCacheService';
 import {
   qcfFontSizeForContentWidth,
   QCF_REF_FONT_SIZE as REF_FONT_SIZE,
 } from '@/services/mushaf/qcfFontSizing';
+import {fitQCFLinePositions} from '@/services/mushaf/QCFVerticalLayout'; // @ai
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService';
 import {useMushafFontMgr} from '@/hooks/useMushafFontMgr';
 import {getTextAllahNameCharMap} from '@/services/mushaf/AllahNameHighlightService';
 import {themeDataService} from '@/services/mushaf/ThemeDataService';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
-import {useMushafPlayerStore} from '@/store/mushafPlayerStore';
+import {usePlaybackVerseKeys} from '@/store/mushafPlayerStore'; // @ai
 import {useMushafVerseSelectionStore} from '@/store/mushafVerseSelectionStore';
 import {
   createTextStrokePaint,
@@ -70,8 +79,14 @@ import {
 } from '@/utils/skiaTextWeight';
 import {getAllahNameHighlightColorHex} from '@/constants/mushafAllahHighlight';
 import {useTheme} from '@/hooks/useTheme';
+import {useTranslation} from 'react-i18next'; // @ai
 import SkiaSurahHeader from '../skia/SkiaSurahHeader';
+import {useCommitReport} from '../useCommitReport'; // @ai
 import {
+  type MushafLayoutMetrics, // @ai
+  calculateLineYPositions,
+  canvasBottomOverflow, // @ai
+  // @ai Qariah (#364): the portrait defaults when no metrics are passed.
   SCREEN_WIDTH as DEFAULT_SCREEN_WIDTH,
   SCREEN_HEIGHT as DEFAULT_SCREEN_HEIGHT,
   PAGE_PADDING_HORIZONTAL as DEFAULT_PAGE_PADDING_HORIZONTAL,
@@ -79,20 +94,30 @@ import {
   CONTENT_WIDTH as DEFAULT_CONTENT_WIDTH,
   CONTENT_HEIGHT as DEFAULT_CONTENT_HEIGHT,
   BASE_LINE_HEIGHT as DEFAULT_BASE_LINE_HEIGHT,
-  calculateLineYPositions,
 } from '../constants';
 
 interface QCFPageProps {
+  /**
+   * @ai Upstream's layout metrics. Optional in Qariah: the individual
+   * overrides below (GH #364, Qariah's earlier fix) win over it, and the
+   * module-level portrait constants are the last fallback.
+   */
+  metrics?: MushafLayoutMetrics;
   pageNumber: number;
   textColor: string;
   dividerColor: string;
   contentMarginLeft?: number;
   onReady?: () => void;
+  /**
+   * @ai — called after each commit but the first: the page drew again
+   * (TECH_DEBT #272, components/mushaf/pageDrawReport.ts).
+   */
+  onDraw?: () => void;
   onTap?: () => void;
   /**
-   * Optional layout metrics overrides. When omitted, the component falls
-   * back to the module-level constants (phone-portrait defaults). iPad and
-   * rotation-aware callers should pass values from `useMushafLayout()`.
+   * Optional layout metrics overrides (Qariah, GH #364). When omitted, the
+   * component reads `metrics`, then the module-level constants
+   * (phone-portrait defaults).
    */
   screenWidth?: number;
   screenHeight?: number;
@@ -115,9 +140,8 @@ const lineParStyle = {
   textHeightBehavior: TextHeightBehavior.DisableAll,
 };
 
-// DK's font for basmallah rendering. The matching size is derived per
-// render from the LIVE content width (SkiaPage's calc:
-// FONTSIZE * scale * 0.9 where scale = contentWidth / PAGE_WIDTH).
+// DK's font + size for basmallah rendering. Matches SkiaPage's calc
+// (FONTSIZE * scale * 0.9 where scale = CONTENT_WIDTH / PAGE_WIDTH).
 const DK_FONT_FAMILY = 'DigitalKhattV2';
 
 // Skia treats U+0020 (regular space) as a wrap-point and merges adjacent
@@ -147,11 +171,13 @@ interface SurahHeaderEntry {
 }
 
 const QCFPage: React.FC<QCFPageProps> = ({
+  metrics, // @ai
   pageNumber,
   textColor,
   dividerColor,
   contentMarginLeft,
   onReady,
+  onDraw, // @ai
   onTap,
   screenWidth: propScreenWidth,
   screenHeight: propScreenHeight,
@@ -162,18 +188,46 @@ const QCFPage: React.FC<QCFPageProps> = ({
   paddingTop: propPaddingTop,
   centerShortPages = true,
 }) => {
-  const SCREEN_WIDTH = propScreenWidth ?? DEFAULT_SCREEN_WIDTH;
-  const SCREEN_HEIGHT = propScreenHeight ?? DEFAULT_SCREEN_HEIGHT;
-  const CONTENT_WIDTH = propContentWidth ?? DEFAULT_CONTENT_WIDTH;
-  const CONTENT_HEIGHT = propContentHeight ?? DEFAULT_CONTENT_HEIGHT;
-  const BASE_LINE_HEIGHT = propBaseLineHeight ?? DEFAULT_BASE_LINE_HEIGHT;
+  // @ai-start
+  // Qariah (#364): an explicit prop wins, then upstream's `metrics`, then the
+  // module-level portrait constants.
+  const SCREEN_WIDTH =
+    propScreenWidth ?? metrics?.pageWidth ?? DEFAULT_SCREEN_WIDTH;
+  const SCREEN_HEIGHT =
+    propScreenHeight ?? metrics?.screenHeight ?? DEFAULT_SCREEN_HEIGHT;
+  const CONTENT_WIDTH =
+    propContentWidth ?? metrics?.contentWidth ?? DEFAULT_CONTENT_WIDTH;
+  const CONTENT_HEIGHT =
+    propContentHeight ?? metrics?.contentHeight ?? DEFAULT_CONTENT_HEIGHT;
+  const baseLineHeight =
+    propBaseLineHeight ?? metrics?.baseLineHeight ?? DEFAULT_BASE_LINE_HEIGHT;
   const PAGE_PADDING_HORIZONTAL =
-    propPaddingHorizontal ?? DEFAULT_PAGE_PADDING_HORIZONTAL;
-  const PAGE_PADDING_TOP = propPaddingTop ?? DEFAULT_PAGE_PADDING_TOP;
-  const DK_FONT_SIZE = (CONTENT_WIDTH / PAGE_WIDTH) * FONTSIZE * 0.9;
-
+    propPaddingHorizontal ??
+    metrics?.paddingHorizontal ??
+    DEFAULT_PAGE_PADDING_HORIZONTAL;
+  const PAGE_PADDING_TOP =
+    propPaddingTop ?? metrics?.paddingTop ?? DEFAULT_PAGE_PADDING_TOP;
+  // Memoised: the mushaf keeps several pages mounted at once on the swipe hot
+  // path, so the page View gets a stable style reference.
+  const pageStyle = useMemo(
+    () => ({width: SCREEN_WIDTH, height: SCREEN_HEIGHT}),
+    [SCREEN_WIDTH, SCREEN_HEIGHT],
+  );
+  const basmallahFontSize = (CONTENT_WIDTH / PAGE_WIDTH) * FONTSIZE * 0.9;
+  // @ai-end
   const {theme} = useTheme();
+  useCommitReport(onDraw); // @ai — each later commit is a new draw (#272)
+  const {t} = useTranslation(['reader', 'common']); // @ai
   const fontMgr = useMushafFontMgr();
+  // @ai-start
+  const showTajweed = useMushafSettingsStore(s => s.showTajweed);
+  // Use the actual page text color: reading themes can differ from the app theme.
+  const fontVariant = getQCFFontVariant(
+    showTajweed,
+    Color(textColor).isLight(),
+  );
+  const fontFamily = qcfFontFamilyForPage(pageNumber, fontVariant);
+  // @ai-end
   const arabicTextWeight = useMushafSettingsStore(s => s.arabicTextWeight);
   const showThemes = useMushafSettingsStore(s => s.showThemes);
   const showAllahNameHighlight = useMushafSettingsStore(
@@ -192,10 +246,9 @@ const QCFPage: React.FC<QCFPageProps> = ({
   const selectVerseRange = useMushafVerseSelectionStore(
     s => s.selectVerseRange,
   );
-  const playbackVerseKey = useMushafPlayerStore(s => {
-    if (!s.currentVerseKey || s.playbackState === 'idle') return null;
-    return s.currentVerseKey;
-  });
+  // @ai — every Hafs verse the reciter is reciting (a rewayah recitation's
+  // verse can cover several Hafs verses); empty when idle.
+  const playbackVerseKeys = usePlaybackVerseKeys();
 
   const surahHeaderFonts = useMemo(() => {
     const qcTypeface = mushafPreloadService.quranCommonTypeface;
@@ -217,10 +270,21 @@ const QCFPage: React.FC<QCFPageProps> = ({
     // typeface arrived would cache the null divider for the life of the mount.
     // SkiaPage keeps the same dependency for the same reason.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [CONTENT_WIDTH, fontMgr]);
-  const [fontReady, setFontReady] = useState<boolean>(() =>
-    qcfFontLoader.isReady(pageNumber),
+  }, [CONTENT_WIDTH, fontMgr]); // @ai
+  // @ai-start
+  const [loadedFont, setLoadedFont] = useState<{
+    family: string;
+    manager: NonNullable<typeof fontMgr>;
+  } | null>(() =>
+    fontMgr && qcfFontLoader.isReady(pageNumber, fontMgr, fontVariant)
+      ? {family: fontFamily, manager: fontMgr}
+      : null,
   );
+  // A previous page/variant becoming ready must never expose an unloaded font.
+  const fontReady =
+    loadedFont?.family === fontFamily && loadedFont?.manager === fontMgr;
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  // @ai-end
   const [error, setError] = useState<string | null>(null);
 
   const pageLines = useMemo<DKLine[]>(
@@ -228,16 +292,18 @@ const QCFPage: React.FC<QCFPageProps> = ({
     [pageNumber],
   );
 
-  const lineYPositions = useMemo(
+  const rawLineYPositions = useMemo(
+    // @ai-start
     () =>
       calculateLineYPositions(
         pageLines,
         pageNumber,
         CONTENT_HEIGHT,
-        BASE_LINE_HEIGHT,
-        centerShortPages,
+        baseLineHeight,
+        centerShortPages, // @ai #358
       ),
-    [pageLines, pageNumber, CONTENT_HEIGHT, BASE_LINE_HEIGHT, centerShortPages],
+    [pageLines, pageNumber, CONTENT_HEIGHT, baseLineHeight, centerShortPages],
+    // @ai-end
   );
 
   const orderedVerseKeys = useMemo(
@@ -273,11 +339,15 @@ const QCFPage: React.FC<QCFPageProps> = ({
     [textColor],
   );
 
+  // @ai-start
   const layoutMetrics = useMemo(() => {
     if (!fontMgr || !fontReady) return null;
 
-    const fontFamily = qcfFontFamilyForPage(pageNumber);
-    const cached = qcfLayoutCacheService.getPageLayout(pageNumber, fontFamily);
+    const cached = qcfLayoutCacheService.getPageLayout(
+      pageNumber,
+      fontFamily,
+      CONTENT_WIDTH,
+    );
     if (cached) return cached;
 
     const tmpBuilder = Skia.ParagraphBuilder.Make(lineParStyle, fontMgr);
@@ -316,18 +386,34 @@ const QCFPage: React.FC<QCFPageProps> = ({
       sortedDesc.length > 1 && sortedDesc[0] > sortedDesc[1] * 1.05
         ? sortedDesc[1]
         : sortedDesc[0];
-    // A zero reference width is a failed measurement, not a layout. Never
-    // cache it: the v1 shape rejected it by accident (Infinity → null), the
-    // v2 shape would persist a blank page across restarts.
+
+    // @ai Qariah: a zero reference width is a failed measurement, not a
+    // layout. Never cache it.
     if (!(widestRef > 0)) return null;
 
+    // @ai Qariah cache shape (GH #364): the width the page font is calibrated
+    // against; the render size derives from it and the live content width.
     const measured = {
       widestRef,
       lineWidthsAtRef,
     };
-    qcfLayoutCacheService.setPageLayout(pageNumber, fontFamily, measured);
+    qcfLayoutCacheService.setPageLayout(
+      pageNumber,
+      fontFamily,
+      CONTENT_WIDTH,
+      measured,
+    );
     return measured;
-  }, [fontMgr, fontReady, pageLines, pageNumber, textColor]);
+  }, [
+    fontMgr,
+    fontReady,
+    fontFamily,
+    pageLines,
+    pageNumber,
+    textColor,
+    CONTENT_WIDTH,
+  ]);
+  // @ai-end
 
   const lineBackgroundHighlights = useMemo(() => {
     const byLine = new Map<
@@ -350,7 +436,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       const ranges: Array<{start: number; end: number; color: string}> = [];
       for (const segment of model.verseSegments) {
         if (
-          playbackVerseKey === segment.verseKey &&
+          playbackVerseKeys.includes(segment.verseKey) && // @ai
           !selectedSet?.has(segment.verseKey)
         ) {
           ranges.push({
@@ -389,7 +475,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
     pageNumber,
     selectedPageNumber,
     selectedVerseKeys,
-    playbackVerseKey,
+    playbackVerseKeys, // @ai
     playbackBgColor,
     selectionBgColor,
     showThemes,
@@ -398,16 +484,29 @@ const QCFPage: React.FC<QCFPageProps> = ({
 
   // Load this page's QCF page-font, prefetch neighbors. Basmallah no
   // longer needs the page-1 font — DK font handles it.
+  // @ai-start
   useEffect(() => {
     if (!fontMgr) return;
     let cancelled = false;
     setError(null);
-    setFontReady(qcfFontLoader.isReady(pageNumber));
+    // @ai — #272: a page whose font was ready is ready already. Keep the same
+    // state object (no render), and skip the second set after `ensure`: the
+    // rotation stage counts each commit of the page as a draw.
+    const wasReady = qcfFontLoader.isReady(pageNumber, fontMgr, fontVariant);
+    setLoadedFont(prev =>
+      wasReady
+        ? prev?.family === fontFamily && prev?.manager === fontMgr
+          ? prev
+          : {family: fontFamily, manager: fontMgr}
+        : null,
+    );
 
     (async () => {
       try {
-        await qcfFontLoader.ensure(pageNumber, fontMgr);
-        if (!cancelled) setFontReady(true);
+        await qcfFontLoader.ensure(pageNumber, fontMgr, fontVariant);
+        if (!cancelled && !wasReady) {
+          setLoadedFont({family: fontFamily, manager: fontMgr});
+        }
       } catch (e: unknown) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'QCF font load failed');
@@ -415,6 +514,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
         return;
       }
 
+      if (cancelled) return;
       qcfFontLoader.prefetch(
         [
           pageNumber - 1,
@@ -425,19 +525,21 @@ const QCFPage: React.FC<QCFPageProps> = ({
           pageNumber + 3,
         ],
         fontMgr,
+        fontVariant,
       );
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [fontMgr, pageNumber]);
+  }, [fontMgr, pageNumber, fontFamily, fontVariant, loadAttempt]);
+  // @ai-end
 
-  const renderEntries = useMemo<RenderEntry[]>(() => {
+  // @ai-start
+  const rawRenderEntries = useMemo<RenderEntry[]>(() => {
     if (!fontMgr || !fontReady || !layoutMetrics) return [];
 
-    const fontFamily = qcfFontFamilyForPage(pageNumber);
-    // Derived here, not cached: the page font is calibrated to fill the
+    // @ai Derived here, not cached: the page font is calibrated to fill the
     // CURRENT content width, which changes on rotation and on iPad.
     const fontSize = qcfFontSizeForContentWidth(
       layoutMetrics.widestRef,
@@ -541,7 +643,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
     const entries: RenderEntry[] = [];
     for (let i = 0; i < pageLines.length; i++) {
       const line = pageLines[i];
-      const yPos = lineYPositions[i];
+      const yPos = rawLineYPositions[i];
 
       if (line.line_type === 'surah_name') {
         // Rendered separately as a SkiaSurahHeader element; see the
@@ -563,7 +665,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
           DK_FONT_FAMILY,
           basmallahAllahMap,
           {
-            fontSize: DK_FONT_SIZE,
+            fontSize: basmallahFontSize,
             fontFeatures: [{name: 'basm', value: 1}],
           },
         );
@@ -589,7 +691,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       const model = buildQCFLineRenderModel(words);
       const text = model.renderedText;
       const charToColor =
-        showAllahNameHighlight && allahNameHighlightColor
+        !showTajweed && showAllahNameHighlight && allahNameHighlightColor
           ? buildQCFLineAllahNameMap(words, allahNameHighlightColor)
           : null;
       const built = buildOne(text, fontFamily, charToColor, {
@@ -605,20 +707,52 @@ const QCFPage: React.FC<QCFPageProps> = ({
     }
     return entries;
   }, [
+    basmallahFontSize,
     allahNameHighlightColor,
     arabicTextWeight,
     fontMgr,
     fontReady,
+    fontFamily,
     layoutMetrics,
     pageLines,
-    lineYPositions,
+    rawLineYPositions,
     pageNumber,
     showAllahNameHighlight,
+    showTajweed,
     textColor,
-    CONTENT_WIDTH,
-    DK_FONT_SIZE,
+    CONTENT_WIDTH, // @ai
   ]);
 
+  // V4's paragraph boxes are taller than the legacy line pitch. Fit their
+  // measured bottoms above the page's reserved footer, keeping glyph sizes
+  // and V2 spacing unchanged. Headers, highlights and hit tests share this fit.
+  const lineYPositions = useMemo(
+    () =>
+      showTajweed
+        ? fitQCFLinePositions(
+            rawLineYPositions,
+            rawRenderEntries.map(entry => ({
+              lineIndex: entry.lineIndex,
+              height: entry.paragraph.getHeight(),
+            })),
+            CONTENT_HEIGHT,
+          )
+        : rawLineYPositions,
+    [showTajweed, rawLineYPositions, rawRenderEntries, CONTENT_HEIGHT],
+  );
+
+  const renderEntries = useMemo(
+    () =>
+      lineYPositions === rawLineYPositions
+        ? rawRenderEntries
+        : rawRenderEntries.map(entry => ({
+            ...entry,
+            yPos: lineYPositions[entry.lineIndex],
+          })),
+    [lineYPositions, rawLineYPositions, rawRenderEntries],
+  );
+
+  // @ai-end
   // Surah-header lines (line_type === 'surah_name'). DK's SkiaSurahHeader
   // takes the same dividerFont + nameFontSize we computed above, plus the
   // surah number from DK's pageLines metadata.
@@ -640,7 +774,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       });
     }
     return entries;
-  }, [pageLines, lineYPositions, CONTENT_HEIGHT]);
+  }, [pageLines, lineYPositions, CONTENT_HEIGHT]); // @ai
 
   useEffect(() => {
     if (error) {
@@ -685,7 +819,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       }
       return -1;
     },
-    [lineYPositions, CONTENT_HEIGHT],
+    [lineYPositions, CONTENT_HEIGHT], // @ai
   );
 
   const hitTestVerse = useCallback(
@@ -717,6 +851,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
 
       return findQCFVerseAtCharIndex(entry.model, charIndex);
     },
+    // @ai-start
     [
       contentMarginLeft,
       findLineAtY,
@@ -726,6 +861,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       PAGE_PADDING_HORIZONTAL,
       PAGE_PADDING_TOP,
     ],
+    // @ai-end
   );
 
   const handleDragStart = useCallback(
@@ -843,24 +979,51 @@ const QCFPage: React.FC<QCFPageProps> = ({
     [longPressDragGesture, tapGesture],
   );
 
-  // Memoised: this replaced a stable `StyleSheet.create` reference, and the
-  // mushaf keeps several pages mounted at once on the swipe hot path.
-  const pageStyle = useMemo(
-    () => ({width: SCREEN_WIDTH, height: SCREEN_HEIGHT}),
-    [SCREEN_WIDTH, SCREEN_HEIGHT],
-  );
-
   if (!fontMgr || pageLines.length === 0) {
     return <View style={pageStyle} />;
+  }
+
+  // @ai-start
+  if (error) {
+    return (
+      <View style={[pageStyle, styles.loadStatus]}>
+        <Text style={{color: textColor}}>
+          {t('reader:mushaf.pageLoadFailed')}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setLoadAttempt(attempt => attempt + 1)}>
+          <Text style={{color: textColor, textDecorationLine: 'underline'}}>
+            {t('common:actions.tryAgain')}
+          </Text>
+        </Pressable>
+        {showTajweed && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              if (useMushafSettingsStore.getState().showTajweed) {
+                useMushafSettingsStore.getState().toggleTajweed();
+              }
+            }}>
+            <Text style={{color: textColor, textDecorationLine: 'underline'}}>
+              {t('reader:mushaf.turnOffTajweed')}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
   }
 
   if (!fontReady || renderEntries.length === 0) {
     return (
       <GestureDetector gesture={composedGesture}>
-        <View style={pageStyle} />
+        <View style={[pageStyle, styles.loadStatus]}>
+          <ActivityIndicator color={textColor} />
+        </View>
       </GestureDetector>
     );
   }
+  // @ai-end
 
   return (
     <GestureDetector gesture={composedGesture}>
@@ -868,7 +1031,16 @@ const QCFPage: React.FC<QCFPageProps> = ({
         <Canvas
           style={{
             width: CONTENT_WIDTH,
-            height: CONTENT_HEIGHT,
+            height:
+              CONTENT_HEIGHT +
+              canvasBottomOverflow(
+                layoutMetrics
+                  ? qcfFontSizeForContentWidth(
+                      layoutMetrics.widestRef,
+                      CONTENT_WIDTH,
+                    )
+                  : 0,
+              ), // @ai
             marginLeft: contentMarginLeft ?? PAGE_PADDING_HORIZONTAL,
             marginTop: PAGE_PADDING_TOP,
           }}>
@@ -939,5 +1111,15 @@ const QCFPage: React.FC<QCFPageProps> = ({
     </GestureDetector>
   );
 };
+
+const styles = StyleSheet.create({
+  // @ai-start
+  loadStatus: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  // @ai-end
+});
 
 export default QCFPage;

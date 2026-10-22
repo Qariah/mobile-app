@@ -22,7 +22,7 @@
 //      them there would be a pure regression. That is the `android` block.
 
 import {Platform} from 'react-native';
-import {getMushafLayout} from '../constants';
+import {getMushafLayout, getPageLabelOffsets} from '../constants';
 
 // iPhone 15 Pro, landscape — the device in the #349 report.
 const W = 852;
@@ -235,5 +235,116 @@ describe('getMushafLayout — no movement where there is no cutout', () => {
         getMushafLayout({...opts, insets: insets(ISLAND, ISLAND)}),
       ).toEqual(getMushafLayout({...opts, insets: insets(0, 0)}));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #475 — page labels clipped by the screen edge
+// ---------------------------------------------------------------------------
+//
+// `getPageLabelOffsets` places the surah / juz labels at
+// `paddingTop - SURAH_JUZ_LABEL_OFFSET` and the page number either at
+// `paddingBottom - PAGE_NUMBER_LABEL_OFFSET` (fullscreen) or centred in the
+// bottom gutter (book layout, the DEFAULT `pageLayout`). Both are measured
+// inward from the page edge, so a gutter shallower than the offset yields a
+// NEGATIVE position and the screen edge cuts the label in half.
+//
+// The gutters that feed them are derived from `headerHeight` / `toolbarHeight`,
+// and `main.tsx` passes 0 for BOTH on iOS 26+ because the glass chrome lives
+// outside the page. On the iPhone16,1 in the #475 report that left a 29pt
+// bottom gutter and the page number landed at `29 - 35 = -6`; an iOS 26 iPad
+// reaches `32 - 35 = -3` the same way. `PAGE_LABEL_BAND` is the floor that
+// stops both.
+describe('getPageLabelOffsets — labels stay on the page (#475)', () => {
+  // `main.tsx` passes 0 for both heights when `USE_GLASS` is true (iOS 26+),
+  // and 60 otherwise. Those are the only two regimes that exist.
+  const CHROME = [0, 60];
+  // Plausible vertical safe-area shapes: none, a home indicator, a rotated
+  // notch, and an iPad's small inset.
+  const TOPS = [0, 8, 21, 44];
+  const BOTTOMS = [0, 8, 21, 34];
+
+  const shapes = (width: number, height: number, isTablet: boolean) => {
+    const out = [];
+    for (const chrome of CHROME) {
+      for (const top of TOPS) {
+        for (const bottom of BOTTOMS) {
+          out.push({
+            width,
+            height,
+            isTablet,
+            headerHeight: chrome,
+            toolbarHeight: chrome,
+            insets: {top, bottom, left: ISLAND, right: ISLAND},
+          });
+        }
+      }
+    }
+    return out;
+  };
+
+  const expectOnPage = (opts: ReturnType<typeof shapes>[number]) => {
+    const m = getMushafLayout(opts);
+
+    for (const isBookLayout of [true, false]) {
+      const {labelTop, pageNumberBottom} = getPageLabelOffsets(m, {
+        isBookLayout,
+        insetTop: opts.insets.top,
+      });
+      const where = `${JSON.stringify(opts.insets)} chrome=${opts.headerHeight} book=${isBookLayout}`;
+
+      expect([where, labelTop >= 0]).toEqual([where, true]);
+      expect([where, pageNumberBottom >= 0]).toEqual([where, true]);
+    }
+  };
+
+  it('phone landscape — every inset shape, both page layouts', () => {
+    for (const opts of shapes(W, H, false)) expectOnPage(opts);
+  });
+
+  it('phone portrait — every inset shape, both page layouts', () => {
+    for (const opts of shapes(H, W, false)) expectOnPage(opts);
+  });
+
+  it('tablet, both orientations — every inset shape, both page layouts', () => {
+    for (const opts of shapes(1366, 1024, true)) expectOnPage(opts);
+    for (const opts of shapes(1024, 1366, true)) expectOnPage(opts);
+  });
+
+  it('leaves the non-glass gutters untouched — they already clear the band', () => {
+    const nonGlass = {
+      width: W,
+      height: H,
+      isTablet: false,
+      headerHeight: 60,
+      toolbarHeight: 60,
+      insets: insets(ISLAND, ISLAND),
+    };
+    const m = getMushafLayout(nonGlass);
+
+    // 60 + 0 + 12 and 60 + 21 + 8 — the pre-#475 arithmetic verbatim.
+    expect(m.paddingTop).toBe(72);
+    expect(m.paddingBottom).toBe(89);
+  });
+
+  it('does not move a glyph — only the gutters deepen', () => {
+    const glass = {
+      width: W,
+      height: H,
+      isTablet: false,
+      headerHeight: 0,
+      toolbarHeight: 0,
+      insets: insets(ISLAND, ISLAND),
+    };
+    const nonGlass = {...glass, headerHeight: 60, toolbarHeight: 60};
+    const m = getMushafLayout(glass);
+
+    // fontSize and baseLineHeight come from contentWidth, never from the
+    // gutters, so deepening a gutter must not shift any text.
+    expect(m.contentWidth).toBe(getMushafLayout(nonGlass).contentWidth);
+    expect(m.baseLineHeight).toBe(getMushafLayout(nonGlass).baseLineHeight);
+    // The page already scrolls, so the extra gutter costs nothing.
+    expect(m.screenHeight).toBeGreaterThan(H);
+    expect(m.scrollContainerHeight).toBe(H);
   });
 });

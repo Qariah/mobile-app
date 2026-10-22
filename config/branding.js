@@ -6,12 +6,16 @@
  * fails the build if hardcoded "Bayaan" or "thebayaan.com" reappears anywhere
  * outside this file (or the explicit allowlist).
  *
+ * Config plugins must not load this file (upstream RFC-021 note, fca03eed):
+ * Qariah supplies runtime values here (components, providers) that Node
+ * cannot run. `app.config.ts` passes plain values to the plugins instead.
+ *
  * Shape conforms to upstream's `Branding` interface from RFC-007 (merge ebf37ea):
  * upstream's flat fields (appName, appSlug, urlScheme, bundleId, supportUrl,
  * termsUrl, privacyUrl, shareBaseUrl, emailProductName, catalog) are present
  * verbatim so PR #237's call-site changes drop in cleanly once merged. Qariah
- * extension fields (urls.home, urls.github, theme, assets, analytics, auth,
- * storageKeyPrefix, associatedDomain) live alongside.
+ * extension fields (urls.github, assets, storageKeyPrefix, associatedDomain
+ * and others) live alongside.
  *
  * **Why CommonJS, not TypeScript?** This file is loaded directly by Expo CLI
  * (`@expo/config` → `@expo/require-utils`) when evaluating `app.config.ts`.
@@ -36,17 +40,16 @@ const branding = {
   supportUrl: 'https://qariah.org/support',
   termsUrl: 'https://qariah.org/terms',
   privacyUrl: 'https://qariah.org/privacy',
-  // NOTE: shareBaseUrl is intentionally still on qariah.app while the rest of
-  // the URL surface moved to qariah.org (2026-05-27). It's the universal-link
-  // host for share-card deep links, which only resolves cleanly back into the
-  // app when the corresponding apple-app-site-association +
-  // Android assetlinks.json are served from this host. Flipping the host
-  // without serving those first would break deep-linking on every newly-
-  // shared card (graceful browser fallback, but still a regression for
-  // shared-card UX). Migration to app.qariah.org is tracked as TECH_DEBT
-  // entry — see TECH_DEBT.md "shareBaseUrl host migration qariah.app →
-  // qariah.org".
-  shareBaseUrl: 'https://app.qariah.app',
+  // shareBaseUrl moved to qariah.org on 2026-09-27 (TECH_DEBT #95). The old
+  // host app.qariah.app fell under a *.qariah.app DNS wildcard that points at
+  // a retired server, so every shared link was dead. No shipped build
+  // registered a link domain before associatedDomain was set (#516), so the
+  // move broke no deep link. qariah.org renders its
+  // home page (store buttons) for the four share paths /reciter, /quran,
+  // /mushaf and /adhkar (Qariah/qariah-landingpage#4); any other path is its
+  // 404 page. Old links on app.qariah.app need the Cloudflare Page Rule in
+  // docs/operations/owner-actions.json item "share-redirect".
+  shareBaseUrl: 'https://qariah.org',
   emailProductName: 'Qariah',
   catalog: {
     // RFC-007 fields:
@@ -89,8 +92,14 @@ const branding = {
 
   // ───────── Qariah extension fields ─────────
 
-  /** Universal-link host. Set when DNS + apple-app-site-association are wired up. */
-  associatedDomain: undefined,
+  /**
+   * Universal-link / App Links host (#516). The same host as shareBaseUrl, so a
+   * shared link opens the app when it is installed. qariah.org must serve
+   * /.well-known/apple-app-site-association and /.well-known/assetlinks.json
+   * (Qariah/qariah-landingpage) BEFORE a build with this value ships, or
+   * Android's one-time autoVerify fails for that install.
+   */
+  associatedDomain: 'qariah.org',
 
   /**
    * User-facing support contact email. Used by Settings → Support /
@@ -114,16 +123,11 @@ const branding = {
 
   /** Extra URLs beyond upstream's flat support/terms/privacy/share fields. */
   urls: {
-    home: 'https://qariah.org',
     github: 'https://github.com/Qariah',
   },
 
   /** AsyncStorage key prefix for user-data keys. */
   storageKeyPrefix: '@qariah',
-
-  theme: {
-    defaultPrimaryColor: 'Indigo',
-  },
 
   assets: {
     appIcon: {
@@ -155,10 +159,6 @@ const branding = {
     },
   },
 
-  analytics: {
-    posthogApiKeyEnvVar: 'EXPO_PUBLIC_POSTHOG_API_KEY',
-  },
-
   /**
    * Sprint 8 — Qariah-side aggregated stats published as static JSON to R2.
    * The publisher (`scripts/publish-trending-reciters.mjs`) queries PostHog
@@ -186,12 +186,11 @@ const branding = {
    * Single source of truth for which rows render and in what order. The
    * legacy `qariah*Row` feature flags are SUPERSEDED by this array as of
    * Sprint 15: each row's `enabled: true|false` reproduces the prior flag
-   * value verbatim. The flags themselves remain in `config/featureFlags.ts`
-   * as deprecation telegraphs for one observation sprint, then removed.
+   * value verbatim. Sprint 45 removed the row flags (TECH_DEBT #230).
    *
-   * Order matches the Sprint 13 product call (Continue → Rewaya → Country
-   * → Translations → Honored → Paradise → Newly Added → Full Recording →
-   * Favorites → Trending), with hidden rows appended at the end.
+   * The visible order (2026-10-20): Continue Listening → Newly Added
+   * Recitations → Rewaya → Country → Full Quran → Honored → Paradise, with
+   * hidden rows appended at the end.
    */
   homeRowConfig: [
     // ----- Visible rows -----
@@ -200,14 +199,20 @@ const branding = {
     // the TOP (matches Bayaan's canonical order + standard resume UX). Order is
     // the visual order on the Listen tab; auto-hide-on-empty applies —
     // continue-listening stays hidden until the user has play history, so a
-    // brand-new user still lands on the discovery rows; trending hides until
-    // its R2 JSON is populated.
+    // brand-new user still lands on the discovery rows. The owner turned the
+    // Trending This Week row off on 2026-10-18 (Sprint 48); its entry stays so
+    // the row can come back with one flag.
     {id: 'continue-listening', enabled: true}, // resume row — auto-hides until the first recitation plays
+    // Sprint 48: "Newly Added Recitations" lists recitations (the newest
+    // surahs by the catalog's `added_at`), not reciters. The reciter row stays
+    // registered, switched off, so it can come back with one flag. The owner
+    // moved the row up to the second place on 2026-10-20.
+    {id: 'newly-added', enabled: false},
+    {id: 'newly-added-recitations', enabled: true}, // Section title "Newly Added Recitations"; auto-hide while no recitation has an `added_at`
     {id: 'rewayat', enabled: true}, // Section title "Browse by Rewaya"
     {id: 'country', enabled: true}, // Section title "Browse by Country"
     {id: 'full-recording', enabled: true}, // Section title "Full Quran" (Sprint 26 rename from "Full Recording")
-    {id: 'trending', enabled: true}, // auto-hides on empty R2 JSON
-    {id: 'newly-added', enabled: true},
+    {id: 'trending', enabled: false}, // owner turned it off 2026-10-18 (Sprint 48); was auto-hide on empty R2 JSON
     {id: 'honored', enabled: true},
     {id: 'paradise', enabled: true},
     // ----- Hidden per user direction (Sprint 26 — translations + favorites) -----
@@ -317,44 +322,25 @@ const branding = {
   },
 
   /**
-   * Sprint 27 (S27.1) — Mushaf-tab inline "Community Reflections" fetcher.
+   * RFC-018 — community-reflections provider (upstream Bayaan #306, absorbed
+   * Sprint 45 Pass A). Sprint 27 (S27.1) added this field as a Qariah-only
+   * seam; upstream merged it into `Branding` with the `CommunityReflection`
+   * shape. `qariahCommunityReflectionsProvider` maps the QuranReflect feed
+   * (`listCommunityReflectionsByAyah`) onto that shape and caches one
+   * request per ayah for the inline card and the action-sheet popup.
    *
    * Lazy `require` keeps `app.config.ts`'s config-time `require` of this
-   * file from pulling in `services/userState/communityReflections`'s SDK
-   * dependency chain (which transitively imports RN-only modules and
-   * would crash Expo CLI at Node config-time). Pattern matches
-   * `initialPlayerVerseKey` above and `listenTabTopComponent` below
-   * (Sprint 24 standing rule #2). Runtime callers
-   * (`<AyahCommunityReflections />`) hit the field after the bundler
-   * has loaded the full RN module graph, so the require resolves cleanly.
-   *
-   * See `services/userState/communityReflections.ts` for the bracket-array
-   * filter shape the underlying call uses.
+   * file from pulling in the QF SDK chain (RN-only modules crash Expo CLI
+   * at Node config-time). Pattern matches `initialPlayerVerseKey` above and
+   * `listenTabTopComponent` below (Sprint 24 standing rule #2).
    */
-  communityReflectionsProvider: (chapterId, verseNumber, locale) => {
+  communityReflectionsProvider: (surahNumber, ayahNumber, locale) => {
     const {
-      listCommunityReflectionsByAyah,
-    } = require('../services/userState/communityReflections');
-    return listCommunityReflectionsByAyah(chapterId, verseNumber, locale);
+      qariahCommunityReflectionsProvider,
+    } = require('../services/userState/communityReflectionsProvider');
+    return qariahCommunityReflectionsProvider(surahNumber, ayahNumber, locale);
   },
 
-  auth: {
-    enabled: true,
-    provider: 'qf',
-    qfOAuthBaseUrl: 'https://oauth2.quran.foundation',
-    qfApiBaseUrl: 'https://apis.quran.foundation',
-    qfClientIdEnvVar: 'EXPO_PUBLIC_QF_CLIENT_ID',
-    qfClientSecretEnvVar: 'QF_CLIENT_SECRET',
-    scopes: [
-      'openid',
-      'offline_access',
-      'user',
-      'collection',
-      'content',
-      'post.read',
-      'comment.read',
-    ],
-  },
   // NOTE: A second `homeRowConfig` literal previously sat here (Bayaan's
   // hardcoded 12-row default, carried in from an upstream merge). JavaScript
   // object-literal duplicate-key semantics meant THIS later block silently
@@ -389,6 +375,26 @@ Object.defineProperty(branding, 'listenTabTopComponent', {
   configurable: true,
   get() {
     return require('../components/hero/ListenTabTopGrid').ListenTabTopGrid;
+  },
+});
+
+/**
+ * RFC-018 — inline community-reflections render slot (upstream Bayaan #306,
+ * absorbed Sprint 45 Pass A). Upstream's `<AyahCommunityReflections />`
+ * wrapper mounts this under the Arabic line in `VerseItem` when the provider
+ * is wired and the reader's `showCommunityReflections` toggle is on. Qariah's
+ * card shows the top QuranReflect reflection plus a "View N more" link.
+ *
+ * A getter for the same reason as `listenTabTopComponent` above: the
+ * component imports React-Native modules, so the `require()` must run on
+ * field access at runtime, never at `app.config.ts` config time.
+ */
+Object.defineProperty(branding, 'ayahCommunityReflectionsComponent', {
+  enumerable: true,
+  configurable: true,
+  get() {
+    return require('../components/mushaf/QuranReflectAyahReflections')
+      .QuranReflectAyahReflections;
   },
 });
 

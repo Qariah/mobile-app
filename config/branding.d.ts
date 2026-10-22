@@ -3,9 +3,8 @@
  *
  * Extends upstream's `Branding` interface (RFC-007 onward) with Qariah-specific
  * fields. Upstream's shape is preserved verbatim so call-site changes drop in
- * cleanly on weekly sync. Everything else (urls.home, urls.github, theme,
- * assets, analytics, auth, storageKeyPrefix, associatedDomain)
- * is a Qariah-only extension.
+ * cleanly on weekly sync. Everything else (urls.github, assets,
+ * storageKeyPrefix, associatedDomain and others) is a Qariah-only extension.
  *
  * Values live in `branding.js` (CJS, runtime-loadable from app.config.ts).
  * This file gives TypeScript callers literal-narrow types.
@@ -15,7 +14,7 @@ import type {ComponentType} from 'react';
 import type {Track} from '@/types/audio';
 import type {TranslationProvider} from '@/types/TranslationProvider';
 import type {TafsirProvider} from '@/types/TafsirProvider';
-import type {AyahReflection} from '@/services/userState/communityReflections';
+import type {CommunityReflectionsProvider} from '@/types/CommunityReflection';
 import type {AyahTimestamp} from '@/types/timestamps';
 
 /** Catalog source config (upstream RFC-007 shape, with Qariah `liveUrl` extension). */
@@ -36,7 +35,7 @@ export interface BrandingCatalogConfig {
  * `Branding.homeRowConfig`. Unknown ids are ignored (forward-compat for forks
  * that haven't been updated when a new row is added upstream).
  *
- * Qariah extends the upstream base set (12 ids, PR #260) with 8 fork-only ids
+ * Qariah extends the upstream base set (12 ids, PR #260) with 9 fork-only ids
  * covering its curated catalog surfaces.
  */
 export type HomeRowId =
@@ -60,6 +59,7 @@ export type HomeRowId =
   | 'honored'
   | 'paradise'
   | 'newly-added'
+  | 'newly-added-recitations'
   | 'full-recording'
   | 'trending'
   | 'most-played';
@@ -245,6 +245,54 @@ export interface Branding {
    */
   tafsirProvider?: TafsirProvider;
   /**
+   * RFC-018 — optional fetcher for community-authored reflections on an
+   * ayah. Paired with `ayahCommunityReflectionsComponent` below.
+   *
+   * `undefined` (Bayaan default) → the entire community-reflections
+   * surface is off: the Mushaf-settings toggle row never renders, the
+   * inline slot returns nothing, and the action-sheet row is hidden.
+   * A fork supplies a provider (e.g. Qariah's QuranReflect-backed
+   * fetcher) to light it up without forking the verse-render path.
+   *
+   * Resolves to a possibly-empty array of reflections for the
+   * (surahNumber, ayahNumber). The provider owns filtering/sorting and
+   * caching — the consuming component calls it freely. Throws/rejects on
+   * network or auth/scope errors; the consumer renders an empty/error
+   * state silently.
+   *
+   * See docs/rfcs/018-community-reflections-provider.md.
+   */
+  communityReflectionsProvider?: CommunityReflectionsProvider;
+  /**
+   * RFC-018 — optional render slot (RFC-008 component-slot pattern)
+   * mounted under the Arabic line in the verse list when the user's
+   * `MushafSettingsStore.showCommunityReflections` toggle is on.
+   *
+   * `undefined` (Bayaan default) → nothing renders even if
+   * `communityReflectionsProvider` is set (a fork can supply data
+   * without inline UI, e.g. to power only the action-sheet popup). The
+   * upstream default-noop `<AyahCommunityReflections />` wrapper checks
+   * this field and returns null when unset, so mounting it in `VerseItem`
+   * is free for Bayaan.
+   *
+   * The component is responsible for calling
+   * `communityReflectionsProvider` itself (provider-internal caching is
+   * what keeps that from being a second fetch). It runs per-ayah on a
+   * recycling FlashList, so it must be non-blocking and tolerate rapid
+   * mount/unmount/key churn; the upstream wrapper additionally guards it
+   * with an error boundary at the mount site.
+   *
+   * Props start at `{surahNumber, ayahNumber}` only; future additions
+   * (theme context, an open-popup callback) must default to optional so
+   * existing implementations keep compiling.
+   *
+   * See docs/rfcs/018-community-reflections-provider.md.
+   */
+  ayahCommunityReflectionsComponent?: ComponentType<{
+    surahNumber: number;
+    ayahNumber: number;
+  }>;
+  /**
    * RFC-014 — strategy for wiring the player Mushaf FlashList's scroll
    * handling.
    *
@@ -279,6 +327,17 @@ export interface Branding {
    * See docs/rfcs/015-timestamp-cdn-seam.md.
    */
   timestampCdnBase?: string;
+  /**
+   * Base URL for the surah cards CarPlay, Android Auto and the native widgets
+   * show, laid out as `{base}{surahId}.png` (dark) and
+   * `{base}{surahId}-light.png` (light; car only). Follows the RFC-015
+   * pattern; RFC-021 extended it to the widgets.
+   *
+   * Field absent → `'https://cdn.thebayaan.com/assets/car/surah/'`.
+   * Must be https; a trailing slash is optional. A non-https value falls
+   * back to the default (see utils/surahArtworkBase.ts).
+   */
+  surahArtworkCdnBase?: string;
   /**
    * RFC-019 — optional provider for **bundled** ayah-timing data, for forks
    * that ship their own offline-authored timestamps for a reciter rather than
@@ -359,16 +418,11 @@ export interface QariahBranding extends Branding {
 
   /** Extra URLs beyond upstream's flat support/terms/privacy/share fields. */
   urls: {
-    readonly home: string;
     readonly github: string;
   };
 
   /** AsyncStorage key prefix for user-data keys. */
   storageKeyPrefix: string;
-
-  theme: {
-    readonly defaultPrimaryColor: string;
-  };
 
   assets: {
     readonly appIcon: {
@@ -390,10 +444,6 @@ export interface QariahBranding extends Branding {
       readonly backgroundColor: string;
       readonly backgroundColorDark: string;
     };
-  };
-
-  analytics: {
-    readonly posthogApiKeyEnvVar: string;
   };
 
   /** Sprint 8 — pre-aggregated stats served as static JSON from R2. */
@@ -427,45 +477,9 @@ export interface QariahBranding extends Branding {
   // to upstream `Branding` via PRs #285 / #286 (absorbed Sprint 27). Both
   // declarations retired here; values still set in `branding.js`.
 
-  /**
-   * Sprint 27 — fork-supplied community-reflections fetcher used by the
-   * Mushaf-tab inline "Community Reflections" toggle
-   * (`store/mushafSettingsStore.showCommunityReflections`). Called per
-   * verse render when the toggle is on AND the user is authenticated;
-   * `undefined` keeps the toggle off entirely (Bayaan upstream has no
-   * community surface to plug in here).
-   *
-   * Resolves to an array (possibly empty) of verified, popular reflections
-   * for the given (chapterId, verseNumber). Caller is responsible for
-   * caching — the seam expects to be called freely. Throws/rejects on
-   * network or scope errors; the consuming subcomponent renders an
-   * empty/error state silently.
-   *
-   * `locale` should match the user's translation preference (`en`, `ar`,
-   * `id`, …) — the impl combines `${locale},en` to surface English
-   * fallbacks when the local-language pool is sparse. `undefined` defaults
-   * to `'en'`.
-   *
-   * Lives on `QariahBranding` (not base `Branding`) because Bayaan has no
-   * QF/QuranReflect integration today. If/when Bayaan opts in, this lifts
-   * to upstream as an RFC the same way RFC-009 lifted translation/tafsir
-   * providers.
-   */
-  communityReflectionsProvider?: (
-    chapterId: number,
-    verseNumber: number,
-    locale?: string,
-  ) => Promise<AyahReflection[]>;
-
-  auth: {
-    readonly enabled: boolean;
-    readonly provider: 'qf';
-    readonly qfOAuthBaseUrl: string;
-    readonly qfApiBaseUrl: string;
-    readonly qfClientIdEnvVar: string;
-    readonly qfClientSecretEnvVar: string;
-    readonly scopes: readonly string[];
-  };
+  // RFC-018 (communityReflectionsProvider, ayahCommunityReflectionsComponent)
+  // lifted to upstream `Branding` via Bayaan #306 (absorbed Sprint 45 Pass A).
+  // The Sprint 27 fork-only declaration is retired; values set in `branding.js`.
 }
 
 declare const branding: QariahBranding;

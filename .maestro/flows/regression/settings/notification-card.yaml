@@ -1,0 +1,95 @@
+# NTF-11 (Android) and NTF-08 (iOS, the card only) — after the first completed play, the
+# notification card lists the five notification types.
+#
+# The card is components/notifications/NotificationSoftPrompt.tsx; the rules are
+# services/notifications/softPrompt.ts. Android: the card asks for nothing ("Choose
+# notifications" opens Settings → Notifications, "OK" closes it), and it shows only while the
+# notifications are on. The onboarding subflow taps "Allow" on the Android 13+ system dialog of
+# the first launch, so they are on. iOS: the card has "Allow" and "Not now"; this flow taps
+# "Not now", because "Allow" opens the system dialog (NTF-08 covers it by hand).
+#
+# The play: Listen → Surahs → search "Kawthar" → Al-Kawthar (a short surah) → A'tii Qah Suhaimi. The card shows
+# when the track ends (`playback_completed`), so the wait is long on a slow emulator.
+#
+# Holdout: the PostHog flag `local_notifications_holdout` puts 15% of users in the holdout, and
+# a release build treats an unknown arm as the holdout (services/notifications/holdout.ts).
+# `clearState` removes the stored arm. When no card shows, the flow logs "NTF-11 SKIPPED" and
+# ends: that is correct behaviour for a holdout arm. Run the flow again (as in
+# settings/notifications.yaml).
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+  - notifications
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Listen'
+- tapOn: 'Surahs'
+# Search: a scroll to surah 108 takes more than 60 s on the emulator. The query is "Kawthar",
+# so the field text does not match the card selector ".*Al-Kawthar.*".
+- tapOn: 'Search surahs.*'
+- inputText: 'Kawthar'
+- hideKeyboard
+- tapOn: '.*Al-Kawthar.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: ".*Qah Suhaimi.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# 1. The play ends; the card shows (not for a holdout arm).
+- extendedWaitUntil:
+    visible: '.*Notifications from Qariah.*'
+    timeout: 240000
+    optional: true
+- runFlow:
+    when:
+      notVisible: '.*Notifications from Qariah.*'
+    commands:
+      - evalScript: ${console.log('NTF-11 SKIPPED - no card after the play (holdout or unknown arm); run the flow again')}
+
+# 2. The card lists the five types and the footer.
+- runFlow:
+    when:
+      visible: '.*Notifications from Qariah.*'
+    commands:
+      - assertVisible: '.*New from reciters you follow.*'
+      - assertVisible: '.*New recitations.*'
+      - assertVisible: '.*Friday Al-Kahf reminder.*'
+      - assertVisible: '.*Continue listening.*'
+      - assertVisible: '.*New features.*'
+      - assertVisible: '.*You choose which ones you get in Settings.*'
+
+# 3a. Android: "Choose notifications" opens the Notifications page. No permission dialog.
+- runFlow:
+    when:
+      platform: Android
+      visible: '.*Notifications from Qariah.*'
+    commands:
+      - assertVisible:
+          id: 'notification-soft-prompt-ok'
+      - assertNotVisible:
+          id: 'notification-soft-prompt-allow'
+      - tapOn:
+          id: 'notification-soft-prompt-choose'
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-kahf_friday'
+          timeout: 10000
+      - assertNotVisible: '.*Notifications from Qariah.*'
+      # The play opened the full player; the card closes it, so the page is on top. (The
+      # switches are in the view tree under an open sheet too, so check the player itself.)
+      - assertNotVisible:
+          id: 'player-queue-button'
+
+# 3b. iOS: "Not now" closes the card.
+- runFlow:
+    when:
+      platform: iOS
+      visible: '.*Notifications from Qariah.*'
+    commands:
+      - tapOn:
+          id: 'notification-soft-prompt-not-now'
+      - assertNotVisible: '.*Notifications from Qariah.*'

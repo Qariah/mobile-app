@@ -12,9 +12,14 @@ import {
   SeekForwardIcon,
   SeekBackwardIcon,
 } from '@/components/Icons';
+// @ai-start
+import {localizeDigits} from '@/i18n/format';
+import {forceLTR} from '@/utils/rtl';
+// @ai-end
 
 const SEEK_INTERVAL = 15; // seconds
 
+// @ai-start
 export const Controls = () => {
   const {theme} = useTheme();
   const {play, pause, skipToNext, skipToPrevious, seekTo} = usePlayerActions();
@@ -43,6 +48,12 @@ export const Controls = () => {
       } else {
         await pause();
       }
+      // @ai Re-sync with the store. play() can return with no audio (an early
+      // tap that got no player) and no state change, so the effect below does
+      // not run and the button would stay on Pause.
+      setOptimisticIsPlaying(
+        usePlayerStore.getState().playback.state === 'playing',
+      );
     } catch (error) {
       // Revert optimistic update on error
       setOptimisticIsPlaying(!newIsPlaying);
@@ -78,7 +89,7 @@ export const Controls = () => {
   const isLastTrack = currentIndex === tracksLength - 1;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, forceLTR]}>
       <Pressable
         onPress={handleSeekBackward}
         disabled={trackLoading}
@@ -99,7 +110,7 @@ export const Controls = () => {
                   : theme.colors.text,
               },
             ]}>
-            {SEEK_INTERVAL}
+            {localizeDigits(SEEK_INTERVAL)}
           </Text>
         </View>
       </Pressable>
@@ -157,13 +168,14 @@ export const Controls = () => {
                   : theme.colors.text,
               },
             ]}>
-            {SEEK_INTERVAL}
+            {localizeDigits(SEEK_INTERVAL)}
           </Text>
         </View>
       </Pressable>
     </View>
   );
 };
+// @ai-end
 
 const styles = StyleSheet.create({
   container: {

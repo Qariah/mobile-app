@@ -42,9 +42,12 @@ import {isV1RestoreDone} from '@/services/userState/v1Restore';
 import {ImportConfirmModal} from '@/components/auth/ImportConfirmModal';
 import {useBottomInset} from '@/hooks/useBottomInset';
 import * as Sentry from '@sentry/react-native';
+import {useTranslation} from 'react-i18next';
+import {flipX, latinLetterSpacing} from '@/utils/rtl';
 
 export default function YourDataScreen() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'common']);
   const styles = useMemo(() => createStyles(theme), [theme]);
   const glassColorScheme = useGlassColorScheme();
   const {status} = useAuth();
@@ -74,11 +77,15 @@ export default function YourDataScreen() {
     setExporting(true);
     try {
       const result = await exportAndShare();
-      showToast('Export ready', `${result.filename}`, 'done');
+      showToast(t('qariah:data.exportReady'), `${result.filename}`, 'done');
     } catch (e) {
+      // The technical detail goes to Sentry; the user gets one sentence.
       Sentry.captureException(e, {tags: {scope: 'export-share'}});
-      const msg = e instanceof Error ? e.message : 'unknown error';
-      showToast("Couldn't export", msg.slice(0, 80), 'error');
+      showToast(
+        t('qariah:data.exportFailed'),
+        t('qariah:data.genericError'),
+        'error',
+      );
     } finally {
       setExporting(false);
     }
@@ -97,10 +104,10 @@ export default function YourDataScreen() {
         case 'read-error':
         case 'schema-error':
           showToast(
-            'Invalid file',
+            t('qariah:data.invalidFile'),
             result.kind === 'schema-error'
-              ? "This doesn't look like a Qariah export"
-              : 'Could not read the file',
+              ? t('qariah:data.notQariahExport')
+              : t('qariah:data.cannotRead'),
             'error',
           );
           break;
@@ -108,8 +115,8 @@ export default function YourDataScreen() {
     } catch (e) {
       Sentry.captureException(e, {tags: {scope: 'import-pick'}});
       showToast(
-        "Couldn't open file",
-        e instanceof Error ? e.message : 'unknown',
+        t('qariah:data.cannotOpen'),
+        t('qariah:data.genericError'),
         'error',
       );
     } finally {
@@ -128,16 +135,22 @@ export default function YourDataScreen() {
         // false explanation. This screen is where the restore flow sends
         // people to retry, so it must not report the failure as a no-op.
         showToast(
-          "Couldn't save your surah favorites",
-          'Your device may be out of storage. Free up space and try again',
+          t('qariah:data.surahFavoritesNotSaved'),
+          t('qariah:data.outOfStorageRetry'),
           'error',
         );
       } else {
         showToast(
-          'Import complete',
+          t('qariah:data.importComplete'),
           total > 0
-            ? `${r.recitersAdded} reciters, ${r.recitationsAdded} recitations, ${r.surahsAdded} surahs added`
-            : 'Nothing new to add',
+            ? t('qariah:data.importAdded', {
+                reciters: t('qariah:counts.reciters', {count: r.recitersAdded}),
+                recitations: t('qariah:counts.recitations', {
+                  count: r.recitationsAdded,
+                }),
+                surahs: t('qariah:counts.surahs', {count: r.surahsAdded}),
+              })
+            : t('qariah:data.nothingNew'),
           'done',
         );
       }
@@ -145,8 +158,8 @@ export default function YourDataScreen() {
     } catch (e) {
       Sentry.captureException(e, {tags: {scope: 'import-commit'}});
       showToast(
-        "Couldn't import",
-        e instanceof Error ? e.message : 'unknown',
+        t('qariah:data.importFailed'),
+        t('qariah:data.genericError'),
         'error',
       );
     } finally {
@@ -162,7 +175,11 @@ export default function YourDataScreen() {
       setRestoreDone(true);
     } catch (e) {
       Sentry.captureException(e, {tags: {scope: 'v1-restore-retry'}});
-      showToast("Couldn't check for v1 data", 'Try again later', 'error');
+      showToast(
+        t('qariah:data.v1CheckFailed'),
+        t('qariah:data.tryLater'),
+        'error',
+      );
     } finally {
       setRetryingRestore(false);
     }
@@ -188,14 +205,12 @@ export default function YourDataScreen() {
           styles.scrollContent,
           {paddingBottom: bottomInset + moderateScale(40)},
         ]}>
-        <Text style={styles.intro}>
-          Your favorites and listening history live on this device. Use Export
-          to save a backup or move data to another device, and Import to load a
-          backup.
-        </Text>
+        <Text style={styles.intro}>{t('qariah:data.intro')}</Text>
 
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>BACKUP</Text>
+          <Text style={styles.sectionHeader}>
+            {t('qariah:data.backupSection')}
+          </Text>
           {renderCard(
             <Pressable
               style={({pressed}) => [styles.row, pressed && styles.pressed]}
@@ -213,14 +228,14 @@ export default function YourDataScreen() {
                 )}
               </View>
               <View style={styles.textContainer}>
-                <Text style={styles.title}>Export my data</Text>
+                <Text style={styles.title}>{t('qariah:data.export')}</Text>
                 <Text style={styles.description}>
-                  Save a JSON backup of your favorites, last-played, and
-                  preferences
+                  {t('qariah:data.exportDesc')}
                 </Text>
               </View>
               <Feather
                 name="chevron-right"
+                style={flipX}
                 size={moderateScale(16)}
                 color={theme.colors.textSecondary}
               />
@@ -229,7 +244,9 @@ export default function YourDataScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>RESTORE</Text>
+          <Text style={styles.sectionHeader}>
+            {t('qariah:data.restoreSection')}
+          </Text>
           {renderCard(
             <>
               <Pressable
@@ -248,13 +265,14 @@ export default function YourDataScreen() {
                   )}
                 </View>
                 <View style={styles.textContainer}>
-                  <Text style={styles.title}>Import from file</Text>
+                  <Text style={styles.title}>{t('qariah:data.import')}</Text>
                   <Text style={styles.description}>
-                    Load a backup, or restore data sent to you by Qariah support
+                    {t('qariah:data.importDesc')}
                   </Text>
                 </View>
                 <Feather
                   name="chevron-right"
+                  style={flipX}
                   size={moderateScale(16)}
                   color={theme.colors.textSecondary}
                 />
@@ -284,17 +302,18 @@ export default function YourDataScreen() {
                     <View style={styles.textContainer}>
                       <Text style={styles.title}>
                         {restoreDone
-                          ? 'Re-check Qariah v1 account'
-                          : 'Restore from Qariah v1 account'}
+                          ? t('qariah:data.recheckV1')
+                          : t('qariah:data.restoreV1')}
                       </Text>
                       <Text style={styles.description}>
                         {restoreDone
-                          ? 'Pull favorites from the original Qariah app again'
-                          : 'Check the original Qariah app for your saved favorites'}
+                          ? t('qariah:data.recheckV1Desc')
+                          : t('qariah:data.restoreV1Desc')}
                       </Text>
                     </View>
                     <Feather
                       name="chevron-right"
+                      style={flipX}
                       size={moderateScale(16)}
                       color={theme.colors.textSecondary}
                     />
@@ -342,7 +361,7 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(10.5),
       fontFamily: 'Manrope-SemiBold',
       color: theme.colors.textSecondary,
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2),
       textTransform: 'uppercase',
       marginBottom: moderateScale(6),
       marginLeft: moderateScale(2),

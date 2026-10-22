@@ -40,6 +40,12 @@ import {withQfCall} from './qfErrors';
 import * as Auth from '@/services/auth/qfOAuth';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
 import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
+import {ensureAccountVerified} from './accountCleanup'; // @ai
+import {
+  getPendingPostDeleteIds,
+  hafsVerseOfAnchor,
+  retryPendingPostDeletes,
+} from './notesSync'; // @ai
 
 interface QrPostReference {
   chapterId?: number | string;
@@ -166,8 +172,23 @@ export type SyncOutcome =
  */
 export async function syncQfPostsToLocal(): Promise<SyncOutcome> {
   if (!(await Auth.isSignedIn())) return {kind: 'no-auth'};
+  // @ai-start
+  // M4 (TECH_DEBT #244) — a different account's QF-linked notes must leave
+  // the device before this account's posts arrive.
+  const account = await ensureAccountVerified();
+  if (account.kind === 'no-auth') return {kind: 'no-auth'};
+  if (account.kind === 'error') {
+    return {kind: 'error', detail: `account check: ${account.detail}`};
+  }
+  // @ai-end
 
   try {
+    // @ai-start
+    // H3 (TECH_DEBT #244) — delete again the old posts of edited or deleted
+    // reflections whose delete failed, and never bring those posts back.
+    await retryPendingPostDeletes(account.accountHash);
+    const toDelete = new Set(await getPendingPostDeleteIds());
+    // @ai-end
     const posts = await fetchAllMyPosts();
     if (posts.length === 0) {
       return {kind: 'ok', matched: 0, created: 0, alreadyLinked: 0};
@@ -186,6 +207,7 @@ export async function syncQfPostsToLocal(): Promise<SyncOutcome> {
     for (const post of posts) {
       try {
         const postId = String(post.id);
+        if (toDelete.has(postId)) continue; // @ai — H3: queued for delete
         if (byPostId.has(postId)) {
           alreadyLinked += 1;
           continue;
@@ -204,7 +226,9 @@ export async function syncQfPostsToLocal(): Promise<SyncOutcome> {
         // reflections like "Subhanallah".
         const candidates = allNotes.filter(
           n =>
-            n.verseKey === verseKey &&
+            // A note on part of a split Hafs verse is anchored at a word
+            // ("S:A:W"); QF posts name the whole verse. // @ai
+            hafsVerseOfAnchor(n.verseKey) === verseKey &&
             !n.qfPostId &&
             (n.content ?? '').trim() === body,
         );

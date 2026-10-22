@@ -52,7 +52,7 @@
 #
 # 6. HONOUR THE SAME PATH OVERRIDES THE REST OF THE TOOLCHAIN USES. Every other
 #    consumer resolves these as "$ENV_VAR, else the default path"
-#    (android-upload-play.sh:104, play-reviews-triage.mjs:74,
+#    (android-upload-play.sh SA_JSON, play-reviews-triage.mjs:74,
 #    android/app/build.gradle:126). A backup that only knows the default reports
 #    MISSING for a secret that publishing uses happily every day — both a false
 #    alarm and, worse, training to ignore a real one. Same shape as rule 2: an

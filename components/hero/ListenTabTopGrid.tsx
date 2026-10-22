@@ -45,7 +45,7 @@ import Animated, {
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {createTracksForReciter} from '@/utils/track';
-import {getMultipleRandomTracks} from '@/utils/randomRecitation';
+import {pickRandomRecitations} from '@/utils/randomRecitation';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {Theme} from '@/utils/themeUtils';
 import {
@@ -53,6 +53,9 @@ import {
   MESH_PALETTES,
 } from '@/components/hero/SurahGradientMesh';
 import {SESSION_SEED, pickHeroTheme} from '@/components/hero/heroThemes';
+import {useTranslation} from 'react-i18next';
+import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
+import {latinLetterSpacing} from '@/utils/rtl';
 
 const RECITERS_ACCENT = '#2f5059'; // Sage/Teal — Qariah brand
 const SURAHS_ACCENT = '#5645a1'; // lightColors.accent (purple)
@@ -116,6 +119,7 @@ function Tile({iconName, iconColor, label, onPress, href}: TileProps) {
 
 export function ListenTabTopGrid() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah', 'home']);
   const {updateQueue, play} = usePlayerActions();
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -145,53 +149,37 @@ export function ListenTabTopGrid() {
   const handleShuffle = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      showToast('Finding random recitations from different reciters...');
+      showToast(t('qariah:listenTop.finding'));
 
-      const randomTracks = await getMultipleRandomTracks(15, false);
-      if (randomTracks.length === 0) {
-        showToast('Failed to find random recitations. Please try again.');
+      const picks = pickRandomRecitations(15);
+      if (picks.length === 0) {
+        showToast(t('home:randomHero.findFailed'));
         return;
       }
 
-      const {reciter, surah} = randomTracks[0];
-      showToast(`Playing ${surah.name} by ${reciter.name}`);
+      const {reciter, surah, rewayatId} = picks[0];
+      showToast(
+        t('home:randomHero.playing', {
+          surah: getSurahDisplayName(surah),
+          reciter: getReciterDisplayName(reciter),
+        }),
+      );
 
-      const trackPromises = randomTracks.map(item => {
-        const availableRewayat = item.reciter.rewayat.filter(r =>
-          r.surah_list.includes(item.surah.id),
-        );
-        const rewayahToUse =
-          availableRewayat.length > 0
-            ? availableRewayat[
-                Math.floor(Math.random() * availableRewayat.length)
-              ]
-            : item.reciter.rewayat.reduce(
-                (prev, current) =>
-                  current.surah_total > prev.surah_total ? current : prev,
-                item.reciter.rewayat[0],
-              );
-        return createTracksForReciter(
-          item.reciter,
-          [item.surah],
-          rewayahToUse.id,
-        );
-      });
-
-      const trackBatches = await Promise.all(trackPromises);
+      const trackBatches = await Promise.all(
+        picks.map(item =>
+          createTracksForReciter(item.reciter, [item.surah], item.rewayatId),
+        ),
+      );
       const tracks = trackBatches.flat();
       await updateQueue(tracks, 0);
       await play();
 
-      const firstRewayah =
-        randomTracks[0].reciter.rewayat.filter(r =>
-          r.surah_list.includes(randomTracks[0].surah.id),
-        )[0] || randomTracks[0].reciter.rewayat[0];
-      await startNewChain(reciter, surah, 0, 0, firstRewayah.id);
+      await startNewChain(reciter, surah, 0, 0, rewayatId);
     } catch (error) {
       console.error('Error playing random recitation:', error);
-      showToast('Failed to play random recitation. Please try again.');
+      showToast(t('home:randomHero.playFailed'));
     }
-  }, [updateQueue, play, startNewChain]);
+  }, [updateQueue, play, startNewChain, t]);
 
   return (
     <View style={styles.card}>
@@ -205,25 +193,25 @@ export function ListenTabTopGrid() {
         viewBoxWidth={400}
         viewBoxHeight={180}
       />
-      <Text style={styles.eyebrow}>START LISTENING</Text>
-      <Text style={styles.title}>Browse by</Text>
+      <Text style={styles.eyebrow}>{t('qariah:listenTop.eyebrow')}</Text>
+      <Text style={styles.title}>{t('qariah:listenTop.title')}</Text>
       <View style={styles.tiles}>
         <Tile
           iconName="user"
           iconColor={RECITERS_ACCENT}
-          label="Reciters"
+          label={t('qariah:listenTop.reciters')}
           href="/(tabs)/(a.home)/browse-all"
         />
         <Tile
           iconName="book-open"
           iconColor={SURAHS_ACCENT}
-          label="Surahs"
+          label={t('qariah:listenTop.surahs')}
           href="/(tabs)/(a.home)/browse-all-surahs"
         />
         <Tile
           iconName="shuffle"
           iconColor={SHUFFLE_ACCENT}
-          label="Shuffle"
+          label={t('qariah:listenTop.shuffle')}
           onPress={handleShuffle}
         />
       </View>
@@ -246,7 +234,7 @@ const createStyles = (theme: Theme) =>
     eyebrow: {
       fontFamily: theme.fonts.bold,
       fontSize: moderateScale(11),
-      letterSpacing: 1.2,
+      letterSpacing: latinLetterSpacing(1.2),
       color: theme.colors.textSecondary,
       opacity: 0.65,
       marginHorizontal: moderateScale(4),
@@ -258,7 +246,7 @@ const createStyles = (theme: Theme) =>
       color: theme.colors.text,
       marginHorizontal: moderateScale(4),
       marginBottom: moderateScale(14),
-      letterSpacing: -0.3,
+      letterSpacing: latinLetterSpacing(-0.3),
     },
     tiles: {
       flexDirection: 'row',
@@ -296,6 +284,6 @@ const createTileStyles = (theme: Theme) =>
       fontFamily: theme.fonts.bold,
       fontSize: moderateScale(14),
       color: theme.colors.text,
-      letterSpacing: -0.1,
+      letterSpacing: latinLetterSpacing(-0.1),
     },
   });

@@ -1,5 +1,6 @@
 internal import Expo
 import React
+internal import BayaanCar
 import ReactAppDependencyProvider
 
 @main
@@ -21,11 +22,14 @@ class AppDelegate: ExpoAppDelegate {
     reactNativeFactory = factory
 
 #if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
+    // @bayaan-car scene bridge start
+    BayaanCarSceneBridge.shared.configure(
+      start: { hostWindow, extra in
+        let merged = (launchOptions ?? [:]).merging(extra) { _, new in new }
+        factory.startReactNative(withModuleName: "main", in: hostWindow, launchOptions: merged)
+      },
+      onWindow: { [weak self] hostWindow in self?.window = hostWindow })
+    // @bayaan-car scene bridge end
 #endif
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

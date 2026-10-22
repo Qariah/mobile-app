@@ -9,7 +9,7 @@
 // loop is still alive to run its timer — a hard native hang silences it. This
 // sentinel is the ONLY mechanism that survives a fully-wedged launch: it needs
 // nothing from the hung process except one synchronous MMKV write on the FIRST
-// line of prepare() (pre-await). If launch N never cleared it, launch N+1
+// line of bootApp() (services/appBoot.ts, pre-await). If launch N never cleared it, launch N+1
 // reports that N hung.
 //
 // REPORT-ONLY: this module writes/reads an MMKV flag and surfaces a signal on
@@ -20,7 +20,7 @@ import {createMMKV, type MMKV} from 'react-native-mmkv';
 
 // Lazy + GUARDED handle on the existing 'analytics' MMKV store (the same store
 // deviceId.ts opens successfully on real devices). This module runs at the very
-// FIRST line of prepare() — the app's earliest MMKV touch — so a module-level
+// FIRST line of bootApp() — the app's earliest MMKV touch — so a module-level
 // `createMMKV(...)` const would crash boot if MMKV's native init throws there.
 // It does on the iOS Simulator (no app-group container, unlike real iOS:
 // `MMKVPlatformContext.getAppGroupDirectory(...)` throws), which previously
@@ -57,12 +57,12 @@ interface PendingBoot {
 let firstContentMarked = false;
 
 // Captured synchronously inside markBootStarted (which runs on the first line of
-// prepare()). consumePreviousIncompleteBoot() reads + clears it once, after
+// bootApp()). consumePreviousIncompleteBoot() reads + clears it once, after
 // PostHog is connected, so the report has an analytics instance.
 let pendingFromLastLaunch: PendingBoot | null = null;
 
 /**
- * Call as the FIRST thing in prepare(), before any await. Writes the sentinel
+ * Call as the FIRST thing in bootApp(), before any await. Writes the sentinel
  * for THIS launch, and — if a sentinel from a PREVIOUS launch is still present —
  * stashes it so the previous incomplete boot can be reported once boot is far
  * enough along to emit telemetry.
@@ -111,7 +111,7 @@ export function markBootStep(step: string): void {
 
 /**
  * Mark that the cold-start DESTINATION screen actually rendered its content (not
- * just that prepare() finished + the splash hid). Process-once. Advances the
+ * just that bootApp() finished + the splash hid). Process-once. Advances the
  * furthest milestone past 'ready' so a wedge that dies on the restored screen's
  * spinner (the "won't open / spinner forever" class) is distinguishable from a
  * pre-'ready' wedge in the next-launch report. Does NOT clear the sentinel

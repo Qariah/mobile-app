@@ -31,6 +31,7 @@
  *   Reflection       — qfNoteId set,  qfPostId set    (visible on QuranReflect)
  */
 
+import * as Sentry from '@sentry/react-native'; // @ai
 import {getQfSdk} from '@/services/auth/sdkClient';
 import {withQfCall} from './qfErrors';
 
@@ -52,6 +53,8 @@ export interface QfNote {
 interface QfNotesListResponse {
   notes?: QfNote[];
   data?: QfNote[];
+  /** Cursor pagination. The SDK camelizes the response keys. // @ai */
+  pagination?: {endCursor?: string | null; hasNextPage?: boolean};
 }
 
 function unwrapList(res: unknown): QfNote[] {
@@ -102,12 +105,117 @@ export function verseKeysToRange(verseKeys: string[]): string {
   return `${verseKeys[0]}-${verseKeys[verseKeys.length - 1]}`;
 }
 
-export async function listNotes(): Promise<QfNote[]> {
-  return withQfCall('/notes', async () => {
-    const res = await getQfSdk().auth.v1.notes.list();
-    return unwrapList(res);
+// @ai-start
+/**
+ * Notes per page (the `limit` query param). The QF "Get all notes" page
+ * documents `limit` from 1 to 50 (default 20).
+ */
+const NOTES_PAGE_LIMIT = 50;
+/** Page cap: 100 pages x 50 = 5000 notes. It stops a loop on a bad cursor. */
+const NOTES_MAX_PAGES = 100;
+
+function readNextCursor(res: unknown): string | null {
+  if (!res || typeof res !== 'object') return null;
+  const p = (res as QfNotesListResponse).pagination;
+  if (!p?.hasNextPage) return null;
+  return typeof p.endCursor === 'string' && p.endCursor ? p.endCursor : null;
+}
+
+/** True when the page says that QF has more notes after it. */
+function hasMorePages(res: unknown): boolean {
+  if (!res || typeof res !== 'object') return false;
+  return (res as QfNotesListResponse).pagination?.hasNextPage === true;
+}
+
+/**
+ * The notes that one listing read. `complete` is false when QF said that more
+ * pages exist and the loop stopped anyway (no cursor, a cursor that does not
+ * move, or the page cap). A caller must not record such a listing as done.
+ */
+export interface QfNotesListing {
+  notes: QfNote[];
+  complete: boolean;
+}
+
+let reportedTruncation = false;
+
+function reportTruncation(reason: string, pages: number, notes: number): void {
+  if (__DEV__) {
+    console.warn(`[notes] listing stopped early (${reason}) after ${notes}`);
+  }
+  if (reportedTruncation) return;
+  reportedTruncation = true;
+  Sentry.captureMessage('qf-notes-list-truncated', {
+    level: 'warning',
+    tags: {scope: 'notes-restore', reason},
+    extra: {pages, notes},
+    fingerprint: ['qf-notes-list-truncated'],
   });
 }
+
+/**
+ * All the user's QF notes.
+ *
+ * TECH_DEBT #244 (Stage-2 review): `GET /auth/v1/notes` is cursor-paginated.
+ * The response carries `pagination.hasNextPage` / `endCursor`. The request
+ * params are `limit` and `cursor`:
+ *   - QF's own client, quran.com-frontend-next,
+ *     `src/utils/auth/types/Note/GetAllNotesQueryParams.ts`, types them as
+ *     `{cursor?, limit?, sortBy?, withAttachedEntities?}` for `GET notes`.
+ *   - The QF "Get all notes" page documents `limit` (1 to 50, default 20),
+ *     `cursor` and `sortBy`.
+ * The general `first` / `after` / `before` / `last` pagination section of the
+ * QF docs applies to other endpoints (for example bookmark collections), not
+ * to this one.
+ *
+ * Before this change one call read only the first page, so the notes
+ * restore lost the rest. Now the function sends `{limit}`, then
+ * `{limit, cursor: endCursor}` while `hasNextPage` is true. It stops at the
+ * page cap, at an empty page, or when a page adds no new note (a cursor that
+ * does not move).
+ */
+export async function listNotes(): Promise<QfNote[]> {
+  return (await listAllNotes()).notes;
+}
+
+/**
+ * `listNotes()` plus a completeness signal (see `QfNotesListing`). The notes
+ * restore uses it, so a truncated listing does not set the done flag.
+ */
+export async function listAllNotes(): Promise<QfNotesListing> {
+  const out: QfNote[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < NOTES_MAX_PAGES; page++) {
+    const query: {limit: number; cursor?: string} = cursor
+      ? {limit: NOTES_PAGE_LIMIT, cursor}
+      : {limit: NOTES_PAGE_LIMIT};
+    const res = await withQfCall('/notes', async () =>
+      getQfSdk().auth.v1.notes.list(query),
+    );
+    let added = 0;
+    for (const note of unwrapList(res)) {
+      if (seen.has(note.id)) continue;
+      seen.add(note.id);
+      out.push(note);
+      added += 1;
+    }
+    const next = readNextCursor(res);
+    if (!next || added === 0 || next === cursor) {
+      if (hasMorePages(res)) {
+        const reason = !next ? 'no-cursor' : 'stuck-cursor';
+        reportTruncation(reason, page + 1, out.length);
+        return {notes: out, complete: false};
+      }
+      return {notes: out, complete: true};
+    }
+    cursor = next;
+  }
+  // The page cap: the last page still said that more pages exist.
+  reportTruncation('page-cap', NOTES_MAX_PAGES, out.length);
+  return {notes: out, complete: false};
+}
+// @ai-end
 
 export async function listNotesByVerseKey(verseKey: string): Promise<QfNote[]> {
   return withQfCall(`/notes/by-verse/${verseKey}`, async () => {

@@ -27,17 +27,31 @@ import Color from 'color';
 import {useCollectionNativeHeader} from '@/hooks/useCollectionNativeHeader';
 import type {VerseNote} from '@/types/verse-annotations';
 import {isFeatureEnabled} from '@/config/featureFlags';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import i18n from '@/i18n';
+import {getSurahDisplayName} from '@/i18n/format';
+import {flipX} from '@/utils/rtl';
+import {describeSavedVerseNow} from '@/hooks/useSavedVerseDescription';
+import {savedVerseSubtitle} from '@/services/verse-annotations/unitAnnotations';
+import {
+  trackVerseNoteDeleted,
+  versesOfSaved,
+} from '@/services/analytics/verseAnnotationEvents'; // @ai TECH_DEBT #297
+// @ai-end
 
 interface NoteData {
   note: VerseNote;
   surahName: string;
 }
 
+// @ai-start
 const NotesScreen = () => {
   if (!isFeatureEnabled('verseNotes')) return null;
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const {t} = useTranslation(['collection', 'common', 'qariah']);
 
   // Sprint 21 round-3 — `?type=personal` or `?type=reflection` partitions
   // the list into the two collection surfaces (Personal Notes vs
@@ -47,9 +61,10 @@ const NotesScreen = () => {
   const viewMode: 'personal' | 'reflection' =
     params.type === 'reflection' ? 'reflection' : 'personal';
   const isReflectionView = viewMode === 'reflection';
-  const screenTitle = isReflectionView ? 'Reflections' : 'Personal Notes';
-  const noun = isReflectionView ? 'reflection' : 'note';
-  const nounPlural = isReflectionView ? 'reflections' : 'notes';
+  // @ai Qariah copy (Sprint 21 Personal Notes / Reflections split).
+  const screenTitle = isReflectionView
+    ? t('qariah:notes.reflections')
+    : t('qariah:notes.personalNotes');
 
   const [notes, setNotes] = useState<NoteData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +87,9 @@ const NotesScreen = () => {
         const surah = getSurahById(note.surahNumber);
         return {
           note,
-          surahName: surah?.name ?? `Surah ${note.surahNumber}`,
+          surahName: surah
+            ? getSurahDisplayName(surah)
+            : i18n.t('common:labels.surahNumber', {number: note.surahNumber}),
         };
       });
       setNotes(enriched);
@@ -122,6 +139,7 @@ const NotesScreen = () => {
     // because QF never received the delete (sprint-20 round-2 bug B).
     await syncDeleteToQf(note);
     await verseAnnotationService.deleteNoteById(note.id);
+    trackVerseNoteDeleted(versesOfSaved(note)); // @ai TECH_DEBT #297
     const remaining = await verseAnnotationService.getNotesCountForVerse(
       note.verseKey,
     );
@@ -143,8 +161,12 @@ const NotesScreen = () => {
           surahNumber: item.note.surahNumber,
           ayahNumber: item.note.ayahNumber,
           verseKeys: item.note.verseKeys,
-          rewayah: item.note.rewayahId,
           noteId: item.note.id,
+          // The note's own rewayah names its verses (decision 3): the sheet
+          // labels them at once instead of after loading the note. A legacy
+          // note without one is a Hafs note (verse-units contract section 3),
+          // labelled from the first render as before Release 1. @ai
+          rewayah: item.note.rewayahId ?? 'hafs',
         },
       });
     });
@@ -155,15 +177,20 @@ const NotesScreen = () => {
       SheetManager.show('collection-options', {
         payload: {
           title: item.surahName,
-          subtitle: `Ayah ${item.note.ayahNumber}`,
+          // @ai: the ayah in the numbering of the rewayah it was saved in
+          subtitle: savedVerseSubtitle(
+            describeSavedVerseNow(item.note),
+            item.note.ayahNumber,
+            number => t('common:labels.ayahNumber', {number}),
+          ),
           options: [
             {
-              label: 'Edit Note',
+              label: t('notesScreen.editNote'),
               icon: 'edit-2',
               onPress: () => handleNotePress(item),
             },
             {
-              label: 'Delete Note',
+              label: t('notesScreen.deleteNote'),
               icon: 'minus-circle',
               destructive: true,
               onPress: () => handleDeleteNote(item.note),
@@ -172,7 +199,7 @@ const NotesScreen = () => {
         },
       });
     },
-    [handleDeleteNote, handleNotePress],
+    [handleDeleteNote, handleNotePress, t],
   );
 
   const heroOuterBg = Color(theme.colors.textSecondary).alpha(0.1).toString();
@@ -202,7 +229,9 @@ const NotesScreen = () => {
               styles.headerSubtitle,
               {color: theme.colors.textSecondary},
             ]}>
-            {notes.length} {notes.length === 1 ? noun : nounPlural}
+            {isReflectionView
+              ? t('qariah:notes.countReflections', {count: notes.length})
+              : t('notesScreen.count', {count: notes.length})}
           </Text>
         </View>
       </View>
@@ -215,8 +244,7 @@ const NotesScreen = () => {
     heroInnerBg,
     isReflectionView,
     screenTitle,
-    noun,
-    nounPlural,
+    t,
   ]);
 
   const renderItem: ListRenderItem<NoteData> = ({item}) => (
@@ -249,10 +277,11 @@ const NotesScreen = () => {
                 name="arrow-left"
                 size={moderateScale(22)}
                 color={theme.colors.text}
+                style={flipX}
               />
             </Pressable>
             <Text style={[styles.emptyHeaderTitle, {color: theme.colors.text}]}>
-              Notes
+              {t('collectionScreen.notes')}
             </Text>
             <View style={styles.emptyHeaderBack} />
           </View>
@@ -260,7 +289,7 @@ const NotesScreen = () => {
         <View style={styles.emptyContent}>
           <Text
             style={[styles.loadingText, {color: theme.colors.textSecondary}]}>
-            Loading...
+            {t('common:status.loading')}
           </Text>
         </View>
       </View>
@@ -281,6 +310,7 @@ const NotesScreen = () => {
                 name="arrow-left"
                 size={moderateScale(22)}
                 color={theme.colors.text}
+                style={flipX}
               />
             </Pressable>
             <Text style={[styles.emptyHeaderTitle, {color: theme.colors.text}]}>
@@ -298,13 +328,15 @@ const NotesScreen = () => {
             />
           </View>
           <Text style={[styles.emptyTitle, {color: theme.colors.text}]}>
-            {isReflectionView ? 'No reflections yet' : 'No personal notes yet'}
+            {isReflectionView
+              ? t('qariah:notes.noReflections')
+              : t('qariah:notes.noPersonalNotes')}
           </Text>
           <Text
             style={[styles.emptySubtitle, {color: theme.colors.textSecondary}]}>
             {isReflectionView
-              ? 'Publish reflections from a verse long-press to share them on QuranReflect.'
-              : 'Add personal notes to verses to see them here.'}
+              ? t('qariah:notes.reflectionsHint')
+              : t('notesScreen.emptySubtitle')}
           </Text>
         </View>
       </View>
@@ -334,6 +366,7 @@ const NotesScreen = () => {
               name="arrow-left"
               size={moderateScale(24)}
               color={theme.colors.text}
+              style={flipX}
             />
           </Pressable>
         </RNAnimated.View>
@@ -359,6 +392,7 @@ const NotesScreen = () => {
     </View>
   );
 };
+// @ai-end
 
 export default NotesScreen;
 

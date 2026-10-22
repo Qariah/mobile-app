@@ -16,16 +16,19 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useRouter} from 'expo-router';
 import {moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
+import {useTranslation} from 'react-i18next';
+import {latinLetterSpacing} from '@/utils/rtl';
 
 export default function OnboardingWelcome() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah']);
   const router = useRouter();
 
   // S35.3 — onboarding funnel: the welcome screen is the first-run entry point.
   React.useEffect(() => {
-    analyticsService.trackOnboardingStarted({platform: Platform.OS});
-    analyticsService.trackOnboardingStepViewed({
+    qariahAnalytics.trackOnboardingStarted({platform: Platform.OS});
+    qariahAnalytics.trackOnboardingStepViewed({
       step: 'welcome',
       step_index: 0,
     });
@@ -37,14 +40,13 @@ export default function OnboardingWelcome() {
       edges={['top', 'bottom']}>
       <View style={styles.content}>
         <Text style={[styles.eyebrow, {color: theme.colors.textSecondary}]}>
-          Welcome to Qariah
+          {t('qariah:onboarding.welcomeTitle')}
         </Text>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          Hear the Qurʾan in her voice.
+          {t('qariah:onboarding.welcomeHeadline')}
         </Text>
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          The first Qurʾan app celebrating contemporary and historical women
-          reciters — bringing voices long unheard to a global audience.
+          {t('qariah:onboarding.welcomeBody')}
         </Text>
       </View>
       <View style={styles.footer}>
@@ -56,9 +58,9 @@ export default function OnboardingWelcome() {
             pressed && styles.ctaPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Get started">
+          accessibilityLabel={t('qariah:onboarding.getStarted')}>
           <Text style={[styles.ctaText, {color: theme.colors.background}]}>
-            Get started
+            {t('qariah:onboarding.getStarted')}
           </Text>
         </Pressable>
       </View>
@@ -80,7 +82,7 @@ const styles = StyleSheet.create({
   eyebrow: {
     fontSize: moderateScale(13),
     fontFamily: 'Manrope-SemiBold',
-    letterSpacing: 0.6,
+    letterSpacing: latinLetterSpacing(0.6),
     textTransform: 'uppercase',
   },
   title: {

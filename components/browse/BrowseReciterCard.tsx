@@ -10,6 +10,11 @@ import {GlassView} from 'expo-glass-effect';
 import {Link} from 'expo-router';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {getDisplayLabelFromName} from '@/services/rewayah/RewayahIdentity';
+// @ai-start
+import {isRTL, latinLetterSpacing} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next';
+import {getReciterDisplayName} from '@/i18n/format';
+// @ai-end
 
 interface BrowseReciterCardProps {
   reciter: Reciter;
@@ -22,6 +27,7 @@ interface BrowseReciterCardProps {
   rewayatId?: string;
 }
 
+// @ai-start
 function createStyles(theme: Theme, width: number, height: number) {
   return StyleSheet.create({
     container: {
@@ -51,7 +57,7 @@ function createStyles(theme: Theme, width: number, height: number) {
       fontSize: moderateScale(11),
       fontFamily: 'Manrope-SemiBold',
       color: theme.colors.text,
-      letterSpacing: -0.2,
+      letterSpacing: latinLetterSpacing(-0.2),
       lineHeight: moderateScale(14),
       includeFontPadding: false,
     },
@@ -67,6 +73,10 @@ function createStyles(theme: Theme, width: number, height: number) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: moderateScale(4),
+      // Qariah: the Arabic follow-along chip is about twice the English
+      // width, so in RTL the chip moves to its own line instead of cutting
+      // the rewayah label to one letter. English keeps one line.
+      ...(isRTL ? {flexWrap: 'wrap' as const} : null),
     },
     glassContainer: {
       borderWidth: 0,
@@ -77,7 +87,9 @@ function createStyles(theme: Theme, width: number, height: number) {
     },
   });
 }
+// @ai-end
 
+// @ai-start
 const BrowseReciterCard = React.memo(
   ({
     reciter,
@@ -89,6 +101,7 @@ const BrowseReciterCard = React.memo(
     rewayatId,
     showFollowAlong,
   }: BrowseReciterCardProps) => {
+    const {t} = useTranslation('home');
     const glassColorScheme = useGlassColorScheme();
     const styles = useMemo(
       () => createStyles(theme, width, height),
@@ -113,12 +126,14 @@ const BrowseReciterCard = React.memo(
 
         <View style={styles.contentContainer}>
           <Text style={styles.reciterName} numberOfLines={1}>
-            {reciter.name}
+            {getReciterDisplayName(reciter)}
           </Text>
           <View style={styles.secondaryRow}>
             <Text style={styles.reciterInfo} numberOfLines={1}>
               {uniqueRewayatNames.length > 1
-                ? `${uniqueRewayatNames.length} rewayat available`
+                ? t('reciterCard.rewayatAvailable', {
+                    count: uniqueRewayatNames.length,
+                  })
                 : getDisplayLabelFromName(reciter.rewayat[0]?.name)}
             </Text>
             {showFollowAlong && <FollowAlongBadge />}
@@ -168,6 +183,7 @@ const BrowseReciterCard = React.memo(
     prevProps.showFollowAlong === nextProps.showFollowAlong &&
     prevProps.onLongPress === nextProps.onLongPress,
 );
+// @ai-end
 
 BrowseReciterCard.displayName = 'BrowseReciterCard';
 

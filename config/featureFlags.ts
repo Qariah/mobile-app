@@ -8,9 +8,8 @@
  *
  * Conforms to upstream's RFC-007 feature-flag layer (merge ebf37ea): same
  * `featureFlags as const` shape + `FeatureFlag` keyof type + `isFeatureEnabled`
- * reader. Qariah extends with extra fork-only keys (qfAuth, qfUserStateSync,
- * ayahFollowAlong) — these widen the `FeatureFlag` union automatically via
- * `keyof typeof`.
+ * reader. Qariah extends it with extra fork-only keys, which widen the
+ * `FeatureFlag` union automatically via `keyof typeof`.
  *
  * Status legend on each flag:
  *   - `// v2`        — final state for v2 launch
@@ -63,41 +62,16 @@ export const featureFlags = {
   /** Sleep timer. Standard Quran-app feature. */
   sleepTimer: true, // v2
 
-  // ───────── Qariah-only features ─────────
+  // ───────── Home rows (Qariah-only) ─────────
 
-  /** QF OAuth sign-in flow. Upstream has no auth. */
-  qfAuth: true, // v2
-
-  /** Sync user state to QF user-data API. Restore-on-reinstall. */
-  qfUserStateSync: true, // v2
-
-  /** Ayah follow-along highlight. Works for reciters with timing data. */
-  ayahFollowAlong: true, // v2 (degrades gracefully when timing data is missing)
-
-  // ───────── Sprint 8 — feedback-driven home rows (Qariah-only) ─────────
-
-  /**
-   * Home-row: "Browse by Country/Region". Surfaces reciters grouped by
-   * `Reciter.country`. Hidden until the catalog has country values populated
-   * (planning/reciter-bios-template.csv is the source-of-truth; data ships
-   * via the catalog regen pipeline).
-   */
-  qariahCountryRow: true, // v2.x — Sprint 14: catalog now has country for all 63 reciters
-
-  /**
-   * Home-row: "Browse by Translation". Surfaces translations available in
-   * the app, keyed off the multi-translation feature. Hidden until
-   * translation metadata is curated for the home surface.
-   */
-  qariahTranslationsRow: false, // v2.x — flip to true once translation metadata is curated
-
-  // (Sprint 17 S17.7 — 11 dead qariah*Row flags removed after Sprint 15
-  // S15.1's `branding.homeRowConfig.enabled` became the sole driver for
-  // which home rows appear. Removed: qariahMostPlayedRow, qariahTrendingRow,
-  // qariahFollowAlongRow, qariahExclusivesRow, qariahExploreBySurahRow,
-  // qariahNewToQuranRow, qariahFeaturedRecitersRow, qariahYourPlaylistsRow,
-  // qariahBestForTajweedRow, qariahBestForMemorizationRow,
-  // qariahFromCollectionRow. Live row flags retained below.)
+  // Sprint 17 (S17.7) removed 11 qariah*Row flags and Sprint 45 (TECH_DEBT
+  // #230) removed the last 6: qariahCountryRow, qariahTranslationsRow,
+  // qariahHonoredRecitersRow, qariahParadiseRecitersRow, qariahNewlyAddedRow
+  // and qariahFullRecordingRow. `branding.homeRowConfig` (S15.1) is the only
+  // switch for a home row. Each flag only repeated its row's `enabled` value.
+  // Sprint 45 also removed qariahReciterFaceCollage: its only reader,
+  // `BrowseAllHero`, does not mount while `branding.listenTabTopComponent`
+  // is set, so the photo mosaic is now unconditional there.
 
   // ───────── Sprint 11 — Browse filter overrides (Qariah-only) ─────────
 
@@ -119,50 +93,12 @@ export const featureFlags = {
   // the component slot; rollback by setting branding's getter to return
   // `undefined`.
 
-  /**
-   * Home-row: "Honored Reciters". Curated collection of reciters in
-   * `HONORED_RECITER_NAMES` (data/reciterCollections.ts). Empty until
-   * the Sprint 13 curation CSV is filled and applied. Auto-hides when
-   * the resolved list is empty.
-   */
-  qariahHonoredRecitersRow: true, // v2 (auto-hides when empty)
-
-  /**
-   * Home-row: "Paradise Reciters". Curated collection — same pattern as
-   * Honored. Empty until curation lands.
-   */
-  qariahParadiseRecitersRow: true, // v2 (auto-hides when empty)
-
-  /**
-   * Home-row: "Newly Added". Filters `RECITERS` by `Reciter.date` within
-   * the last 30 days. Today's catalog has no reciters in that window;
-   * the row auto-hides when empty and populates as new reciters land via
-   * `scripts/generate-catalog.mjs`.
-   */
-  qariahNewlyAddedRow: true, // v2 (auto-hides when empty)
-
-  /**
-   * Home-row: "Full Recording". Reciters who have at least one rewayat
-   * covering all 114 surahs. Today the catalog has 2 (Hajjah Maria Ulfah
-   * and Zaynab Talha) — populates as catalog grows.
-   */
-  qariahFullRecordingRow: true, // v2 (auto-hides when empty)
-
-  /**
-   * `BrowseAllHero` background: when true, renders an animated mosaic of
-   * reciter photos pulled from `catalog.json` `image_url`; when false,
-   * falls back to the Sprint 0 colored-tile mosaic. Flag is the perf-
-   * degradation safety valve — flip to false if ~280 `<Image>` tiles
-   * drop frames on low-end devices.
-   */
-  qariahReciterFaceCollage: true, // v2 (fallback to colored tiles when false)
-
   // ───────── Sprint 30 — cold-start performance (Qariah-only) ─────────
 
   /**
    * Defer the Mushaf preload (DigitalKhatt SQLite + Skia typefaces + the RN-side
    * DigitalKhatt OTFs) OFF the splash-blocking init set. When true, the preload
-   * is fired non-awaited early in `app/_layout.tsx` `prepare()` so the Listen
+   * is fired non-awaited early in `bootApp()` (services/qariahBoot.ts) so the Listen
    * landing tab (which never touches the Mushaf font stack) is interactive
    * ~0.6s sooner on low-RAM devices (measured Pixel 3 A/B, flag on vs off; the
    * ceiling is set by the next-slowest non-critical init service, not Mushaf
@@ -183,9 +119,11 @@ export const featureFlags = {
    * upgrades to the live catalog in the background — instead of blocking the
    * splash on the live fetch (up to a 10s ceiling on a slow first launch). The
    * RFC-010 version poll + the background refresh converge to live data within a
-   * moment; the bundled catalog is regenerated each build so it is current as of
-   * the release. Warm launches are unaffected (already cache-first). Flip to
-   * false to restore the blocking first-launch fetch. TECH_DEBT #116.
+   * moment. Refresh the bundle before each release build with
+   * `node scripts/sync-bundled-catalog.mjs --apply`; the archive scripts warn
+   * when it differs from live (a Sprint 28 copy once missed a later reciter).
+   * Warm launches are unaffected (already cache-first). Flip to false to
+   * restore the blocking first-launch fetch. TECH_DEBT #116.
    * See planning/perf-audit-2026-06-04.md (B2).
    */
   bundleFirstCatalog: true, // v2 — Sprint 30 first-launch cold-start opt
@@ -229,6 +167,7 @@ export const featureFlags = {
    *      trim event after JS (gated by 1+2) calls `setEnabled(true)`.
    * See planning/s35.2-memory-probe-test-plan.md.
    */
+  // review-by: 2027-01-15 (TECH_DEBT #234) — remove if nobody reads the `memory-pressure` Sentry message
   memoryPressureProbe: true, // v2 — S35.2 report-only field probe; remote opt-in (applies on a later cold start)
 
   // ───────── Sprint 35 — cold-start performance (Qariah-only) ─────────
@@ -308,6 +247,7 @@ export const featureFlags = {
    * `cold_start_began` (see recordMainThreadStall). Flip to false to
    * hard-disable in the next build.
    */
+  // review-by: 2027-01-15 (TECH_DEBT #234) — remove if nobody reads the `main_thread_stalls` context or `prev_process_main_thread_stalls` on `cold_start_began`
   mainThreadWatchdog: true, // v2 — report-only; gated further by the diagnostics cohort
 
   // ───────── Playback-health telemetry (Qariah-only, report-only) ─────────
@@ -320,6 +260,7 @@ export const featureFlags = {
    * boolean flag `playback_health` (fails closed until it resolves to true).
    * Flip to false to hard-disable in the next build.
    */
+  // review-by: 2027-01-15 (TECH_DEBT #234) — remove if nobody reads the `playback_health_attempt`, `playback_health_first_audio` or `playback_health_no_audio` events
   playbackHealthTelemetry: true, // v2 — report-only; gated further by `playback_health`
 
   /**
@@ -327,12 +268,14 @@ export const featureFlags = {
    * boot splash. When active, the app window draws at once and a native
    * overlay keeps the splash look until the app is ready, so a BACK/VOLUME key
    * during a long boot no longer ANRs with "No focused window". Local
-   * hard-off: the runtime activation is ALSO gated by the PostHog boolean flag
-   * `nonblocking_splash` (fails closed; applies at the NEXT cold start because
-   * MainActivity reads it before JS runs). iOS is unaffected. Flip to false to
+   * hard-off: the runtime activation is ALSO gated by the PostHog multivariate
+   * flag `nonblocking_splash_v2` (only variant `treatment` arms; fails closed;
+   * applies at the NEXT cold start because MainActivity reads it before JS
+   * runs; only enrolled `boot_risk` devices get a variant — see
+   * services/bootSplash). iOS is unaffected. Flip to false to
    * hard-disable in the next build. See modules/qariah-boot-splash.
    */
-  nonBlockingSplash: true, // v2 — experiment; gated further by `nonblocking_splash`
+  nonBlockingSplash: true, // v2 — experiment; gated further by `nonblocking_splash_v2`
 } as const;
 
 export type FeatureFlag = keyof typeof featureFlags;

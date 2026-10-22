@@ -31,6 +31,7 @@ import {upsertReadingSession} from './readingSessions';
 import {addBookmark, deleteBookmark} from './bookmarks';
 import {createCollection, deleteCollection} from './collections';
 import {QfApiError, QfAuthRequiredError, isQfErrorRetryable} from './qfErrors';
+import {ensureAccountVerified} from './accountCleanup'; // @ai
 
 const RETRY_DELAYS_MS = [200, 800, 3200];
 
@@ -88,6 +89,16 @@ export async function flushSyncQueue(
       authPaused: false,
     };
     try {
+      // @ai-start
+      // M4 (TECH_DEBT #244) — the queue can hold the previous account's
+      // writes until the account check removes them. Never send them with
+      // another account's token: wait for the check, and pause if it fails.
+      const account = await ensureAccountVerified();
+      if (account.kind !== 'ok') {
+        result.authPaused = true;
+        return result;
+      }
+      // @ai-end
       const rows = await dequeueWrites(50);
       for (const row of rows) {
         result.attempted += 1;

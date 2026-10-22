@@ -45,9 +45,12 @@ appId: com.qariah.app
     times: 8
     commands:
       # First Release launch on a fresh simulator/emulator can sit on splash for 10+ s.
+      # On 2026-10-20 the loaded API-34 emulator (2 GB guest RAM, swap in use) showed
+      # the first screen 39 s after a clearState launch ("Displayed … +38s546ms"), so
+      # the wait is 60 s. It costs time only when a surface never shows.
       - extendedWaitUntil:
           visible: "Get started|Skip|Skip( sign-in)? for now|Allow|NOT NOW|Mushaf"
-          timeout: 30000
+          timeout: 60000
       # Overlays first — each one hides the screen under it.
       - runFlow:
           when:

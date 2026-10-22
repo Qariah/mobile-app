@@ -6,7 +6,16 @@
  * URLs / wrong ayah ranges. Each assertion maps to a real bug that shipped — see the
  * CLAUDE.md sprint log. Runs automatically as part of `npm run test:ci` (Tier 1+).
  */
+import {execFileSync} from 'node:child_process';
+import {resolve} from 'node:path';
+import {itWithReviewPack} from '@/test-utils/reviewPack';
+
 const catalog: any[] = require('../../assets/data/catalog.json');
+const CATALOG_PATH = resolve(__dirname, '../../assets/data/catalog.json');
+const NAMES_SCRIPT = resolve(
+  __dirname,
+  '../../scripts/catalog-arabic-names.mjs',
+);
 
 describe('catalog data contract (assets/data/catalog.json)', () => {
   it('is a non-empty array', () => {
@@ -76,6 +85,51 @@ describe('catalog data contract (assets/data/catalog.json)', () => {
     expect(offenders).toEqual([]);
   });
 
+  itWithReviewPack(
+    'has the Arabic of the review pack (catalog-arabic-names.mjs --check)',
+    () => {
+      // Throws (and so fails) when a reviewed CSV row is not in the catalog.
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          [NAMES_SCRIPT, `--in=${CATALOG_PATH}`, '--check'],
+          {stdio: 'pipe'},
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  // Sprint 47 (Pass C): the Arabic UI shows `name_arabic` for every reciter
+  // and `bio_ar` instead of `bio_en`. Both come from the review pack through
+  // scripts/catalog-arabic-names.mjs; a reciter added without them shows
+  // English in the Arabic app.
+  const ARABIC_LETTER = /\p{Script=Arabic}/u;
+
+  it('every reciter has a name_arabic in Arabic script (S47 Pass C)', () => {
+    const offenders = catalog
+      .filter(
+        r =>
+          typeof r.name_arabic !== 'string' ||
+          r.name_arabic.trim() === '' ||
+          !ARABIC_LETTER.test(r.name_arabic),
+      )
+      .map(r => `${r.slug}: ${JSON.stringify(r.name_arabic)}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('every reciter with a bio_en has a bio_ar in Arabic script (S47 Pass C)', () => {
+    const offenders = catalog
+      .filter(r => typeof r.bio_en === 'string' && r.bio_en.trim() !== '')
+      .filter(
+        r =>
+          typeof r.bio_ar !== 'string' ||
+          r.bio_ar.trim() === '' ||
+          !ARABIC_LETTER.test(r.bio_ar),
+      )
+      .map(r => `${r.slug}: ${JSON.stringify(r.bio_ar)}`);
+    expect(offenders).toEqual([]);
+  });
+
   it('partial recitations carry a valid ayah range (from <= to)', () => {
     const offenders: string[] = [];
     for (const r of catalog) {
@@ -97,6 +151,81 @@ describe('catalog data contract (assets/data/catalog.json)', () => {
                 `${r.slug} / ${rw.name} / surah ${m.surah}: ${JSON.stringify(range)}`,
               );
           }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('a complete surah row has no ayah range (S48)', () => {
+    const offenders: string[] = [];
+    for (const r of catalog) {
+      for (const rw of r.rewayat ?? []) {
+        for (const m of Array.isArray(rw.surah_metadata)
+          ? rw.surah_metadata
+          : []) {
+          if (m && m.is_full === true && m.range !== undefined) {
+            offenders.push(
+              `${r.slug} / ${rw.name} / surah ${m.surah}: ${JSON.stringify(m.range)}`,
+            );
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  // Sprint 48: `added_at` is the UTC date (YYYY-MM-DD) when a recitation first
+  // appeared in the catalog. The field is optional for now, so this test
+  // checks it only when it is present. A later task makes it required.
+  // Sprint 48 (Task 7): catalog v93 dates every listed recitation, so the
+  // bundled copy must too. The first row of each listed surah carries the date
+  // (the ops console and `scripts/catalog-added-at.mjs` write it there).
+  it('every listed surah has a first surah_metadata row with added_at (S48)', () => {
+    const offenders: string[] = [];
+    for (const r of catalog) {
+      for (const rw of r.rewayat ?? []) {
+        const firstRow = new Map<number, any>();
+        for (const m of Array.isArray(rw.surah_metadata)
+          ? rw.surah_metadata
+          : []) {
+          if (m && !firstRow.has(m.surah)) firstRow.set(m.surah, m);
+        }
+        for (const s of rw.surah_list ?? []) {
+          if (s == null) continue;
+          if (typeof firstRow.get(s)?.added_at !== 'string') {
+            offenders.push(`${r.slug} / ${rw.name} / surah ${s}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('added_at, when present on a surah_metadata row, is a real past or current UTC date (S48)', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const offenders: string[] = [];
+    for (const r of catalog) {
+      for (const rw of r.rewayat ?? []) {
+        for (const m of Array.isArray(rw.surah_metadata)
+          ? rw.surah_metadata
+          : []) {
+          if (!m || m.added_at === undefined) continue;
+          const value = m.added_at;
+          const where = `${r.slug} / ${rw.name} / surah ${m.surah}: ${JSON.stringify(value)}`;
+          if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            offenders.push(`${where} (not YYYY-MM-DD)`);
+            continue;
+          }
+          const parsed = new Date(`${value}T00:00:00Z`);
+          if (
+            Number.isNaN(parsed.getTime()) ||
+            parsed.toISOString().slice(0, 10) !== value
+          ) {
+            offenders.push(`${where} (not a calendar date)`);
+            continue;
+          }
+          if (value > today) offenders.push(`${where} (later than ${today})`);
         }
       }
     }

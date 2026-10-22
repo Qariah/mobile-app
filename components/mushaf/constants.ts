@@ -34,6 +34,54 @@ export const PAGE_PADDING_HORIZONTAL = IS_COMPACT_DEVICE ? 4 : 8;
 export const PAGE_PADDING_TOP = IS_COMPACT_DEVICE ? 95 : 130;
 export const PAGE_PADDING_BOTTOM = IS_COMPACT_DEVICE ? 70 : 100;
 
+/**
+ * Vertical room the per-page labels need inside the page gutter.
+ *
+ * `components/mushaf/main.tsx` positions the surah / juz labels at
+ * `paddingTop - 30` and the page number at `paddingBottom - 35`, both measured
+ * from the page edge. A gutter smaller than the label offset plus the 12pt font
+ * therefore yields a NEGATIVE offset, and the label is drawn outside the page
+ * and clipped by the screen edge. 52 = 35 (the larger offset) + ~15 (a 12pt
+ * `fontSize` with the platform's default leading) + 2pt of slack. Sized from
+ * the rendered box, not the font size, so the floor cannot leave a label
+ * technically on-page but visually shaved.
+ */
+export const PAGE_LABEL_BAND = 52;
+
+/**
+ * Offsets the per-page labels are drawn at, measured INWARD from the page edge.
+ * Exported so `PAGE_LABEL_BAND` above and the placement in
+ * `components/mushaf/main.tsx` cannot drift apart, and so the regression test
+ * for #475 asserts the real relationship rather than a restated copy of it.
+ */
+export const SURAH_JUZ_LABEL_OFFSET = 30;
+export const PAGE_NUMBER_LABEL_OFFSET = 35;
+
+/**
+ * Where the three per-page labels sit, measured INWARD from the page edge.
+ *
+ * Both formulas live here rather than in `components/mushaf/main.tsx` so the
+ * #475 regression test can assert them against the gutters that feed them. The
+ * book-layout page number uses a different formula from the fullscreen one —
+ * it centres itself in the gutter below the card rather than sitting a fixed
+ * distance up from the page edge — and `pageLayout: 'book'` is the DEFAULT, so
+ * a test that covered only the fullscreen formula would miss what most users
+ * actually render.
+ */
+export function getPageLabelOffsets(
+  metrics: Pick<MushafLayoutMetrics, 'paddingTop' | 'paddingBottom'>,
+  opts: {isBookLayout: boolean; insetTop: number},
+): {labelTop: number; pageNumberBottom: number} {
+  return {
+    labelTop: metrics.paddingTop - SURAH_JUZ_LABEL_OFFSET,
+    pageNumberBottom: opts.isBookLayout
+      ? // Centre the number in the gutter between the card bottom and the
+        // page edge.
+        opts.insetTop + (metrics.paddingBottom - opts.insetTop) / 2 - 8
+      : metrics.paddingBottom - PAGE_NUMBER_LABEL_OFFSET,
+  };
+}
+
 // Book page-edge decoration constants
 export const PAGE_EDGE_OUTER_MARGIN = 14;
 export const PAGE_EDGE_INNER_MARGIN = 2;
@@ -49,6 +97,30 @@ export function getPageEdgeLayout(pageNumber: number) {
       : PAGE_EDGE_OUTER_MARGIN,
   };
 }
+
+// @ai-start
+/**
+ * True when a book-layout page draws all four corners rounded and centres its
+ * text (tablet single page), instead of the book-edge look with the text
+ * against the spine. `DKPageView` in main.tsx explains each condition; the
+ * rotation stage (`rotationStageGeometry.ts`) reads the same rule to know
+ * where the page text sits.
+ */
+export function usesSymmetricPageEdges(
+  metrics: Pick<
+    MushafLayoutMetrics,
+    'facingPages' | 'scrollContainerHeight' | 'pageWidth' | 'screenWidth'
+  >,
+  isBookLayout: boolean,
+): boolean {
+  return (
+    isBookLayout &&
+    !metrics.facingPages &&
+    !metrics.scrollContainerHeight &&
+    metrics.pageWidth < metrics.screenWidth
+  );
+}
+// @ai-end
 
 export const LINES_PER_PAGE = 15;
 
@@ -197,8 +269,30 @@ export function getMushafLayout(
   // iPad the stack chrome lives *outside* the container; callers should
   // pass `headerHeight=0, toolbarHeight=0` and measure the true container
   // height via `onLayout`.
-  const tabletPaddingTop = headerHeight + Math.max(insetTop, 8) + 28;
-  const tabletPaddingBottom = toolbarHeight + Math.max(insetBottom, 8) + 24;
+  // NOT free here, unlike the phone-landscape floor below. `contentHeight` is
+  // `height - paddingTop - paddingBottom` (just under), and an iPad page does
+  // not scroll, so when the floor engages the content band narrows by the same
+  // amount the gutters deepen: at most ~40pt against a typical 800-1200pt iPad
+  // band, i.e. a ~3-5% font-size reduction. No line can be clipped —
+  // `calculateLineYPositions` always fills exactly the band it is given — so
+  // the trade is a slightly smaller glyph against a page number that is
+  // visible at all. Taken deliberately.
+  //
+  // Floored on `PAGE_LABEL_BAND` for the same reason as the phone-landscape
+  // gutters below: `main.tsx` passes `headerHeight = toolbarHeight = 0` on iOS
+  // 26+ for BOTH form factors, and an iPad then lands at
+  // `tabletPaddingBottom = 0 + max(insetBottom, 8) + 24`, i.e. 32 at its
+  // smallest — so the page number would sit at `32 - 35 = -3` and clip exactly
+  // as it does on the phone (#475). Non-glass passes 60 and clears the floor by
+  // a wide margin, so nothing moves there.
+  const tabletPaddingTop = Math.max(
+    headerHeight + Math.max(insetTop, 8) + 28,
+    insetTop + PAGE_LABEL_BAND,
+  );
+  const tabletPaddingBottom = Math.max(
+    toolbarHeight + Math.max(insetBottom, 8) + 24,
+    insetBottom + PAGE_LABEL_BAND,
+  );
 
   const paddingTop = isTablet ? tabletPaddingTop : basePaddingTop;
   const paddingBottom = isTablet ? tabletPaddingBottom : basePaddingBottom;
@@ -271,8 +365,25 @@ export function getMushafLayout(
     // harakat never overlap the line below.
     const headerH = opts.headerHeight ?? 60;
     const toolbarH = opts.toolbarHeight ?? 60;
-    const landscapePaddingTop = headerH + insetTop + 12;
-    const landscapePaddingBottom = toolbarH + insetBottom + 8;
+    // The gutters must stay at least `PAGE_LABEL_BAND` deep, or the surah /
+    // juz / page-number labels land at a negative offset and the screen edge
+    // clips them (#475). This bites on iOS 26+ ONLY, where `main.tsx` passes
+    // `headerHeight = toolbarHeight = 0` for the glass chrome: on an
+    // iPhone16,1 landscape that gives `paddingBottom = 0 + 21 + 8 = 29`, so
+    // the page number sits at `29 - 35 = -6`. Non-glass iOS and Android pass
+    // 60 for both, so their gutters already clear the band and nothing moves.
+    //
+    // Deepening a gutter is free here: the phone-landscape page is already
+    // taller than the screen and scrolls (`scrollContainerHeight` below), and
+    // the glyph metrics come from `contentWidth`, not from the page height.
+    const landscapePaddingTop = Math.max(
+      headerH + insetTop + 12,
+      insetTop + PAGE_LABEL_BAND,
+    );
+    const landscapePaddingBottom = Math.max(
+      toolbarH + insetBottom + 8,
+      insetBottom + PAGE_LABEL_BAND,
+    );
 
     const landscapePageWidth = Math.max(width - insetLeft - insetRight, 1);
     const landscapeContentWidth = Math.max(
@@ -553,6 +664,21 @@ export function getHizbForPage(page: number): number {
  * Callers that render the page inside a shorter scroll viewport pass `false`
  * so pages 1-2 start at the top, exactly like pages 3-604 already do.
  */
+// @ai-start
+/**
+ * Room (pt) a mushaf page canvas keeps below its last line. A DigitalKhatt
+ * line box is taller than the line pitch, and marks below the last line (an
+ * open tanween, a small low meem, a deep tail) reach past the content height:
+ * up to about 4.4 pt on an iPhone 17 Pro and 11.2 pt on an iPhone SE-class
+ * screen (every page's last ayah line, measured on CanvasKit). The canvas
+ * extends this far below the content. It is transparent and the lines keep
+ * their positions, so the only change is that those marks are no longer cut.
+ */
+export function canvasBottomOverflow(fontSize: number): number {
+  return Math.ceil(fontSize);
+}
+// @ai-end
+
 export function calculateLineYPositions(
   lines: {line_type: string}[],
   pageNumber: number,

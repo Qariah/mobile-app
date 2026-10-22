@@ -39,14 +39,26 @@ import {expandPlayerSheet} from '@/services/player/sheetRef';
 import {reciterImages} from '@/utils/reciterImages';
 import Header from '@/components/Header';
 import {useSettings} from '@/hooks/useSettings';
-import {QIRAAT_TEACHERS, resolveRewayatName} from '@/data/rewayat';
+// @ai-start
+import {
+  QIRAAT_TEACHERS,
+  resolveRewayatName,
+  getRewayatPersonLabel,
+} from '@/data/rewayat';
+import {rankReciters} from '@/utils/search/catalog'; // @ai
+// @ai-end
 import {resolveRewayahFromName} from '@/services/rewayah/RewayahIdentity';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useHeaderHeight} from 'expo-router/react-navigation';
 import branding from '@/config/branding';
+import {reciterMatchesCountry} from '@/data/countryCollections';
+import {reciterMatchesTranslation} from '@/data/translationCollections';
 import {isFeatureEnabled} from '@/config/featureFlags';
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useBottomInset} from '@/hooks/useBottomInset'; // @ai B1: mini-player-aware bottom padding
+// @ai-start
+import {useTranslation} from 'react-i18next';
+// @ai-end
 
 interface BrowseRecitersProps {
   theme: Theme;
@@ -131,11 +143,12 @@ interface Chip {
   isSelected: boolean;
 }
 
+// @ai-start
 export default function BrowseReciters({
   theme,
   onBack,
   surahId,
-  title = 'Browse All',
+  title,
   initialTeacher,
   initialStudent,
   country,
@@ -143,6 +156,7 @@ export default function BrowseReciters({
   initialHasPhoto = false,
 }: BrowseRecitersProps) {
   const router = useRouter();
+  const {t} = useTranslation(['home', 'qariah']);
   const {updateQueue, play} = usePlayerActions();
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const {setReciterPreference} = useSettings();
@@ -200,7 +214,11 @@ export default function BrowseReciters({
     const chips: Chip[] = [];
     const isAllSelected = !selectedTeacher && !selectedStudent;
 
-    chips.push({label: 'All', type: 'all', isSelected: isAllSelected});
+    chips.push({
+      label: t('browse.allChip'),
+      type: 'all',
+      isSelected: isAllSelected,
+    });
 
     if (!selectedTeacher) {
       primaryTeachers.forEach(teacher => {
@@ -218,7 +236,11 @@ export default function BrowseReciters({
         });
 
         if (studentsOfSelectedTeacher.length > 0) {
-          chips.push({label: "A'n", type: 'separator', isSelected: false});
+          chips.push({
+            label: t('browse.rewayahSeparator'),
+            type: 'separator',
+            isSelected: false,
+          });
         }
 
         chips.push({
@@ -233,7 +255,11 @@ export default function BrowseReciters({
             type: 'student',
             isSelected: true,
           });
-          chips.push({label: "A'n", type: 'separator', isSelected: false});
+          chips.push({
+            label: t('browse.rewayahSeparator'),
+            type: 'separator',
+            isSelected: false,
+          });
           chips.push({
             label: selectedTeacher,
             type: 'teacher',
@@ -243,7 +269,7 @@ export default function BrowseReciters({
       }
     }
     return chips;
-  }, [selectedTeacher, selectedStudent, primaryTeachers]);
+  }, [selectedTeacher, selectedStudent, primaryTeachers, t]);
 
   const filteredReciters = useMemo(() => {
     // Hoisted above the filter chain so the RFC-012 `has-photo` filter
@@ -269,41 +295,22 @@ export default function BrowseReciters({
       });
     }
 
-    // Sprint 14 — country filter. Slug-compares to `Reciter.country`
-    // (kebab-case via `slugify`) so the user feedback "tap country →
-    // show only reciters from that country" works the same way as the
-    // surahId / teacher / student filters above.
+    // Qariah: country and translation-language filters (S14, S15.5).
     if (country) {
-      const slugify = (s: string): string =>
-        s.trim().toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-');
-      result = result.filter(
-        reciter => reciter.country && slugify(reciter.country) === country,
-      );
+      result = result.filter(r => reciterMatchesCountry(r, country));
     }
-
-    // Sprint 15 (S15.5) — translation-language filter. Slug-compares to
-    // `Reciter.translation` lowercased and dash-separated, matching
-    // `slugifyLanguage` in `data/translationCollections.ts`. Empty-string
-    // and null translations don't match.
     if (translation) {
-      const slugifyLang = (s: string): string =>
-        s.toLowerCase().trim().replace(/\s+/g, '-');
-      result = result.filter(
-        reciter =>
-          reciter.translation &&
-          slugifyLang(reciter.translation) === translation,
-      );
+      result = result.filter(r => reciterMatchesTranslation(r, translation));
     }
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter(reciter => {
-        if (reciter.name.toLowerCase().includes(query)) return true;
-        return reciter.rewayat.some(rewaya =>
-          rewaya.name?.toLowerCase().includes(query),
-        );
-      });
+    // @ai-start
+    const searchRank = searchQuery.trim()
+      ? new Map(rankReciters(searchQuery).map((reciter, i) => [reciter.id, i]))
+      : null;
+    if (searchRank) {
+      result = result.filter(reciter => searchRank.has(reciter.id));
     }
+    // @ai-end
 
     if (selectedTeacher) {
       result = result.filter(reciter =>
@@ -367,6 +374,11 @@ export default function BrowseReciters({
     const featuredIds = new Set(featuredRecitersData.map(r => r.id));
 
     result.sort((a, b) => {
+      // @ai-start
+      if (searchRank) {
+        return (searchRank.get(a.id) ?? 0) - (searchRank.get(b.id) ?? 0);
+      }
+      // @ai-end
       if (featuredIds.has(a.id) && !featuredIds.has(b.id)) return -1;
       if (!featuredIds.has(a.id) && featuredIds.has(b.id)) return 1;
       const aHasImage = hasImage(a);
@@ -636,7 +648,7 @@ export default function BrowseReciters({
         {/* Android: custom Header; iOS: native Stack header handles this */}
         {!useNativeHeader && (
           <Header
-            title={title}
+            title={title ?? t('browse.browseAll')}
             onBack={onBack}
             showBlur={true}
             containerStyle={{zIndex: 2}}
@@ -654,7 +666,7 @@ export default function BrowseReciters({
             },
           ]}>
           <SearchInput
-            placeholder="Search reciters..."
+            placeholder={t('browse.searchReciters')}
             value={searchQuery}
             onChangeText={setSearchQuery}
             onCancel={handleSearchCancel}
@@ -708,7 +720,7 @@ export default function BrowseReciters({
                 ) : (
                   <Pressable
                     accessibilityRole="togglebutton"
-                    accessibilityLabel={chip.label}
+                    accessibilityLabel={getRewayatPersonLabel(chip.label)}
                     accessibilityState={{selected: chip.isSelected}}
                     style={({pressed}) => [
                       styles.filterChip,
@@ -724,7 +736,7 @@ export default function BrowseReciters({
                         styles.filterChipText,
                         chip.isSelected && styles.filterChipTextActive,
                       ]}>
-                      {chip.label}
+                      {getRewayatPersonLabel(chip.label)}
                     </Text>
                   </Pressable>
                 )}
@@ -739,7 +751,7 @@ export default function BrowseReciters({
                 layout={LinearTransition.duration(300)}>
                 <Pressable
                   accessibilityRole="togglebutton"
-                  accessibilityLabel="Has photo"
+                  accessibilityLabel={t('browse.hasPhoto')}
                   accessibilityState={{selected: hasPhoto}}
                   style={({pressed}) => [
                     styles.filterChip,
@@ -755,7 +767,7 @@ export default function BrowseReciters({
                       styles.filterChipText,
                       hasPhoto && styles.filterChipTextActive,
                     ]}>
-                    Has photo
+                    {t('browse.hasPhoto')}
                   </Text>
                 </Pressable>
               </Animated.View>
@@ -768,10 +780,11 @@ export default function BrowseReciters({
           <View style={styles.activeFiltersContainer}>
             <Text style={styles.activeFiltersText}>
               {surahId
-                ? `${recitationRows.length} recitation${
-                    recitationRows.length === 1 ? '' : 's'
-                  } found with current filters`
-                : `${filteredReciters.length} reciters found with current filters`}
+                ? // @ai Qariah surah-filtered recitation rows (S21 U1).
+                  t('qariah:browse.recitationsFound', {
+                    count: recitationRows.length,
+                  })
+                : t('browse.recitersFound', {count: filteredReciters.length})}
             </Text>
             <Pressable
               style={({pressed}) => [
@@ -782,7 +795,9 @@ export default function BrowseReciters({
                 Keyboard.dismiss();
                 handleClearFilters();
               }}>
-              <Text style={styles.clearFiltersText}>Clear All</Text>
+              <Text style={styles.clearFiltersText}>
+                {t('browse.clearAll')}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -840,14 +855,11 @@ export default function BrowseReciters({
               onScrollBeginDrag={() => Keyboard.dismiss()}
             />
           ) : (
-            // TECH_DEBT #81 — BrowseGrid hardcodes
-            // keyboardShouldPersistTaps="handled" on its inner LegendList
-            // and doesn't expose the prop on its interface, so passing it
-            // here would be a silent no-op. Upstream chore PR pending.
             <BrowseGrid
               reciters={filteredReciters}
               onReciterPress={handleReciterPress}
               theme={theme}
+              keyboardShouldPersistTaps="handled"
               onScrollBeginDrag={() => Keyboard.dismiss()}
               getRewayatIdForReciter={getRewayatIdForReciter}
               bottomInset={bottomInset}
@@ -870,6 +882,7 @@ export default function BrowseReciters({
     </TouchableWithoutFeedback>
   );
 }
+// @ai-end
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({

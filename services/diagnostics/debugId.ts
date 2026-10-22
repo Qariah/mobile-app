@@ -9,7 +9,8 @@
 // IT CREATES NO NEW IDENTITY. The value is the anonymous device UUID from
 // `services/analytics/deviceId.ts` (an `expo-crypto` random UUID kept in
 // MMKV). PostHog already uses that UUID as the distinct id, and
-// `app/_layout.tsx` sets it as a Sentry tag, so the same string addresses both
+// `initQariahSentryScope()` (services/diagnostics/qariahSentryOptions.ts)
+// sets it as a Sentry tag, so the same string addresses both
 // tools.
 //
 // PRIVACY CONTRACT — do not weaken it:

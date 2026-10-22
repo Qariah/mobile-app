@@ -20,11 +20,9 @@ import {
   type SkColor,
 } from '@shopify/react-native-skia';
 import Color from 'color';
-import {
-  digitalKhattDataService,
-  type DKWordInfo,
-} from '@/services/mushaf/DigitalKhattDataService';
+import type {DKWordInfo} from '@/services/mushaf/DigitalKhattDataService';
 import {wbwDataService, type WBWWord} from '@/services/wbw/WBWDataService';
+import {useRewayahWords} from '@/hooks/useRewayahWords';
 import {useTheme} from '@/hooks/useTheme';
 import {mediumHaptics} from '@/utils/haptics';
 import {
@@ -44,6 +42,10 @@ import {
   getArabicTextWeightStrokeWidth,
 } from '@/utils/skiaTextWeight';
 import {disposeAfterPendingDraws} from '@/utils/skiaDeferredDispose';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {forceLTR} from '@/utils/rtl';
+// @ai-end
 
 // --- Constants ---
 
@@ -90,6 +92,17 @@ interface WBWVerseViewProps {
    *  is Hafs-only, so the Arabic here is always rendered in Hafs — this
    *  prop only drives the "Showing Hafs" disclosure label. */
   rewayah?: RewayahId;
+  // @ai-start
+  /** Show only the Hafs words at these word positions of `verseKey`
+   *  (inclusive; the verse-end marker when its slot is in range): the part of
+   *  a Hafs verse that one rewayah verse row holds (verseUnitRows.ts). The
+   *  words are matched over the whole verse first, so the slice keeps the
+   *  whole verse's pairing. Omitted: the whole verse. */
+  wordRange?: {first: number; last: number};
+  /** Disclosure text in a non-Hafs context instead of "Word-by-word shown in
+   *  Hafs" (a verse row names the Hafs verse, e.g. "... in Hafs 1:7"). */
+  hafsNotice?: string;
+  // @ai-end
 }
 
 interface MatchedWord {
@@ -322,6 +335,7 @@ function computeRTLLayout(
 
 // --- Main component ---
 
+// @ai-start
 export const WBWVerseView = memo<WBWVerseViewProps>(
   ({
     verseKey,
@@ -341,28 +355,22 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
     onTap,
     onLongPress,
     rewayah: rewayahProp,
+    wordRange, // @ai
+    hafsNotice: hafsNoticeText, // @ai
   }) => {
+    const {t} = useTranslation('player');
     const {theme} = useTheme();
     const [containerWidth, setContainerWidth] = useState(0);
     const activeRewayah = useMushafSettingsStore(s => s.rewayah);
     const contextRewayah = rewayahProp ?? activeRewayah;
     const showingHafsFallback = contextRewayah !== 'hafs';
 
-    // Word-by-word data is Hafs-aligned — always fetch Hafs DK words so
-    // word boundaries match the translation/transliteration payload.
-    // Lazy-load Hafs into the side cache if the mushaf is currently on a
-    // non-Hafs rewayah, then re-render.
-    const [, bumpHafsLoaded] = React.useReducer(x => x + 1, 0);
-    useEffect(() => {
-      if (digitalKhattDataService.rewayah === 'hafs') return;
-      let cancelled = false;
-      digitalKhattDataService.ensureRewayahLoaded('hafs').then(() => {
-        if (!cancelled) bumpHafsLoaded();
-      });
-      return () => {
-        cancelled = true;
-      };
-    }, []);
+    // Word-by-word data is Hafs-aligned — always read Hafs DK words so word
+    // boundaries match the translation/transliteration payload. The hook
+    // lazy-loads Hafs into the side cache when the mushaf is on another
+    // rewayah and re-renders (via the DK cache version) once it is ready, so
+    // the grid never stays on the empty pre-load word list.
+    const {words: dkWords} = useRewayahWords(verseKey, 'hafs');
 
     // Try sync cache first, fall back to async
     const cachedWords = useMemo(
@@ -385,11 +393,9 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
 
     const wbwWords = cachedWords ?? asyncWords;
 
-    // Always read Hafs DK words — WBW word indexing is Hafs-aligned.
-    const dkWords = useMemo(
-      () => digitalKhattDataService.getVerseWords(verseKey, 'hafs'),
-      [verseKey],
-    );
+    // By value: a new wordRange object with the same range is no change. @ai
+    const sliceFirst = wordRange?.first; // @ai
+    const sliceLast = wordRange?.last; // @ai
 
     // Match DK words with WBW words using text-aware sequential alignment.
     // DK sometimes splits compound words (e.g. "بَعْدَ مَا") into two tokens
@@ -439,8 +445,20 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
         }
       }
 
+      // @ai-start
+      // A verse row's slice: the words (and the end marker) of its own slots.
+      if (sliceFirst !== undefined && sliceLast !== undefined) {
+        const inRange = (w: DKWordInfo) =>
+          w.wordPositionInVerse >= sliceFirst &&
+          w.wordPositionInVerse <= sliceLast;
+        return {
+          matchedWords: result.filter(m => inRange(m.dkWord)),
+          verseEndMarker: endMarker && inRange(endMarker) ? endMarker : null,
+        };
+      }
+      // @ai-end
       return {matchedWords: result, verseEndMarker: endMarker};
-    }, [dkWords, wbwWords]);
+    }, [dkWords, wbwWords, sliceFirst, sliceLast]); // @ai
 
     // Derive colors once
     const derivedColors = useMemo(
@@ -703,7 +721,7 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
           styles.hafsNotice,
           {color: Color(textColor).alpha(0.5).toString()},
         ]}>
-        Word-by-word shown in Hafs
+        {hafsNoticeText ?? t('verse.wbwHafsNotice') /* @ai */}
       </Text>
     ) : null;
 
@@ -718,6 +736,7 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
             onLongPress={handleWordPress}
             style={[
               styles.singleCanvasContainer,
+              forceLTR,
               {height: computedLayout.totalHeight + PADDING_VERTICAL * 2},
             ]}>
             {/* Word highlight boxes (rendered before Canvas so text sits on top) */}
@@ -817,7 +836,9 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
     // Fallback: flex-wrap with RN Text (no Skia canvases)
     // Used when: fontMgr not ready, or containerWidth not measured yet
     return (
-      <View onLayout={handleLayout} style={styles.fallbackContainer}>
+      <View
+        onLayout={handleLayout}
+        style={[styles.fallbackContainer, forceLTR]}>
         {hafsNotice}
         {matchedWords.map(({dkWord, wbwWord}) => (
           <Pressable
@@ -887,6 +908,7 @@ export const WBWVerseView = memo<WBWVerseViewProps>(
     );
   },
 );
+// @ai-end
 
 WBWVerseView.displayName = 'WBWVerseView';
 

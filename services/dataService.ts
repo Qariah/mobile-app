@@ -1,6 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Surah, SURAHS} from '../data/surahData';
-import {Reciter, Rewayat, RECITERS, SurahMetadata} from '../data/reciterData';
+import {
+  Reciter,
+  Rewayat,
+  RECITERS,
+  SurahMetadata,
+  markRecitersUpdated, // @ai
+} from '../data/reciterData';
 import {usePlayerStore} from './player/store/playerStore';
 import {useReciterStore} from '../store/reciterStore';
 import {useApiHealthStore} from '../store/apiHealthStore';
@@ -8,6 +14,12 @@ import {useApiHealthStore} from '../store/apiHealthStore';
 import catalogFallback from '../assets/data/catalog.json';
 import branding from '@/config/branding';
 import {isFeatureEnabled} from '@/config/featureFlags';
+// @ai-start
+import {rankSurahs} from '@/utils/search/catalog';
+import i18n from '@/i18n'; // @ai Qariah: formatAyahRange
+// Qariah (Sprint 48): the network fills, for the notification check.
+import {markLiveCatalogLoaded} from '@/services/liveCatalogSignal';
+// @ai-end
 
 const BAYAAN_API_URL = process.env.EXPO_PUBLIC_BAYAAN_API_URL;
 const BAYAAN_API_KEY = process.env.EXPO_PUBLIC_BAYAAN_API_KEY;
@@ -41,7 +53,7 @@ async function isBackendEnabled(): Promise<boolean> {
 
 const RECITERS_KEY = 'bayaan_reciters';
 const RECITER_SERVERS_KEY = 'bayaan_reciter_servers';
-const DATA_VERSION = '9'; // Sprint 28: bust cache for the Wasabi→R2 photo migration (4 reciters' image_url repointed off their old Wasabi origin onto the R2 asset host at reciters/{slug}/photo.jpg; catalog v12→v13)
+const DATA_VERSION = '11'; // Sprint 48: bust cache for `surah_metadata[].added_at` (catalog v93) and the explicit `is_full` rows of complete surahs. '10' was Sprint 47 (Pass C): bust cache for the Arabic catalog fields `name_arabic` (upstream's) and `bio_ar` (Qariah's) from the review pack (scripts/catalog-arabic-names.mjs). '9' was Sprint 28's Wasabi→R2 photo migration.
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
@@ -104,6 +116,7 @@ function applyAssetProxy(data: Reciter[]): Reciter[] {
 
 function populateReciters(data: Reciter[]): void {
   RECITERS.splice(0, RECITERS.length, ...applyAssetProxy(data));
+  markRecitersUpdated(); // @ai
   // Refresh the store's default reciter now that RECITERS is populated
   useReciterStore.getState().refreshDefaultReciter();
   useReciterStore.setState({isInitialized: true});
@@ -114,6 +127,7 @@ function populateReciters(data: Reciter[]): void {
 const API_BASE = BAYAAN_API_URL;
 const API_KEY = BAYAAN_API_KEY;
 
+// @ai-start
 async function fetchAllRecitersFromApi(): Promise<Reciter[]> {
   const PAGE_SIZE = 200;
   let page = 1;
@@ -123,7 +137,7 @@ async function fetchAllRecitersFromApi(): Promise<Reciter[]> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-    if (API_KEY) headers['Authorization'] = `Bearer ${API_KEY}`;
+    if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
 
     const res = await fetch(
       `${API_BASE}/v1/reciters?page=${page}&limit=${PAGE_SIZE}`,
@@ -149,6 +163,7 @@ async function fetchAllRecitersFromApi(): Promise<Reciter[]> {
 
   return allReciters;
 }
+// @ai-end
 
 // @ai fetches a static catalog JSON (Qariah's CDN) — simpler than the Bayaan
 // paginated API; expects a top-level array matching the Reciter[] schema.
@@ -177,17 +192,11 @@ export function getSurahById(id: number): Surah | undefined {
   return SURAHS.find(surah => surah.id === id);
 }
 
+// @ai-start
 export function searchSurahs(query: string): Surah[] {
-  return SURAHS.filter(
-    surah =>
-      surah.name.toLowerCase().includes(query.toLowerCase()) ||
-      surah.name_arabic.includes(query) ||
-      surah.translated_name_english
-        .toLowerCase()
-        .includes(query.toLowerCase()) ||
-      surah.id.toString() === query,
-  );
+  return [...rankSurahs(query)]; // @ai
 }
+// @ai-end
 
 // ── Reciter functions ─────────────────────────────────────────────────────────
 
@@ -246,8 +255,8 @@ export async function getAllReciters(): Promise<Reciter[]> {
   // splash on the live catalog fetch (up to a 10s ceiling on a cold cache),
   // populate from the bundled catalog immediately and upgrade live in the
   // background. The RFC-010 version poll + this background refresh converge to
-  // the live catalog within a moment; the bundled catalog is regenerated each
-  // build so it is current as of the release. Flip `bundleFirstCatalog` off to
+  // the live catalog within a moment. Refresh the bundle before each release
+  // build with `node scripts/sync-bundled-catalog.mjs --apply`. Flip `bundleFirstCatalog` off to
   // restore the blocking first-launch fetch below.
   if (canFetch && isFeatureEnabled('bundleFirstCatalog')) {
     const seed = catalogFallback as Reciter[];
@@ -269,6 +278,7 @@ export async function getAllReciters(): Promise<Reciter[]> {
       if (liveReciters.length > 0) {
         await setStoredData(RECITERS_KEY, liveReciters);
         populateReciters(liveReciters);
+        markLiveCatalogLoaded(); // Qariah (Sprint 48)
         clearDisruption();
         return liveReciters;
       }
@@ -308,6 +318,7 @@ async function refreshRecitersInBackground(): Promise<void> {
     if (freshReciters.length > 0) {
       await setStoredData(RECITERS_KEY, freshReciters);
       populateReciters(freshReciters);
+      markLiveCatalogLoaded(); // Qariah (Sprint 48)
       clearDisruption();
     }
   } catch {
@@ -332,6 +343,7 @@ export async function refetchCatalogToVersion(
     if (fresh.length > 0) {
       await setStoredData(RECITERS_KEY, fresh);
       populateReciters(fresh);
+      markLiveCatalogLoaded(); // Qariah (Sprint 48)
     }
   } catch (err) {
     if (__DEV__)
@@ -358,10 +370,16 @@ export function getSurahMetadataSync(
   return rewayat?.surah_metadata?.find(sm => sm.surah === surahId);
 }
 
+/**
+ * Qariah (Sprint 20): the ayah range of a partial recitation ("ayah 5",
+ * "ayahs 1–7"), translated when it is called, never at module load.
+ */
 export function formatAyahRange(metadata: SurahMetadata): string | undefined {
   if (metadata.is_full || !metadata.range) return undefined;
   const {from, to} = metadata.range;
-  return from === to ? `ayah ${from}` : `ayahs ${from}–${to}`;
+  return from === to
+    ? i18n.t('qariah:ayahRange.single', {from})
+    : i18n.t('qariah:ayahRange.range', {from, to});
 }
 
 export function getReciterByIdSync(id: string): Reciter | undefined {
@@ -419,46 +437,6 @@ export async function getAvailableSurahsForRewayat(
   return [];
 }
 
-export async function filterReciters(options: {
-  style?: string;
-  hasSurah?: number;
-  query?: string;
-}): Promise<Reciter[]> {
-  const reciters = await getAllReciters();
-  const normalizedQuery = options.query?.toLowerCase() ?? '';
-
-  return reciters.filter(reciter => {
-    if (options.style) {
-      const hasStyle = reciter.rewayat.some(r => r.style === options.style);
-      if (!hasStyle) return false;
-    }
-
-    if (options.hasSurah !== undefined) {
-      const hasSurah = reciter.rewayat.some(
-        r =>
-          !r.surah_list ||
-          r.surah_list
-            .filter((id): id is number => id !== null)
-            .includes(options.hasSurah ?? 0),
-      );
-      if (!hasSurah) return false;
-    }
-
-    if (normalizedQuery) {
-      const matchesQuery =
-        reciter.name.toLowerCase().includes(normalizedQuery) ||
-        reciter.rewayat.some(
-          r =>
-            r.name.toLowerCase().includes(normalizedQuery) ||
-            r.style.toLowerCase().includes(normalizedQuery),
-        );
-      if (!matchesQuery) return false;
-    }
-
-    return true;
-  });
-}
-
 // ── Audio URL ─────────────────────────────────────────────────────────────────
 
 export async function fetchAudioUrl(
@@ -503,16 +481,6 @@ export async function fetchAudioUrl(
   // 'suffixed'` flag on `SurahMetadata` and branch here on it — see
   // TECH_DEBT #70 for the staged migration plan.
   return rewriteAssetHost(`${rewayat.server}/${surahStr}.mp3`);
-}
-
-// ── Search ────────────────────────────────────────────────────────────────────
-
-export async function searchReciters(query: string): Promise<Reciter[]> {
-  const reciters = await getAllReciters();
-  const normalizedQuery = query.toLowerCase();
-  return reciters.filter(reciter =>
-    reciter.name.toLowerCase().includes(normalizedQuery),
-  );
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

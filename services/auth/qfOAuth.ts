@@ -10,7 +10,7 @@
  *
  * Token refresh: refreshAccessToken() exchanges the refresh_token for a new
  * access_token. Hydra rotates refresh tokens — we save whatever the response
- * contains.
+ * contains. Parallel callers share one refresh request (H1, TECH_DEBT #244).
  *
  * QF parses the redirect URL with Hydra's quirks; non-hierarchical schemes
  * (single colon-slash, reverse-DNS) require defensive query parsing — see
@@ -223,6 +223,7 @@ export async function signIn(): Promise<SignInResult> {
         expiresIn: tokens.expires_in,
         scope: tokens.scope,
       });
+    beginNewSession(); // @ai — M4: a refresh from the old session must not write.
     await saveTokens(tokensFromResponse(tokens));
     if (__DEV__) console.log('[auth-trace] saveTokens:done');
     return {ok: true};
@@ -234,8 +235,68 @@ export async function signIn(): Promise<SignInResult> {
 }
 
 export async function signOut(): Promise<void> {
+  beginNewSession(); // @ai — M4: a refresh in flight must not sign back in.
   await clearTokens();
 }
+
+// @ai-start
+/**
+ * M4 (TECH_DEBT #244) — the session number. Sign-in and sign-out change it.
+ *
+ * A refresh that started in an earlier session must not write its result.
+ * After a sign-out, a late refresh saved new tokens and made the old session
+ * live again. After a new sign-in, a late rejected refresh deleted the new
+ * tokens.
+ */
+let sessionGeneration = 0;
+
+function beginNewSession(): void {
+  sessionGeneration += 1;
+  // New callers must not join a refresh from the earlier session.
+  refreshInFlight = null;
+}
+// @ai-end
+
+// @ai-start
+/**
+ * M1 (TECH_DEBT #244) — events from the token refresh, for AuthContext.
+ *
+ * Before M1, AuthContext read the sign-in state only at mount. A refresh that
+ * cleared the tokens left Settings at "Signed in".
+ *   - `session-expired`: the token endpoint rejected the refresh token (400 or
+ *     401), or no refresh token exists. The tokens are cleared.
+ *   - `refresh-failed`: a 5xx, a 429, another status or a network error
+ *     (`status: 0`). The tokens are kept. This is a transient state, not a
+ *     sign-out.
+ *   - `refreshed`: a refresh succeeded.
+ */
+export type AuthEvent =
+  | {type: 'session-expired'}
+  | {type: 'refresh-failed'; status: number}
+  | {type: 'refreshed'};
+
+type AuthEventListener = (event: AuthEvent) => void;
+
+const authEventListeners = new Set<AuthEventListener>();
+
+/** Adds a listener for refresh events. Returns the unsubscribe function. */
+export function subscribeAuthEvents(listener: AuthEventListener): () => void {
+  authEventListeners.add(listener);
+  return () => {
+    authEventListeners.delete(listener);
+  };
+}
+
+function emitAuthEvent(event: AuthEvent): void {
+  for (const listener of authEventListeners) {
+    try {
+      listener(event);
+    } catch (e) {
+      if (__DEV__) console.warn('[auth-trace] auth event listener threw', e);
+    }
+  }
+}
+// @ai-end
 
 /**
  * Get a valid access token, refreshing if expired. Returns null when the user
@@ -258,16 +319,59 @@ export async function getValidAccessToken(): Promise<string | null> {
     if (__DEV__)
       console.warn('[auth-trace] getValidAccessToken:clearTokens:no-refresh');
     await clearTokens();
+    emitAuthEvent({type: 'session-expired'}); // @ai
     return null;
   }
   const refreshed = await refreshAccessToken(tokens.refreshToken);
   return refreshed?.accessToken ?? null;
 }
 
-export async function refreshAccessToken(
+// @ai-start
+/**
+ * H1 (TECH_DEBT #244) — the one token refresh that is in flight.
+ *
+ * QF rotates the refresh token on each refresh. Before this lock, parallel
+ * 401s each started a refresh with the same refresh token. The first refresh
+ * won. The other refreshes got a 4xx and deleted the new tokens, so the user
+ * was signed out with no message. Now all parallel callers share one request.
+ */
+let refreshInFlight: Promise<AuthTokens | null> | null = null;
+
+/**
+ * Exchanges the refresh token for new tokens. Parallel callers share one
+ * request to the token endpoint (single flight).
+ */
+export function refreshAccessToken(
   refreshToken: string,
 ): Promise<AuthTokens | null> {
+  if (refreshInFlight) return refreshInFlight;
+  const flight = runTokenRefresh(refreshToken).finally(() => {
+    if (refreshInFlight === flight) refreshInFlight = null;
+  });
+  refreshInFlight = flight;
+  return flight;
+}
+
+async function runTokenRefresh(
+  callerRefreshToken: string,
+): Promise<AuthTokens | null> {
+  const generation = sessionGeneration; // @ai
+  const sessionChanged = () => generation !== sessionGeneration; // @ai
   try {
+    // A refresh that ended just before this call can have rotated the token
+    // already. The caller then holds an old refresh token, and QF rejects it.
+    // Read the stored tokens again and use them.
+    const stored = await loadTokens();
+    if (!stored) return null; // Signed out: do not make a new session.
+    if (
+      stored.refreshToken &&
+      stored.refreshToken !== callerRefreshToken &&
+      Date.now() < stored.expiresAt
+    ) {
+      return stored;
+    }
+    const refreshToken = stored.refreshToken ?? callerRefreshToken;
+    // @ai-end
     const config = getQfOAuthConfig();
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -291,26 +395,70 @@ export async function refreshAccessToken(
       body: body.toString(),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
+      const errorBody = await res.text().catch(() => '');
+      if (sessionChanged()) return null; // @ai — M4
+      // @ai-start
+      // M1 (TECH_DEBT #244) — only 400 and 401 mean that the token endpoint
+      // rejected the refresh token (OAuth `invalid_grant` / `invalid_client`).
+      // Then the session is dead: clear the tokens and tell AuthContext.
+      // A 5xx, a 429 or another status is a server problem, not a sign-out:
+      // keep the tokens, so that the next call can refresh again.
+      if (res.status === 400 || res.status === 401) {
+        if (__DEV__)
+          console.warn('[auth-trace] refreshAccessToken:rejected-clearing', {
+            status: res.status,
+            body: errorBody.slice(0, 200),
+          });
+        await clearTokens();
+        emitAuthEvent({type: 'session-expired'});
+        return null;
+      }
       if (__DEV__)
-        console.warn('[auth-trace] refreshAccessToken:non-ok-clearing', {
+        console.warn('[auth-trace] refreshAccessToken:transient-keeping', {
           status: res.status,
-          body: body.slice(0, 200),
+          body: errorBody.slice(0, 200),
         });
-      // Refresh failed (probably expired/revoked) — wipe and force re-login.
-      await clearTokens();
+      emitAuthEvent({type: 'refresh-failed', status: res.status});
       return null;
+      // @ai-end
     }
     const data = (await res.json()) as TokenResponse;
+    if (sessionChanged()) return null; // @ai — M4
     const next = tokensFromResponse(data);
     // Hydra MAY rotate refresh_token. If the response omits it, keep the old.
     if (!data.refresh_token) next.refreshToken = refreshToken;
     await saveTokens(next);
+    emitAuthEvent({type: 'refreshed'}); // @ai
     return next;
   } catch {
+    // A network error or a bad response: keep the tokens (M1). // @ai
+    if (!sessionChanged()) emitAuthEvent({type: 'refresh-failed', status: 0}); // @ai
     return null;
   }
 }
+
+// @ai-start
+/**
+ * M2 (TECH_DEBT #244) — the QF API rejected the access token with a 401.
+ *
+ * Refresh the token even when it has not expired by the local clock, for
+ * example after a server-side revoke. Before M2, the 401 retry got the same
+ * token again from getValidAccessToken(), got a second 401, and the sync queue
+ * marked the write permanent. Parallel callers share one refresh (H1).
+ *
+ * Returns the new access token, or null when no session can be refreshed.
+ */
+export async function refreshAfterUnauthorized(): Promise<string | null> {
+  if (refreshInFlight) {
+    const shared = await refreshInFlight;
+    return shared?.accessToken ?? null;
+  }
+  const tokens = await loadTokens();
+  if (!tokens?.refreshToken) return null;
+  const refreshed = await refreshAccessToken(tokens.refreshToken);
+  return refreshed?.accessToken ?? null;
+}
+// @ai-end
 
 export async function isSignedIn(): Promise<boolean> {
   const tokens = await loadTokens();

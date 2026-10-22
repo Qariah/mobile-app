@@ -6,6 +6,8 @@ import {useTheme} from '@/hooks/useTheme';
 import Color from 'color';
 import {GlassView} from 'expo-glass-effect';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
+import {useTranslation} from 'react-i18next';
+import {latinLetterSpacing} from '@/utils/rtl';
 
 interface TranslationCardProps {
   translation: TranslationInfo;
@@ -21,6 +23,7 @@ function TranslationCard({
   height = moderateScale(92),
 }: TranslationCardProps) {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah']);
   const glassColorScheme = useGlassColorScheme();
   const styles = useMemo(
     () => createStyles(theme, width, height),
@@ -38,8 +41,7 @@ function TranslationCard({
         </Text>
         {translation.itemCount > 0 && (
           <Text style={styles.subtitle}>
-            {translation.itemCount} item
-            {translation.itemCount !== 1 && 's'}
+            {t('qariah:translationCard.items', {count: translation.itemCount})}
           </Text>
         )}
       </View>
@@ -113,7 +115,7 @@ function createStyles(
       fontSize: moderateScale(14),
       fontFamily: theme.fonts.semiBold,
       color: theme.colors.text,
-      letterSpacing: -0.3,
+      letterSpacing: latinLetterSpacing(-0.3),
       lineHeight: moderateScale(18),
     },
     subtitle: {

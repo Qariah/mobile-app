@@ -23,17 +23,19 @@ import {useRouter} from 'expo-router';
 import {moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {useAuth} from '@/services/auth';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
+import {useTranslation} from 'react-i18next';
 
 export default function OnboardingSignIn() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah']);
   const router = useRouter();
   const {status, lastError, signIn} = useAuth();
   const isWorking = status === 'loading';
 
   // S35.3 — onboarding funnel: sign-in step viewed.
   React.useEffect(() => {
-    analyticsService.trackOnboardingStepViewed({
+    qariahAnalytics.trackOnboardingStepViewed({
       step: 'sign_in',
       step_index: 1,
     });
@@ -52,13 +54,14 @@ export default function OnboardingSignIn() {
       edges={['top', 'bottom']}>
       <View style={styles.content}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
-          Sign in to sync your reading
+          {t('qariah:signIn.onboardingTitle')}
         </Text>
         <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          Sign in with your Quran Foundation account to keep your favorites,
-          last-played, and bookmarks across devices. You can skip this for now —
-          you can always sign in later from Settings.
+          {t('qariah:signIn.onboardingBody')}
         </Text>
+        {/* `lastError` is technical English ("State mismatch (possible
+         * CSRF)"); it stays in AuthContext for the sign-in telemetry. The
+         * user sees one localized sentence. */}
         {lastError ? (
           <View
             style={[
@@ -69,7 +72,7 @@ export default function OnboardingSignIn() {
               },
             ]}>
             <Text style={[styles.errorText, {color: theme.colors.error}]}>
-              {lastError}
+              {t('qariah:auth.signInFailed')}
             </Text>
           </View>
         ) : null}
@@ -84,26 +87,26 @@ export default function OnboardingSignIn() {
             (pressed || isWorking) && styles.ctaPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Sign in with Quran Foundation">
+          accessibilityLabel={t('qariah:signIn.withQF')}>
           {isWorking ? (
             <ActivityIndicator color={theme.colors.background} />
           ) : (
             <Text style={[styles.ctaText, {color: theme.colors.background}]}>
-              Sign in with Quran Foundation
+              {t('qariah:signIn.withQF')}
             </Text>
           )}
         </Pressable>
         <Pressable
           onPress={() => {
-            analyticsService.trackOnboardingSkipped({step: 'sign_in'});
+            qariahAnalytics.trackOnboardingSkipped({step: 'sign_in'});
             router.replace('/onboarding/done');
           }}
           style={styles.skipButton}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Skip sign-in for now">
+          accessibilityLabel={t('qariah:signIn.skipA11y')}>
           <Text style={[styles.skipText, {color: theme.colors.textSecondary}]}>
-            Skip for now
+            {t('qariah:common.skipForNow')}
           </Text>
         </Pressable>
       </View>

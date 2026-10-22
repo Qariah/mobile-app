@@ -1,7 +1,14 @@
-// @ai #276 — regression tests for the multi-surah annotation load that backs
-// the mushaf bookmark-highlight fix: merge across surahs, cache-key no-ops,
-// subset no-op (a per-surah load must not narrow a page-level superset), and
-// serialization of concurrent loads (the old `loading` guard dropped them).
+// @ai — regression tests for the multi-surah annotation load that backs
+// the mushaf bookmark-highlight fix: merge across surahs, already-loaded
+// no-ops, and serialization of concurrent loads (the old `loading` guard
+// dropped them).
+//
+// The cache accumulates ("which surahs are in the store") and is subset-aware,
+// rather than keying the store on the last loaded set and replacing it. That
+// is what keeps a narrow per-surah load from wiping a wider page-level one and
+// keeps still-mounted neighbour pages tinted. The concurrency test below holds
+// the page-level load open with a `deferred()` gate so it actually exercises
+// the race — awaiting the superset first can never reproduce it.
 import {useVerseAnnotationsStore} from '../verseAnnotationsStore';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
 import type {
@@ -50,10 +57,15 @@ function deferred<T>() {
   return {promise, resolve};
 }
 
+function loadedList() {
+  return [...useVerseAnnotationsStore.getState().loadedSurahs].sort(
+    (a, b) => a - b,
+  );
+}
+
 function resetStore() {
   useVerseAnnotationsStore.setState({
-    loadedSurah: null,
-    loadedKey: null,
+    loadedSurahs: new Set<number>(),
     bookmarkedVerseKeys: new Set<string>(),
     notedVerseKeys: new Set<string>(),
     highlights: {},
@@ -61,7 +73,7 @@ function resetStore() {
   });
 }
 
-describe('verseAnnotationsStore multi-surah loading (#276)', () => {
+describe('verseAnnotationsStore multi-surah loading', () => {
   beforeEach(() => {
     resetStore();
     mockGetAnnotations.mockReset();
@@ -96,15 +108,14 @@ describe('verseAnnotationsStore multi-surah loading (#276)', () => {
       .loadAnnotationsForSurahs([112, 113, 114]);
 
     const state = useVerseAnnotationsStore.getState();
-    expect(state.loadedKey).toBe('112,113,114');
-    expect(state.loadedSurah).toBe(112);
+    expect(loadedList()).toEqual([112, 113, 114]);
     expect(state.bookmarkedVerseKeys.has('112:1')).toBe(true);
     expect(state.bookmarkedVerseKeys.has('114:3')).toBe(true);
     expect(state.highlights['114:2']).toBe('green');
     expect(state.loading).toBe(false);
   });
 
-  it('no-ops on an exact key match instead of refetching', async () => {
+  it('no-ops when every requested surah is already loaded', async () => {
     const store = useVerseAnnotationsStore.getState();
     await store.loadAnnotationsForSurahs([1, 2]);
     expect(mockGetAnnotations).toHaveBeenCalledTimes(2);
@@ -113,7 +124,19 @@ describe('verseAnnotationsStore multi-surah loading (#276)', () => {
     expect(mockGetAnnotations).toHaveBeenCalledTimes(2);
   });
 
-  it('per-surah load is a subset no-op against a page-level superset', async () => {
+  it('fetches only the surahs still missing (subset-aware)', async () => {
+    const store = useVerseAnnotationsStore.getState();
+    await store.loadAnnotationsForSurahs([1, 2]);
+    expect(mockGetAnnotations).toHaveBeenCalledTimes(2);
+
+    // 2 is already loaded → only 3 is fetched, and 1/2 stay loaded.
+    await store.loadAnnotationsForSurahs([2, 3]);
+    expect(mockGetAnnotations).toHaveBeenCalledTimes(3);
+    expect(mockGetAnnotations).toHaveBeenLastCalledWith(3);
+    expect(loadedList()).toEqual([1, 2, 3]);
+  });
+
+  it('per-surah load is a no-op against an already-loaded page set', async () => {
     mockGetAnnotations.mockImplementation((surah: number) =>
       Promise.resolve(
         surah === 114
@@ -127,13 +150,46 @@ describe('verseAnnotationsStore multi-surah loading (#276)', () => {
     // ContinuousMushafView-style per-surah call must NOT narrow the store
     // back to one surah — that would unpaint sibling-surah bookmarks.
     await store.loadAnnotationsForSurah(113);
-    const state = useVerseAnnotationsStore.getState();
-    expect(state.loadedKey).toBe('112,113,114');
-    expect(state.bookmarkedVerseKeys.has('114:3')).toBe(true);
+    expect(loadedList()).toEqual([112, 113, 114]);
+    expect(
+      useVerseAnnotationsStore.getState().bookmarkedVerseKeys.has('114:3'),
+    ).toBe(true);
 
-    // A surah outside the loaded set still reloads.
+    // A surah outside the loaded set still loads — and ACCUMULATES rather
+    // than narrowing, so a neighbour page keeps its tint.
     await store.loadAnnotationsForSurah(50);
-    expect(useVerseAnnotationsStore.getState().loadedKey).toBe('50');
+    expect(loadedList()).toEqual([50, 112, 113, 114]);
+    expect(
+      useVerseAnnotationsStore.getState().bookmarkedVerseKeys.has('114:3'),
+    ).toBe(true);
+  });
+
+  it('a per-surah load racing an in-flight page load keeps sibling bookmarks', async () => {
+    const gate = deferred<SurahAnnotations>();
+    mockGetAnnotations.mockImplementation((surah: number) => {
+      // Hold the page-level load open so the per-surah call is issued while
+      // it is genuinely still in flight.
+      if (surah === 112) return gate.promise;
+      if (surah === 114)
+        return Promise.resolve(annotations({bookmarks: [bookmark('114:3')]}));
+      return Promise.resolve(annotations());
+    });
+
+    const store = useVerseAnnotationsStore.getState();
+    const pageLoad = store.loadAnnotationsForSurahs([112, 113, 114]);
+    // The player's per-surah load for a surah INSIDE the in-flight set. An
+    // exact-key cache couldn't see 113 as covered (the key wasn't set yet),
+    // then its recheck compared '112,113,114' === '113', re-fetched 113 alone
+    // and REPLACED the store — dropping 112 and 114.
+    const perSurah = store.loadAnnotationsForSurah(113);
+
+    gate.resolve(annotations({bookmarks: [bookmark('112:1')]}));
+    await Promise.all([pageLoad, perSurah]);
+
+    const state = useVerseAnnotationsStore.getState();
+    expect(state.bookmarkedVerseKeys.has('112:1')).toBe(true);
+    expect(state.bookmarkedVerseKeys.has('114:3')).toBe(true);
+    expect(loadedList()).toEqual([112, 113, 114]);
   });
 
   it('serializes a load requested while another is in flight (no drop)', async () => {
@@ -158,17 +214,18 @@ describe('verseAnnotationsStore multi-surah loading (#276)', () => {
     gate.resolve(annotations({bookmarks: [bookmark('1:5')]}));
     await Promise.all([first, second]);
 
-    // The old `if (loading) return` guard dropped the second call outright;
-    // it must now run after the first and win with the superset key.
+    // The old `if (loading) return` guard dropped the second call outright; it
+    // must run after the first, and both surahs end up loaded + merged.
     const state = useVerseAnnotationsStore.getState();
-    expect(state.loadedKey).toBe('1,2');
+    expect(loadedList()).toEqual([1, 2]);
+    expect(state.bookmarkedVerseKeys.has('1:5')).toBe(true);
     expect(state.bookmarkedVerseKeys.has('2:255')).toBe(true);
   });
 
-  it('leaves the previous key intact when a load fails', async () => {
+  it('leaves already-loaded surahs intact when a load fails', async () => {
     const store = useVerseAnnotationsStore.getState();
     await store.loadAnnotationsForSurahs([1]);
-    expect(useVerseAnnotationsStore.getState().loadedKey).toBe('1');
+    expect(loadedList()).toEqual([1]);
 
     const consoleError = jest
       .spyOn(console, 'error')
@@ -177,13 +234,12 @@ describe('verseAnnotationsStore multi-surah loading (#276)', () => {
     await store.loadAnnotationsForSurahs([2]);
     consoleError.mockRestore();
 
-    const state = useVerseAnnotationsStore.getState();
-    expect(state.loadedKey).toBe('1');
-    expect(state.loading).toBe(false);
+    expect(loadedList()).toEqual([1]);
+    expect(useVerseAnnotationsStore.getState().loading).toBe(false);
 
     // And the next load still works (in-flight slot was released).
     await store.loadAnnotationsForSurahs([2]);
-    expect(useVerseAnnotationsStore.getState().loadedKey).toBe('2');
+    expect(loadedList()).toEqual([1, 2]);
   });
 
   it('optimistic bookmark mutations update the set immediately', () => {

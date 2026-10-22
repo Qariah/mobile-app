@@ -76,6 +76,32 @@ import java.util.concurrent.Executors
  * marker files, so a later real launcher tap uses it; JS then does not
  * overwrite it. `--es qariah_lab_splash_variant clear` removes the lab markers.
  *
+ * V2 FLAG. The marker is FLAG_FILE ("..._v2.on"). The old flag key wrote
+ * LEGACY_FLAG_FILE on builds 1975-2026. A new name makes sure that an old
+ * marker has no effect after the upgrade. setEnabledForNextLaunch deletes the
+ * legacy file each time it runs.
+ *
+ * TRANSIENT OFF. A failed or quota-limited flag request writes OFF with
+ * setOffForNextLaunchKeepGuard. That function deletes the legacy marker and
+ * the flag marker. It does not touch the crash-guard count or the fallback
+ * marker. It writes TRANSIENT_OFF_FILE only when the flag marker existed. A good flag response uses setEnabledForNextLaunch. It
+ * resets the guard when the value changes, EXCEPT when it turns the flag ON
+ * after a transient off: then the guard state stays.
+ *
+ * BOOT RISK. BOOT_RISK_FILE marks a device that had a bad boot. JS sets it
+ * (setBootRisk) when the splash stalls or the previous launch did not complete.
+ * The background thread also sets it when the previous process ended with an
+ * ANR. The marker is permanent for the install. JS reads it at each start
+ * (getBootRisk, one stat) and sends it to PostHog as a person property.
+ *
+ * PREVIOUS PROCESS. PROC_STATE_FILE holds "pid startWallMs mode reached" of the
+ * last process that created MainActivity. When a process resolves its mode,
+ * one background task reads that file, finds the exit reason of that pid
+ * (API 30+, records at or after its start only), and keeps the result in
+ * memory. Then it writes the state of this process. The first dismiss sets
+ * reached=1. JS reads the result with getPreviousProcessInfo (telemetry only).
+ * This tells us the arm of the process that died. The guard does not use it.
+ *
  * TIME LIMIT (review R7): OVERLAY_TIME_LIMIT_MS of STARTED time; it pauses at
  * onStop and resumes at onStart. The JS 12 s force-reveal is unchanged.
  *
@@ -104,8 +130,18 @@ import java.util.concurrent.Executors
  * iOS is not affected. This module is Android-only.
  */
 object QariahBootSplash {
-  const val FLAG_FILE = "qariah_boot_nonblocking_splash.on"
+  // @ai v2 marker: the old name stays only so that it can be deleted.
+  const val FLAG_FILE = "qariah_boot_nonblocking_splash_v2.on"
+  const val LEGACY_FLAG_FILE = "qariah_boot_nonblocking_splash.on"
+  const val BOOT_RISK_FILE = "qariah_boot_risk.on"
+  const val PROC_STATE_FILE = "qariah_boot_process.state"
+  // Exit reason codes for getPreviousProcessInfo when there is no real reason.
+  const val EXIT_NO_RECORD = -1
+  const val EXIT_API_TOO_LOW = -2
+  const val EXIT_NO_PREVIOUS = -3
   const val FALLBACK_FILE = "qariah_boot_nonblocking_splash.fallback"
+  // @ai Set by a transient off; a good response deletes it.
+  const val TRANSIENT_OFF_FILE = "qariah_boot_nonblocking_splash_v2.transient-off"
   const val GUARD_FILE = "qariah_boot_nonblocking_splash.guard"
   // Lab builds only: a persisted lab arm (see resolveMode).
   const val LAB_C1B_FILE = "qariah_boot_nonblocking_splash.lab-c1b"
@@ -177,6 +213,24 @@ object QariahBootSplash {
   // Guard state, io thread only.
   private var guardDeaths = 0
 
+  // @ai Boot risk (any thread) and previous-process record.
+  @Volatile private var bootRisk = false
+  // Wall time of this process start (onApplicationCreate, else activity create).
+  @Volatile private var processStartWallMs = 0L
+
+  private data class PrevInfo(
+    val hasPrevious: Boolean,
+    val exitReasonCode: Int,
+    val prevMode: String?,
+    val prevReachedReveal: Boolean,
+    // This evaluation enrolled the device (ANR exit, no boot risk before).
+    val newlyEnrolledByAnr: Boolean
+  )
+
+  // io thread only. prevInfo is null until the evaluation task ran.
+  private var prevInfo: PrevInfo? = null
+  private var procStateWritten = false
+
   /** The mode this process uses. "control" until MainActivity resolves it. */
   fun getMode(): String = mode
 
@@ -192,11 +246,14 @@ object QariahBootSplash {
    */
   fun onApplicationCreate(application: Application) {
     try {
+      processStartWallMs = System.currentTimeMillis()
       appContext = application
       checkMarkers(application)
-      // Flag off (every control user): nothing more, not even the io thread.
-      // Guard state from an earlier "on" period was deleted when JS turned the
-      // flag off (setEnabledForNextLaunch).
+      // Flag off (every control user): no guard work and no logo decode here.
+      // (Every mode still queues the process-state task at activity create.)
+      // A good flag response that turned the flag off deleted the guard state
+      // (setEnabledForNextLaunch). A transient off keeps it on purpose
+      // (setOffForNextLaunchKeepGuard).
       if (flagOnAtStart) {
         io.execute { evaluateGuard(application) }
         if (!fallbackAtStart) startEarlyLogoDecode(application)
@@ -227,6 +284,10 @@ object QariahBootSplash {
         modeResolved = true
         // One line per process. The lab A/B reads it to confirm the arm.
         Log.i(TAG, "boot splash mode=$mode")
+        // @ai Every mode: record the previous process, then this one. A
+        // separate io task; FIFO order puts it before any dismiss rewrite.
+        if (processStartWallMs == 0L) processStartWallMs = System.currentTimeMillis()
+        queueProcessStateEvaluation(activity.applicationContext, mode, processStartWallMs)
       }
       if (!isTreatment()) return false
       // JS already revealed the app in this process (an Activity re-create
@@ -262,6 +323,11 @@ object QariahBootSplash {
               deleteQuietly(File(dir(ctx), FALLBACK_FILE))
             }
           }
+          // @ai Every mode: this process reached the reveal.
+          if (modeResolved && ctx != null) {
+            val m = mode
+            io.execute { markProcessReached(ctx, m) }
+          }
           unregisterLifecycle()
         }
         removeOverlay()
@@ -274,24 +340,63 @@ object QariahBootSplash {
   /**
    * JS: store the remote flag value for the NEXT launch (background thread).
    * A changed value also clears the crash-guard state, so an owner who turns
-   * the flag off and on again gets a fresh start.
+   * the flag off and on again gets a fresh start. Exception: an ON after a
+   * transient off (TRANSIENT_OFF_FILE) keeps the guard state.
    */
   fun setEnabledForNextLaunch(context: Context?, enabled: Boolean) {
     val ctx = (context ?: appContext)?.applicationContext ?: return
     io.execute {
       try {
+        // @ai The legacy (v1) marker always goes, before any early return.
+        deleteQuietly(File(dir(ctx), LEGACY_FLAG_FILE))
         // A lab build that persisted an arm keeps it; the remote flag must not
         // overwrite a lab experiment (lab builds only create this file).
         if (File(dir(ctx), LAB_PERSIST_FILE).exists()) return@execute
         val flag = File(dir(ctx), FLAG_FILE)
+        // @ai A transient off (setOffForNextLaunchKeepGuard) left this marker.
+        // A good response ends the transient state. If the good response turns
+        // the flag ON again, the guard state stays: the off was a network
+        // failure, not an owner change.
+        val transient = File(dir(ctx), TRANSIENT_OFF_FILE)
+        val wasTransient = transient.exists()
+        deleteQuietly(transient)
         if (flag.exists() == enabled) return@execute
         if (enabled) flag.createNewFile() else deleteQuietly(flag)
+        if (enabled && wasTransient) return@execute
         guardDeaths = 0
         deleteQuietly(File(dir(ctx), GUARD_FILE))
         deleteQuietly(File(dir(ctx), FALLBACK_FILE))
       } catch (_: Throwable) {
         // Fail closed: the stored value stays as it was.
       }
+    }
+  }
+
+  /**
+   * @ai JS: a TRANSIENT off (a failed or quota-limited flag request). Deletes
+   * only the flag marker. The crash-guard count and the fallback marker stay,
+   * so a flaky network cannot reset the guard. A good response uses
+   * setEnabledForNextLaunch, which does the full reset.
+   */
+  fun setOffForNextLaunchKeepGuard(context: Context?) {
+    try {
+      val ctx = (context ?: appContext)?.applicationContext ?: return
+      io.execute {
+        try {
+          deleteQuietly(File(dir(ctx), LEGACY_FLAG_FILE))
+          if (File(dir(ctx), LAB_PERSIST_FILE).exists()) return@execute
+          val flag = File(dir(ctx), FLAG_FILE)
+          // Record the transient state only when the flag was ON. The next
+          // good ON response then keeps the guard state (setEnabledForNextLaunch).
+          if (flag.exists()) {
+            File(dir(ctx), TRANSIENT_OFF_FILE).createNewFile()
+            deleteQuietly(flag)
+          }
+        } catch (_: Throwable) {
+          // Fail closed: the stored value stays as it was.
+        }
+      }
+    } catch (_: Throwable) {
     }
   }
 
@@ -336,6 +441,8 @@ object QariahBootSplash {
         val flag = File(d, FLAG_FILE)
         val c1bFile = File(d, LAB_C1B_FILE)
         val persist = File(d, LAB_PERSIST_FILE)
+        // @ai A lab arm is a fresh start: no transient state is left.
+        deleteQuietly(File(d, TRANSIENT_OFF_FILE))
         if (clear) {
           deleteQuietly(flag); deleteQuietly(c1bFile); deleteQuietly(persist)
         } else {
@@ -346,6 +453,170 @@ object QariahBootSplash {
         guardDeaths = 0
         deleteQuietly(File(d, GUARD_FILE))
         deleteQuietly(File(d, FALLBACK_FILE))
+      } catch (_: Throwable) {
+      }
+    }
+  }
+
+  // --- boot risk (@ai) ---------------------------------------------------------
+
+  /** JS: mark this device as a boot risk. Permanent for the install. */
+  fun setBootRisk(context: Context?) {
+    bootRisk = true
+    try {
+      val ctx = (context ?: appContext)?.applicationContext ?: return
+      io.execute { writeBootRiskFile(ctx) }
+    } catch (_: Throwable) {
+      // The in-memory value still holds for this process.
+    }
+  }
+
+  /** JS thread (one stat). True when the boot-risk marker is set. */
+  fun getBootRisk(context: Context?): Boolean {
+    if (bootRisk) return true
+    return try {
+      val ctx = (context ?: appContext)?.applicationContext ?: return false
+      File(dir(ctx), BOOT_RISK_FILE).exists()
+    } catch (_: Throwable) {
+      false
+    }
+  }
+
+  /** io thread. */
+  private fun writeBootRiskFile(context: Context) {
+    try {
+      File(dir(context), BOOT_RISK_FILE).createNewFile()
+    } catch (_: Throwable) {
+    }
+  }
+
+  // --- previous process record (@ai; io thread) --------------------------------
+
+  private fun queueProcessStateEvaluation(context: Context, mode: String, startWallMs: Long) {
+    val ctx = context.applicationContext
+    val pid = Process.myPid()
+    try {
+      io.execute { evaluateProcessState(ctx, pid, startWallMs, mode) }
+    } catch (_: Throwable) {
+      // Telemetry only; never throws into the app.
+    }
+  }
+
+  /**
+   * Reads the state of the previous main-activity process, finds its exit
+   * reason, keeps the result in memory, then writes the state of this process.
+   */
+  private fun evaluateProcessState(context: Context, pid: Int, startWallMs: Long, mode: String) {
+    var hasPrevious = false
+    var code = EXIT_NO_PREVIOUS
+    var prevMode: String? = null
+    var prevReached = false
+    try {
+      val parts = File(dir(context), PROC_STATE_FILE).readText().trim().split(" ")
+      val prevPid = parts[0].toInt()
+      val prevStart = parts[1].toLong()
+      // Compare the pair, not the pid alone: Android can reuse a pid.
+      if (prevPid != pid || prevStart != startWallMs) {
+        prevMode = parts[2]
+        prevReached = parts[3] == "1"
+        code = exitReasonFor(context, prevPid, prevStart)
+        hasPrevious = true
+      }
+    } catch (_: Throwable) {
+      // No state file, or unreadable: no previous process.
+      hasPrevious = false
+      code = EXIT_NO_PREVIOUS
+      prevMode = null
+      prevReached = false
+    }
+    val riskBefore = getBootRisk(context)
+    var newlyEnrolledByAnr = false
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        code == ApplicationExitInfo.REASON_ANR
+      ) {
+        newlyEnrolledByAnr = !riskBefore
+        bootRisk = true
+        writeBootRiskFile(context)
+      }
+    } catch (_: Throwable) {
+    }
+    prevInfo = PrevInfo(hasPrevious, code, prevMode, prevReached, newlyEnrolledByAnr)
+    writeProcessState(context, pid, startWallMs, mode, false)
+    procStateWritten = true
+  }
+
+  /** io thread. The first dismiss: rewrite this process's state, reached=1. */
+  private fun markProcessReached(context: Context, mode: String) {
+    if (!procStateWritten) return
+    writeProcessState(context, Process.myPid(), processStartWallMs, mode, true)
+  }
+
+  /** temp file + rename, no fsync. */
+  private fun writeProcessState(
+    context: Context,
+    pid: Int,
+    startWallMs: Long,
+    mode: String,
+    reached: Boolean
+  ) {
+    try {
+      val d = dir(context)
+      val tmp = File(d, "$PROC_STATE_FILE.tmp")
+      tmp.writeText("$pid $startWallMs $mode ${if (reached) 1 else 0}")
+      if (!tmp.renameTo(File(d, PROC_STATE_FILE))) deleteQuietly(tmp)
+    } catch (_: Throwable) {
+    }
+  }
+
+  /** ApplicationExitInfo.REASON_* for the pid, or EXIT_NO_RECORD / EXIT_API_TOO_LOW. */
+  private fun exitReasonFor(context: Context, pid: Int, startWallMs: Long): Int {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return EXIT_API_TOO_LOW
+    return try {
+      val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        ?: return EXIT_NO_RECORD
+      am.getHistoricalProcessExitReasons(context.packageName, pid, 1)
+        .firstOrNull { it.timestamp >= startWallMs }
+        ?.reason
+        ?: EXIT_NO_RECORD
+    } catch (_: Throwable) {
+      EXIT_NO_RECORD
+    }
+  }
+
+  /**
+   * JS: the record of the previous main-activity process. Runs on the io
+   * thread, so it answers after the evaluation task when both are queued.
+   * Calls back with null on error, and when the evaluation never ran in
+   * this process (no MainActivity create). Never throws.
+   */
+  fun getPreviousProcessInfo(context: Context?, callback: (Map<String, Any?>?) -> Unit) {
+    val ctx = (context ?: appContext)?.applicationContext
+    try {
+      io.execute {
+        val result: Map<String, Any?>? = try {
+          // null when the evaluation never ran in this process.
+          prevInfo?.let { p ->
+            mapOf(
+              "hasPrevious" to p.hasPrevious,
+              "exitReasonCode" to p.exitReasonCode,
+              "prevMode" to p.prevMode,
+              "prevReachedReveal" to p.prevReachedReveal,
+              "newlyEnrolledByAnr" to p.newlyEnrolledByAnr,
+              "bootRisk" to getBootRisk(ctx)
+            )
+          }
+        } catch (_: Throwable) {
+          null
+        }
+        try {
+          callback(result)
+        } catch (_: Throwable) {
+        }
+      }
+    } catch (_: Throwable) {
+      try {
+        callback(null)
       } catch (_: Throwable) {
       }
     }

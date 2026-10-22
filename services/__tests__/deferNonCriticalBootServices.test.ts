@@ -109,6 +109,9 @@ jest.mock('../../services/mushaf/ThemeDataService', () => ({
 jest.mock('expo-font', () => ({
   loadAsync: jest.fn().mockResolvedValue(undefined),
 }));
+// @ai Upstream Pass B: AppInitializer starts the car integration after the
+// services (the same mock as upstream's AppInitializer suites).
+jest.mock('@/services/car', () => ({startCarIntegration: jest.fn()}));
 jest.mock('../../services/adhkar/AdhkarService', () => ({
   adhkarService: {initialize: jest.fn().mockResolvedValue(undefined)},
 }));

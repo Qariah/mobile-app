@@ -41,7 +41,34 @@
 // indistinguishable, so a broken fetch read as "this issue has no evidence"
 // and would silently hold a bug that was properly documented.
 
-import {readFileSync} from 'node:fs';
+import {readFileSync, readSync} from 'node:fs';
+import {Buffer} from 'node:buffer';
+/* global SharedArrayBuffer, Atomics -- Node globals; the shared ESLint env is the RN app's */
+
+// Read all of stdin. `readFileSync(0)` throws EAGAIN when stdin is a pipe whose
+// writer is still slow (a network call such as `node scripts/gh-issue.mjs view`).
+// This waits 50 ms and tries again until the writer closes the pipe.
+function readStdin() {
+  const chunks = [];
+  const buf = Buffer.alloc(65536);
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    let n;
+    try {
+      n = readSync(0, buf, 0, buf.length, null);
+    } catch (err) {
+      if (err.code === 'EAGAIN') {
+        Atomics.wait(nap, 0, 0, 50);
+        continue;
+      }
+      if (err.code === 'EOF') break;
+      throw err;
+    }
+    if (n === 0) break;
+    chunks.push(Buffer.from(buf.subarray(0, n)));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 export const HEADING_RE = /^#{2,4}\s*evidence\s*$/im;
 export const MARKER_RE = /<!--\s*evidence:v1\s*-->/i;
@@ -198,7 +225,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       fail('no input', 'pass --file=<path> or pipe the issue text on stdin');
     }
     try {
-      text = readFileSync(0, 'utf8');
+      text = readStdin();
     } catch (err) {
       fail('cannot read stdin', err.code || String(err));
     }

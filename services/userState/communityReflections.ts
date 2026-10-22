@@ -60,6 +60,7 @@ import {getQfSdk} from '@/services/auth/sdkClient';
 import {getQfApiBase, getQfOAuthConfig} from '@/services/auth/config';
 import {getQfClientCredentialsToken} from '@/services/auth/qfClientCredentials';
 import {withQfCall} from './qfErrors';
+import i18n from '@/i18n';
 
 export interface QfReflectionAuthor {
   id?: number | string;
@@ -271,8 +272,8 @@ export async function toggleCommentLike(
 /** Best-effort author label for UI — falls back through user fields. */
 export function authorLabel(post: QfReflectionPost | QfComment): string {
   const u = post.user ?? post.author;
-  if (!u) return 'Anonymous';
-  return u.displayName ?? u.name ?? u.username ?? 'Anonymous';
+  const name = u ? (u.displayName ?? u.name ?? u.username) : undefined;
+  return name ?? i18n.t('qariah:reflections.anonymous');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

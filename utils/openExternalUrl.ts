@@ -1,5 +1,6 @@
 import {Alert, Linking} from 'react-native';
 import * as Sentry from '@sentry/react-native';
+import i18n from '@/i18n';
 
 /**
  * Open an external URL safely.
@@ -22,7 +23,7 @@ import * as Sentry from '@sentry/react-native';
  */
 export function openExternalUrl(
   url: string,
-  destinationLabel = 'this link',
+  destinationLabel: string = i18n.t('qariah:links.thisLink'),
 ): void {
   Linking.openURL(url).catch((error: unknown) => {
     Sentry.captureException(error, {
@@ -31,8 +32,8 @@ export function openExternalUrl(
       level: 'warning',
     });
     Alert.alert(
-      "Couldn't open link",
-      `Your device wasn't able to open ${destinationLabel}. Please try again, or open it in your browser.`,
+      i18n.t('qariah:links.openFailedTitle'),
+      i18n.t('qariah:links.openFailedBody', {destination: destinationLabel}),
     );
   });
 }

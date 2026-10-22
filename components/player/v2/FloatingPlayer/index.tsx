@@ -1,7 +1,6 @@
 import React, {useCallback, useMemo, useRef} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {usePathname} from 'expo-router';
-import {Feather} from '@expo/vector-icons';
 import {useTheme} from '@/hooks/useTheme';
 import {moderateScale} from 'react-native-size-matters';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
@@ -20,11 +19,17 @@ import {GlassView} from 'expo-glass-effect';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {FrostedView} from '@/components/FrostedView';
 import {useResponsive} from '@/hooks/useResponsive';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {getTrackDisplayTitle, getTrackArtistDisplay} from '@/i18n/format';
+// @ai-end
 
+// @ai-start
 export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
   const {theme} = useTheme();
+  const {t} = useTranslation(['player', 'common']);
   const glassColorScheme = useGlassColorScheme();
-  const {play, pause, stop} = usePlayerActions();
+  const {play, pause} = usePlayerActions();
   const playbackState = usePlayerStore(state => state.playback.state);
   const queueTracks = usePlayerStore(state => state.queue.tracks);
   const currentIndex = usePlayerStore(state => state.queue.currentIndex);
@@ -65,10 +70,6 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
     }
   }, [playbackState, pause, play]);
 
-  const handleDismiss = useCallback(() => {
-    stop();
-  }, [stop]);
-
   const containerStyle = useMemo(
     () => ({
       position: 'absolute' as const,
@@ -106,9 +107,9 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
         ? {glassEffectStyle: 'regular' as const, colorScheme: glassColorScheme}
         : {})}>
       {/* #179 / #401 a11y -- the row is a plain View, not a grouping
-       * Pressable, so the play/pause control and the x are INDIVIDUALLY
-       * focusable by TalkBack / VoiceOver (a wrapping `accessible` Pressable
-       * collapses the whole row into one node). This pill is the mini player
+       * Pressable, so the play/pause control is INDIVIDUALLY focusable by
+       * TalkBack / VoiceOver (a wrapping `accessible` Pressable collapses the
+       * whole row into one node). This pill is the mini player
        * on Android AND on iOS below 26 (USE_GLASS is false there), so it
        * carries the same fix as MiniPlayer. The expand action -- and with it
        * the Android ripple -- lives on the inner body only.
@@ -119,8 +120,8 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
           style={styles.body}
           android_ripple={{color: 'rgba(0, 0, 0, 0.1)', borderless: false}}
           accessibilityRole="button"
-          accessibilityLabel={`${currentTrack.title}, ${currentTrack.artist}`}
-          accessibilityHint="Opens the full player"
+          accessibilityLabel={`${getTrackDisplayTitle(currentTrack)}, ${getTrackArtistDisplay(currentTrack)}`}
+          accessibilityHint={t('a11y.openPlayer')}
           testID="mini-player-expand">
           <ReciterImage
             reciterName={currentTrack.reciterName}
@@ -128,12 +129,12 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
           />
           <View style={styles.trackInfo}>
             <Text style={[styles.title, {color: textColor}]} numberOfLines={1}>
-              {currentTrack.title}
+              {getTrackDisplayTitle(currentTrack)}
             </Text>
             <Text
               style={[styles.subtitle, {color: subtitleColor}]}
               numberOfLines={1}>
-              {currentTrack.artist}
+              {getTrackArtistDisplay(currentTrack)}
             </Text>
           </View>
         </Pressable>
@@ -142,7 +143,11 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
           style={styles.playButton}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel={playbackState === 'playing' ? 'Pause' : 'Play'}
+          accessibilityLabel={t(
+            playbackState === 'playing'
+              ? 'common:actions.pause'
+              : 'common:actions.play',
+          )}
           accessibilityState={{busy: isLoadingNewTrack}}
           testID="mini-player-play-pause">
           {isLoadingNewTrack ? (
@@ -156,30 +161,18 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
             <PlayIcon color={theme.colors.text} size={moderateScale(20, 0.2)} />
           )}
         </Pressable>
-
-        <Pressable
-          onPress={handleDismiss}
-          style={styles.closeButton}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Close player"
-          testID="mini-player-close">
-          <Feather
-            name="x"
-            size={moderateScale(16, 0.2)}
-            color={subtitleColor}
-          />
-        </Pressable>
       </View>
     </Container>
   );
 });
+// @ai-end
 
+// @ai-start
 const styles = StyleSheet.create({
   content: {
     // #270 — symmetric horizontal insets (was 14) + even 12px rhythm so the
-    // play/close cluster isn't cramped against the right edge. Vertical padding
-    // is already symmetric here (the Android pill is a normal component; its
+    // play control isn't cramped against the right edge. Vertical padding is
+    // already symmetric here (the Android pill is a normal component; its
     // bottom clearance is handled by the container's safe-area inset).
     flexDirection: 'row',
     alignItems: 'center',
@@ -212,10 +205,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
+    textAlign: 'left',
     fontSize: moderateScale(13, 0.2),
     fontFamily: 'Manrope-SemiBold',
   },
   subtitle: {
+    textAlign: 'left',
     fontSize: moderateScale(11, 0.2),
     fontFamily: 'Manrope-Medium',
   },
@@ -226,11 +221,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  closeButton: {
-    width: moderateScale(32, 0.2),
-    height: moderateScale(34, 0.2),
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
 });
+// @ai-end

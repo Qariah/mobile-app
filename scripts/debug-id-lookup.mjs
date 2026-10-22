@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 // The app prints an anonymous Debug ID in every Help & Support email
 // (services/diagnostics/debugId.ts). The SAME id is the Sentry `debug_id` tag
-// (app/_layout.tsx) and the PostHog distinct_id (services/analytics/
+// (services/diagnostics/qariahSentryOptions.ts) and the PostHog distinct_id (services/analytics/
 // AnalyticsService.ts). Until now nothing read it back. This script does: it
 // asks Sentry and PostHog what that device did, and prints an `### Evidence`
 // skeleton (scripts/lib/evidence-block.mjs) the investigate step can paste into
@@ -34,6 +34,8 @@
 // usage/env errors.
 
 import {renderSkeleton} from './lib/evidence-block.mjs';
+import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
+import {createSentryClient, sentryConfig} from './lib/sentry-client.mjs';
 
 const args = process.argv.slice(2);
 const uuid = args.find(a => !a.startsWith('--'));
@@ -55,23 +57,8 @@ if (!uuid || !UUID_RE.test(uuid)) {
   process.exit(2);
 }
 
-const S = {
-  token: process.env.SENTRY_READ_TOKEN,
-  org: process.env.SENTRY_ORG || 'qariah',
-  project: process.env.SENTRY_PROJECT || 'qariahv2',
-  host: (process.env.SENTRY_REGION_HOST || 'https://de.sentry.io').replace(
-    /\/$/,
-    '',
-  ),
-};
-const P = {
-  token: process.env.POSTHOG_PERSONAL_API_TOKEN,
-  project: process.env.POSTHOG_PROJECT_ID,
-  host: (process.env.POSTHOG_HOST || 'https://us.posthog.com').replace(
-    /\/$/,
-    '',
-  ),
-};
+const S = sentryConfig();
+const P = posthogConfig();
 if (!S.token && !(P.token && P.project)) {
   console.error(
     '❌ Need SENTRY_READ_TOKEN and/or POSTHOG_PERSONAL_API_TOKEN + POSTHOG_PROJECT_ID. Source .env.local.',
@@ -85,31 +72,8 @@ if (!S.token && !(P.token && P.project)) {
 const FAULT_RE =
   /(stall|killed|stopped|not_completed|failed|abandon|error|crash|timeout|dropped|pressure|skipped)/i;
 
-async function sentry(path) {
-  const res = await fetch(`${S.host}/api/0${path}`, {
-    headers: {Authorization: `Bearer ${S.token}`},
-  });
-  if (!res.ok)
-    throw new Error(
-      `Sentry ${res.status} on ${path}: ${(await res.text()).slice(0, 200)}`,
-    );
-  return res.json();
-}
-async function hogql(query) {
-  const res = await fetch(`${P.host}/api/projects/${P.project}/query/`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${P.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({query: {kind: 'HogQLQuery', query}}),
-  });
-  if (!res.ok)
-    throw new Error(
-      `PostHog ${res.status}: ${(await res.text()).slice(0, 200)}`,
-    );
-  return (await res.json()).results || [];
-}
+const sentry = createSentryClient(S);
+const {hogql} = createPosthogClient(P);
 
 async function lookupSentry() {
   if (!S.token) return {skipped: 'SENTRY_READ_TOKEN not set', issues: []};

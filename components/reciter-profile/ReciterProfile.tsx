@@ -16,6 +16,7 @@ import {
   NativeSyntheticEvent,
   useWindowDimensions,
   InteractionManager,
+  PixelRatio, // @ai
   Platform,
   StyleSheet,
   Alert,
@@ -75,7 +76,17 @@ import {reciterShareUrl, shareUrl} from '@/utils/shareUtils';
 import branding from '@/config/branding';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
 import {getDisplayLabelFromName} from '@/services/rewayah/RewayahIdentity';
-import * as Sentry from '@sentry/react-native';
+import {useReciterProfileSurahsWatchdog} from '@/hooks/useContentReadyWatchdog';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
+import {currentLanguage} from '@/i18n/language';
+import {SOURCE_LANGUAGE} from '@/i18n/languages';
+import {forceLTR, isRTL} from '@/utils/rtl';
+import {getRecitationStyleLabel} from '@/components/player/v2/recitationStyle';
+import {rankSurahs} from '@/utils/search/catalog'; // @ai
+// @ai-end
+import {hasPagerReachedInitialPage} from './utils/pagerLayout'; // @ai
 
 interface ReciterProfileProps {
   id: string;
@@ -196,12 +207,14 @@ const SurahListSkeleton: React.FC<{theme: any}> = React.memo(({theme}) => {
 // devices get the same custom header/nav buttons as Android.
 const isGlass = USE_GLASS;
 
+// @ai-start
 const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   id: currentReciterId,
   showLoved = false,
   initialRewayatId: initialRewayatIdProp,
 }) => {
   const {theme} = useTheme();
+  const {t} = useTranslation('player');
   const styles = createSharedStyles(theme);
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
@@ -317,9 +330,12 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                   const slug = reciter?.slug ?? currentReciterId;
                   shareUrl(
                     reciterShareUrl(slug),
-                    `Listen to ${reciter?.name ?? 'this reciter'} on ${
-                      branding.appName
-                    }`,
+                    t('reciterProfile.shareMessage', {
+                      name: reciter
+                        ? getReciterDisplayName(reciter)
+                        : t('reciterProfile.thisReciter'),
+                      appName: branding.appName,
+                    }),
                   );
                 }}
                 hitSlop={8}>
@@ -339,7 +355,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             </View>
           ),
     });
-  }, [navigation, theme, showSearch]);
+  }, [navigation, theme, showSearch, t]);
 
   const [viewMode, setViewMode] = useState<ReciterProfileViewMode>(
     useSettings(state => state.reciterProfileViewMode),
@@ -438,15 +454,10 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
         );
       }
 
-      // 3. Filter by search query
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        available = available.filter(
-          surah =>
-            surah.name.toLowerCase().includes(q) ||
-            surah.translated_name_english.toLowerCase().includes(q),
-        );
-      }
+      // 3. A query ranks by relevance; sorting only applies without one
+      // @ai-start
+      if (searchQuery.trim()) return [...rankSurahs(searchQuery, available)];
+      // @ai-end
 
       // 4. Sort
       return [...available].sort((a, b) => {
@@ -533,7 +544,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             s.id.toString(),
             selectedRewayat.id,
           ),
-          title: s.name,
+          title: getSurahDisplayName(s),
           artist: reciter.name,
           reciterId: reciter.id,
           artwork,
@@ -565,7 +576,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
           s.id.toString(),
           selectedRewayat.id,
         ),
-        title: s.name,
+        title: getSurahDisplayName(s),
         artist: reciter.name,
         reciterId: reciter.id,
         artwork,
@@ -601,7 +612,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
           s.id.toString(),
           selectedRewayat.id,
         ),
-        title: s.name,
+        title: getSurahDisplayName(s),
         artist: reciter.name,
         reciterId: reciter.id,
         artwork,
@@ -882,12 +893,14 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   const tabs = useMemo(() => {
     const result: Array<{id: string; label: string}> = [];
     if (uploadsTabEnabled) {
-      result.push({id: 'uploads', label: 'My Uploads'});
+      result.push({id: 'uploads', label: t('reciterProfile.myUploads')});
     }
     if (reciter?.rewayat) {
       reciter.rewayat.forEach(r => {
         const style =
-          r.style.charAt(0).toUpperCase() + r.style.slice(1).toLowerCase();
+          currentLanguage === SOURCE_LANGUAGE
+            ? r.style.charAt(0).toUpperCase() + r.style.slice(1).toLowerCase()
+            : getRecitationStyleLabel(r.style);
         result.push({
           id: r.id,
           label: `${getDisplayLabelFromName(r.name)} · ${style}`,
@@ -895,7 +908,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
       });
     }
     return result;
-  }, [reciter?.rewayat, uploadsTabEnabled]);
+  }, [reciter?.rewayat, uploadsTabEnabled, t]);
 
   const handleTabChange = useCallback(
     (tabId: string) => {
@@ -991,7 +1004,14 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     (contentWidth: number) => {
       if (pagerScrolledRef.current) return;
       const targetX = initialTabIndex * screenWidth;
-      if (contentWidth >= targetX + screenWidth) {
+      // @ai-start
+      const initialPageReady = hasPagerReachedInitialPage(
+        contentWidth,
+        screenWidth,
+        initialTabIndex,
+        PixelRatio.get(),
+      );
+      if (initialPageReady) {
         pagerScrolledRef.current = true;
         // Set scrollX so the tab bar indicator lands on the correct tab immediately
         scrollX.setValue(targetX);
@@ -1005,6 +1025,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
           setNeighborsReady(true);
         });
       }
+      // @ai-end
     },
     [screenWidth, pagerOpacity, initialTabIndex, scrollX],
   );
@@ -1054,70 +1075,16 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     return () => clearTimeout(t);
   }, [neighborsReady, initialTabIndex, screenWidth, scrollX, pagerOpacity]);
 
-  // @ai REPORT-ONLY render/skeleton watchdog
-  // (planning/observability-gap-samsung-hang-2026-06-08.md §1). The surah list is
-  // gated behind `neighborsReady`, lifted by either handlePagerContentSizeChange
-  // (multi-tab) or the single-tab useEffect above. The 2026-06-04 hotfix bug was
-  // exactly that single-tab path being dropped → on Android single-tab reciters
-  // the gate never lifted → skeleton FOREVER (a silent hang: no throw, no crash,
-  // so both Sentry and PostHog were blind). This watchdog observes the OUTCOME
-  // (gate still false after the budget) regardless of WHICH lift path failed, and
-  // emits ONE discrete fault signal per mount. It does NOT touch the gate or
-  // change how it lifts (hard constraint) — purely making the hang queryable.
-  const RECITER_SURAHS_STALL_MS = 5000;
-  const stallFiredRef = useRef(false);
-  useEffect(() => {
-    if (neighborsReady) return; // already rendered — nothing to watch
-    const t = setTimeout(() => {
-      if (stallFiredRef.current) return;
-      stallFiredRef.current = true;
-      const ctx = {
-        reciter_id: currentReciterId,
-        reciter_name: reciter?.name ?? null,
-        rewaya_id: selectedRewayatId ?? null,
-        tabs_count: tabs.length,
-        neighbors_ready: neighborsReady, // expected false here
-        pager_scrolled: pagerScrolledRef.current,
-        platform: Platform.OS,
-      };
-      // Sentry — warning-level message (NOT an exception; nothing threw).
-      // release/dist come from Sentry.init; device_tier from diagnostics context.
-      Sentry.captureMessage('reciter-profile-surahs-stalled', {
-        level: 'warning',
-        tags: {
-          scope: 'reciter-profile',
-          tabs_count: String(tabs.length),
-          rp_platform: Platform.OS,
-        },
-        extra: ctx,
-      });
-      // PostHog — discrete product-fault event (drives the per-build tripwire).
-      analyticsService.trackReciterProfileSurahsStalled(ctx);
-    }, RECITER_SURAHS_STALL_MS);
-    return () => clearTimeout(t);
-  }, [
+  // @ai REPORT-ONLY surah-list stall watchdog + its success event (Qariah;
+  // moved to hooks/useContentReadyWatchdog.ts, TECH_DEBT #243).
+  useReciterProfileSurahsWatchdog({
     neighborsReady,
-    currentReciterId,
+    reciterId: currentReciterId,
     reciter,
-    selectedRewayatId,
-    tabs.length,
-  ]);
-
-  // @ai REPORT-ONLY companion SUCCESS event — fire once when the gate DOES lift,
-  // so PostHog can compute a stall RATE (stalled / (stalled + rendered)) per
-  // build and the tripwire has a denominator proving the screen is reached at
-  // all (§1). Telemetry only.
-  const renderedFiredRef = useRef(false);
-  useEffect(() => {
-    if (!neighborsReady || renderedFiredRef.current) return;
-    renderedFiredRef.current = true;
-    analyticsService.trackReciterProfileSurahsRendered({
-      reciter_id: currentReciterId,
-      rewaya_id: selectedRewayatId ?? null,
-      tabs_count: tabs.length,
-      platform: Platform.OS,
-    });
-  }, [neighborsReady, currentReciterId, selectedRewayatId, tabs.length]);
+    rewayaId: selectedRewayatId,
+    tabsCount: tabs.length,
+    pagerScrolledRef,
+  });
 
   // Sticky title bar opacity — fades in as the outer scroll collapses the header
   // With negative margin on header, the actual collapse point is reduced
@@ -1182,7 +1149,9 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                     if (shouldShow !== headerTitleShownRef.current) {
                       headerTitleShownRef.current = shouldShow;
                       navigation.setOptions({
-                        headerTitle: shouldShow ? reciter.name : '',
+                        headerTitle: shouldShow
+                          ? getReciterDisplayName(reciter)
+                          : '',
                         headerStyle: {
                           backgroundColor: shouldShow
                             ? theme.colors.background
@@ -1254,7 +1223,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                             styles.optionButtonText,
                             sortOption === 'asc' && styles.activeOptionText,
                           ]}>
-                          Asc
+                          {t('reciterProfile.sort.asc')}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -1268,7 +1237,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                             styles.optionButtonText,
                             sortOption === 'desc' && styles.activeOptionText,
                           ]}>
-                          Desc
+                          {t('reciterProfile.sort.desc')}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -1284,7 +1253,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                             sortOption === 'revelation' &&
                               styles.activeOptionText,
                           ]}>
-                          Rev
+                          {t('reciterProfile.sort.revelation')}
                         </Text>
                       </Pressable>
                     </View>
@@ -1343,7 +1312,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                 directionalLockEnabled
                 showsHorizontalScrollIndicator={false}
                 scrollEventThrottle={16}
-                style={{opacity: pagerOpacity}}
+                style={[{opacity: pagerOpacity}, forceLTR]}
                 onContentSizeChange={handlePagerContentSizeChange}
                 onScrollBeginDrag={() => {
                   scrollTargetRef.current = null;
@@ -1360,6 +1329,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                       width: screenWidth,
                       minHeight: contentMinHeight,
                       paddingBottom: bottomInset,
+                      direction: isRTL ? 'rtl' : 'ltr',
                     }}>
                     {renderedTabsRef.current.has(tab.id) ? (
                       tab.id === 'uploads' ? (
@@ -1450,7 +1420,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                   color: theme.colors.text,
                   textAlign: 'center',
                 }}>
-                {reciter.name}
+                {getReciterDisplayName(reciter)}
               </Text>
             </RNAnimated.View>
           )}
@@ -1464,9 +1434,12 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                 const slug = reciter?.slug ?? currentReciterId;
                 shareUrl(
                   reciterShareUrl(slug),
-                  `Listen to ${reciter?.name ?? 'this reciter'} on ${
-                    branding.appName
-                  }`,
+                  t('reciterProfile.shareMessage', {
+                    name: reciter
+                      ? getReciterDisplayName(reciter)
+                      : t('reciterProfile.thisReciter'),
+                    appName: branding.appName,
+                  }),
                 );
               }}
             />
@@ -1502,7 +1475,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             selectedRewayatId={selectedRewayatId}
             onRewayatSelect={handleRewayatChange}
             isDarkMode={theme.isDarkMode}
-            reciterName={reciter.name}
+            reciterName={getReciterDisplayName(reciter)}
             viewMode={viewMode}
             getColorForSurah={getColorForSurah}
           />
@@ -1511,6 +1484,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     </View>
   );
 };
+// @ai-end
 
 // Lightweight wrapper — defers mounting the heavy content until the navigation
 // transition finishes so the screen push feels instant.

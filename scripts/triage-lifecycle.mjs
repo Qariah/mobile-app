@@ -53,11 +53,10 @@
 // Env:  SENTRY_READ_TOKEN, GOOGLE_PLAY_SA_JSON|GOOGLE_PLAY_SERVICE_ACCOUNT_JSON,
 //       GH_REPO, GH_TOKEN
 
-/* global Buffer */
-import crypto from 'node:crypto';
 import {readFileSync, writeFileSync} from 'node:fs';
-import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
+import {behindFlagsOf} from './lib/fixed-in.mjs';
+import {loadServiceAccount, mintPlayToken} from './lib/google-play-auth.mjs';
 import {GH_REPO, gh, loadIssueCorpus} from './lib/incident-knowledge.mjs';
 
 const argv = process.argv.slice(2);
@@ -163,17 +162,7 @@ async function playIndex() {
   const idx = {};
   let sa;
   try {
-    const raw = process.env.GOOGLE_PLAY_SA_JSON;
-    sa =
-      raw && raw.trim()
-        ? JSON.parse(raw)
-        : JSON.parse(
-            readFileSync(
-              process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON ||
-                join(homedir(), '.android', 'play-service-account.json'),
-              'utf8',
-            ),
-          );
+    sa = loadServiceAccount();
   } catch (e) {
     console.warn(
       `  ⚠ Play SA unavailable — Play recency unavailable (Play issues skipped): ${e.message}`,
@@ -181,37 +170,8 @@ async function playIndex() {
     return (_playIndex = idx);
   }
   try {
-    const b64u = o =>
-      Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString(
-        'base64url',
-      );
-    const t = Math.floor(Date.now() / 1000);
-    const unsigned =
-      b64u({alg: 'RS256', typ: 'JWT'}) +
-      '.' +
-      b64u({
-        iss: sa.client_email,
-        scope: 'https://www.googleapis.com/auth/playdeveloperreporting',
-        aud: 'https://oauth2.googleapis.com/token',
-        exp: t + 3600,
-        iat: t,
-      });
-    const sig = crypto
-      .createSign('RSA-SHA256')
-      .update(unsigned)
-      .sign(sa.private_key)
-      .toString('base64url');
-    const tr = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion: `${unsigned}.${sig}`,
-      }),
-    });
-    const token = (await tr.json()).access_token;
-    if (!token) throw new Error('token mint failed');
-    const PKG = process.env.PLAY_PACKAGE || 'com.qariah.app';
+    const token = await mintPlayToken(sa, {scope: 'reporting'});
+    const PKG = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME;
     // Pull a generous page; the lifecycle pass needs the recency, not the cap.
     const res = await fetch(
       `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PKG}/errorIssues:search?pageSize=100`,
@@ -544,6 +504,16 @@ async function main() {
       const fixVc = fixedInVersion(issue) || FIXED_IN.get(issue.number);
       if (!fixVc) continue;
       considered++;
+      // A fix behind a flag is OFF in every build until the flag is on, so a
+      // quiet signal or an old build number proves nothing. Only
+      // scripts/prod-close.mjs closes these: it checks that the flag is fully on.
+      const flags = behindFlagsOf(issue.labels);
+      if (flags.length) {
+        console.log(
+          `   ⏸ #${issue.number} fixed-in:${fixVc} behind flag ${flags.join(', ')} — prod-close.mjs decides`,
+        );
+        continue;
+      }
       const rec = await recencyFor(issue.marker);
       // Close when: no recency (signal gone) OR last seen is quiet OR (Play) the
       // newest affected build is below the fix version (so it only persists on

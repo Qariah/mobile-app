@@ -60,14 +60,25 @@ const config: ExpoConfig = {
     // runtime; teamId is consumed by withIOSTeam.js + xcodebuild). Inherited
     // bug #19, closed in qariah-v2 Sprint 6 (S6.7).
     teamId: APPLE_TEAM_ID,
+    // Upstream Pass B (fca03eed): @bacons/apple-targets signs the widget
+    // extension with this team.
+    appleTeamId: APPLE_TEAM_ID,
     ...(ASSOCIATED_DOMAIN
       ? {associatedDomains: [`applinks:${ASSOCIATED_DOMAIN}`]}
       : {}),
     infoPlist: {
+      // Upstream Pass B (fca03eed, RFC-021): the App Group the widgets and the
+      // Live Activity share with the app. Upstream reads IOS_BUNDLE_ID; Qariah
+      // derives it from branding (group.com.qariah.app).
+      BayaanAppGroup: `group.${branding.bundleId.ios}`,
+      NSSupportsLiveActivities: true,
       NSAppleMusicUsageDescription: 'This app uses Apple Music to play audio.',
       UILaunchStoryboardName: 'SplashScreen',
       LSRequiresIPhoneOS: true,
-      UIRequiresFullScreen: true,
+      // @ai Qariah (TECH_DEBT #270): false matches what ships. The committed
+      // ios/Qariah/Info.plist and every shipped build have false, so iPad
+      // Split View and Stage Manager stay on. Change it only with an iPad test.
+      UIRequiresFullScreen: false,
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: 'This app does not use the camera.',
       // So Linking.canOpenURL('mailto:') returns true on iOS 9+ (schemes must
@@ -76,6 +87,12 @@ const config: ExpoConfig = {
       // Mirrored into the committed ios/*/Info.plist so it ships without a
       // re-prebuild (keep both in sync — Sprint 32).
       LSApplicationQueriesSchemes: ['mailto'],
+      // Qariah (Sprint 48, S48.6): the `expo-background-task` plugin (in
+      // `plugins` below) appends `com.expo.modules.backgroundtask.processing`
+      // to this list and `processing` to UIBackgroundModes. The legacy
+      // `expo-task-manager` auto-plugin appends `fetch`, and
+      // ./withIosRemoveBackgroundFetch.js removes it again. Keep both lists
+      // as they are here; the plugins change them.
       BGTaskSchedulerPermittedIdentifiers: [`${branding.bundleId.ios}.audio`],
       UIBackgroundModes: ['audio', 'remote-notification'],
       // CFBundleURLTypes intentionally omitted: Expo auto-generates URL
@@ -180,6 +197,17 @@ const config: ExpoConfig = {
         }
       : {}),
   },
+  // @ai Qariah (Sprint 47, Pass C Task 7): the home-screen name per device
+  // language ("قارئة" in Arabic, README decision 1). Expo writes the `ios`
+  // values of each file to ios/Qariah/Supporting/<lang>.lproj/InfoPlist.strings
+  // and the `android` values to res/values-b+<lang>/strings.xml.
+  // scripts/native-strings-from-review.mjs writes the file from the review
+  // pack; scripts/ios-archive.sh gives the beta name to these files too. The
+  // widget text is in withQariahNativeStrings.js (Android) and
+  // targets/widgets/_shared/Localizable.xcstrings (iOS).
+  locales: {
+    ar: './i18n/native/ar.json',
+  },
   // React Compiler disabled - causes performance issues with Zustand subscriptions
   // experiments: {
   //   reactCompiler: true,
@@ -201,14 +229,44 @@ const config: ExpoConfig = {
   runtimeVersion: versionInfo.semanticVersion,
   plugins: [
     'expo-router',
-    // microphonePermission:false — Qariah is playback-only; this stops expo-audio
-    // from injecting NSMicrophoneUsageDescription (iOS) + RECORD_AUDIO (Android),
-    // which the app never uses. (Sprint 32 — privacy hygiene.)
+    // Upstream Pass C (91c63554, Bayaan #349): the Arabic UI. Direction comes
+    // from the in-app language preference. A static supportsRTL/forcesRTL
+    // resets I18nManager to the device locale on iOS.
+    // @ai Qariah (TECH_DEBT #291): allowDynamicLocaleChangesAndroid:false keeps
+    // MainActivity configChanges as upstream ships it (no locale or
+    // layoutDirection). The plugin default (true) added both on every Android
+    // prebuild. The app relaunches its process for a language change.
+    [
+      'expo-localization',
+      {
+        supportedLocales: {ios: ['en', 'ar']},
+        allowDynamicLocaleChangesAndroid: false,
+      },
+    ],
+    // Upstream Pass B (fca03eed): generates the widget extension target from
+    // targets/widgets/.
+    '@bacons/apple-targets',
+    // Qariah is playback-only (Sprint 32 — privacy hygiene).
+    // microphonePermission:false stops NSMicrophoneUsageDescription (iOS).
+    // recordAudioAndroid:false stops RECORD_AUDIO (Android); without it every
+    // Android prebuild added the permission back (TECH_DEBT #291).
     [
       'expo-audio',
-      {enableBackgroundPlayback: true, microphonePermission: false},
+      {
+        enableBackgroundPlayback: true,
+        microphonePermission: false,
+        recordAudioAndroid: false,
+      },
     ],
     'expo-sqlite',
+    // Upstream Pass C (91c63554, Bayaan #345, SDK 57): config plugins with no
+    // options.
+    'expo-asset',
+    'expo-font',
+    'expo-image',
+    'expo-sharing',
+    'expo-status-bar',
+    'expo-web-browser',
     [
       'expo-splash-screen',
       {
@@ -238,6 +296,15 @@ const config: ExpoConfig = {
         sounds: [],
       },
     ],
+    // Qariah (Sprint 48, S48.6): the background catalog check of the local
+    // notifications (services/notifications/backgroundTask.ts). iOS:
+    // BGTaskScheduler (the `processing` mode and the
+    // `com.expo.modules.backgroundtask.processing` identifier). Android:
+    // WorkManager (no manifest entry of its own).
+    'expo-background-task',
+    // Qariah (Sprint 48, S48.6): remove the unused `fetch` mode that the
+    // expo-task-manager auto-plugin adds (see the plugin file).
+    './withIosRemoveBackgroundFetch.js',
     [
       'expo-share-intent',
       {
@@ -271,6 +338,20 @@ const config: ExpoConfig = {
     './withIosRemoveOAuthCallbackScheme.js',
     // Qariah (ANR WS-C, H1): Android non-blocking boot splash + lab BuildConfig.
     './withNonBlockingSplash.js',
+    // Upstream Pass B (fca03eed): CarPlay, Android Auto, Siri, App Shortcuts
+    // and the native widgets. Owner decisions 2026-10-18 (Sprint 46): no
+    // CarPlay audio entitlement until Apple grants it (O1), and Siri off (O2).
+    // withBayaanWidgets reads scheme[0], so `scheme` must keep
+    // branding.urlScheme first (the OAuth callback scheme second).
+    [
+      './plugins/withBayaanCar.js',
+      {carPlayAudioEntitlement: false, siri: false},
+    ],
+    './plugins/withAppShortcuts.js',
+    './plugins/withBayaanWidgets.js',
+    // Qariah (Sprint 47, Pass C): the widget-picker text in Arabic
+    // (res/values-ar/bayaan_widgets.xml, from i18n/native/widget-strings.json).
+    './withQariahNativeStrings.js',
   ],
 };
 

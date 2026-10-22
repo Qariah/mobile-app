@@ -25,12 +25,9 @@ const b64u = o =>
     'base64url',
   );
 
-function loadP8(keyId) {
-  if (process.env.APP_STORE_CONNECT_API_KEY_P8_B64) {
-    return Buffer.from(
-      process.env.APP_STORE_CONNECT_API_KEY_P8_B64,
-      'base64',
-    ).toString('utf8');
+function loadP8(keyId, p8B64 = process.env.APP_STORE_CONNECT_API_KEY_P8_B64) {
+  if (p8B64) {
+    return Buffer.from(p8B64, 'base64').toString('utf8');
   }
   const p = `${homedir()}/.appstoreconnect/private_keys/AuthKey_${keyId}.p8`;
   try {
@@ -43,15 +40,20 @@ function loadP8(keyId) {
   }
 }
 
-export function ascJwt() {
-  const keyId = process.env.APP_STORE_CONNECT_API_KEY_ID;
-  const issuer = process.env.APP_STORE_CONNECT_ISSUER_ID;
+// A caller with its own key (scripts/signals/asc-reports-copy.mjs uses a
+// Sales-role key) passes {keyId, issuer, p8B64}; everyone else uses the
+// APP_STORE_CONNECT_* variables.
+export function ascJwt({
+  keyId = process.env.APP_STORE_CONNECT_API_KEY_ID,
+  issuer = process.env.APP_STORE_CONNECT_ISSUER_ID,
+  p8B64,
+} = {}) {
   if (!keyId || !issuer) {
     throw new Error(
       'Set APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_ISSUER_ID.',
     );
   }
-  const p8 = loadP8(keyId);
+  const p8 = loadP8(keyId, p8B64 || process.env.APP_STORE_CONNECT_API_KEY_P8_B64);
   const now = Math.floor(Date.now() / 1000);
   const header = b64u({alg: 'ES256', kid: keyId, typ: 'JWT'});
   const payload = b64u({
@@ -106,12 +108,14 @@ export async function ascPost(path, data, jwt) {
 }
 
 // Resolve the numeric ASC app id for a bundle id (cached by the caller if needed).
+// The bundleId filter also matches longer ids: the production bundle id
+// returns the beta app (its id plus .beta) first. Match the bundle id exactly.
 export async function resolveAppId(bundleId, jwt) {
   const body = await ascGet(
     `/v1/apps?filter[bundleId]=${encodeURIComponent(
       bundleId,
-    )}&fields[apps]=bundleId&limit=1`,
+    )}&fields[apps]=bundleId&limit=20`,
     jwt,
   );
-  return body.data?.[0]?.id || null;
+  return (body.data || []).find(a => a.attributes?.bundleId === bundleId)?.id || null;
 }

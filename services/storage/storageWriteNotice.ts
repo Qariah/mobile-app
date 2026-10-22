@@ -59,15 +59,16 @@ import * as Sentry from '@sentry/react-native';
 export type StorageWriteErrorKind = 'out-of-space' | 'other';
 
 /**
- * User-facing copy. Exported so the tests assert the exact strings rather than
- * a paraphrase, and so the wording lives next to the rule that emits it.
+ * User-facing copy: i18n keys in the `qariah` namespace
+ * (i18n/locales/<lang>/qariah.json). Exported so the tests assert the exact
+ * text rather than a paraphrase.
  *
  * `showToast` merges title and message into one line on Android, so both parts
  * stay short enough to read as a single toast.
  */
-export const OUT_OF_SPACE_NOTICE_TITLE = 'Your device is out of storage';
-export const OUT_OF_SPACE_NOTICE_MESSAGE =
-  "Changes aren't being saved. Free up space.";
+export const OUT_OF_SPACE_NOTICE_TITLE_KEY = 'qariah:storage.outOfSpaceTitle';
+export const OUT_OF_SPACE_NOTICE_MESSAGE_KEY =
+  'qariah:storage.outOfSpaceMessage';
 
 /** The fields AsyncStorage's `convertError` can attach to a rejection. */
 type MaybeCodedError = {code?: unknown; domain?: unknown; message?: unknown};
@@ -175,7 +176,14 @@ export function notifyStorageWriteFailure(
     //     loads a persisted store.
     const {showToast} =
       require('@/utils/toastUtils') as typeof import('@/utils/toastUtils');
-    showToast(OUT_OF_SPACE_NOTICE_TITLE, OUT_OF_SPACE_NOTICE_MESSAGE, 'error');
+    // Lazily too: the i18n module reads the language preference from MMKV,
+    // which a storage module must not load just by being imported.
+    const i18n = (require('@/i18n') as typeof import('@/i18n')).default;
+    showToast(
+      i18n.t(OUT_OF_SPACE_NOTICE_TITLE_KEY),
+      i18n.t(OUT_OF_SPACE_NOTICE_MESSAGE_KEY),
+      'error',
+    );
   } catch {
     // Swallowed deliberately — see above.
   }

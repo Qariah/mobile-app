@@ -20,14 +20,17 @@ jest.mock('expo-crypto', () => ({
 jest.mock('expo-device', () => ({isDevice: true}));
 Object.assign(global, {__DEV__: false});
 
+const mockIncrementAdhkarSessions = jest.fn();
 jest.mock('../LocalAggregationStore', () => ({
   localAggregationStore: {
     getToday: () => '2026-04-16',
+    dayKey: (date: Date) => date.toISOString().slice(0, 10),
     addListeningTime: jest.fn(),
     addPagesRead: jest.fn(),
     addPagesOpened: jest.fn(),
     incrementMeaningfulListens: jest.fn(),
-    incrementAdhkarSessions: jest.fn(),
+    incrementAdhkarSessions: (date: string) =>
+      mockIncrementAdhkarSessions(date),
     addTasbeehCount: jest.fn(),
     markSurahCompleted: jest.fn(),
   },
@@ -37,6 +40,7 @@ type FakePostHog = {
   capture: jest.Mock;
   identify: jest.Mock;
   register: jest.Mock;
+  registerForSession: jest.Mock;
   optIn: jest.Mock;
   optOut: jest.Mock;
 };
@@ -46,6 +50,7 @@ function makeFakePostHog(): FakePostHog {
     capture: jest.fn(),
     identify: jest.fn(),
     register: jest.fn(),
+    registerForSession: jest.fn(),
     // optIn()/optOut() return Promise<void> on the real SDK; mirror that so
     // applyConsent's rejection-guard (`.catch`) has a promise to attach to.
     optIn: jest.fn(() => Promise.resolve()),
@@ -98,6 +103,43 @@ async function waitForConsentHydration(store: ConsentStore): Promise<void> {
 
 describe('AnalyticsService', () => {
   describe('when analytics is enabled (default)', () => {
+    // @ai ANR hotfix v2: app/_layout.tsx now connects the PostHog client at
+    // module scope, before the consent store hydrates. The capture chokepoint
+    // must still block every event until the stored consent is known.
+    it('blocks a capture made before the consent store hydrates (module-scope connect)', async () => {
+      const {analyticsService, consentStore} = await loadService(undefined);
+      // The Qariah events (TECH_DEBT #243) send through the same service
+      // instance: require them from the module registry that loadService reset.
+      const {qariahAnalytics} =
+        require('../qariahEvents') as typeof import('../qariahEvents');
+      const hydrated = jest
+        .spyOn(consentStore.persist, 'hasHydrated')
+        .mockReturnValue(false);
+      const posthog = makeFakePostHog();
+      analyticsService.setPostHogInstance(
+        posthog as unknown as Parameters<
+          typeof analyticsService.setPostHogInstance
+        >[0],
+      );
+
+      qariahAnalytics.trackSplashStalled({
+        elapsed_ms: 12000,
+        platform: 'android',
+      });
+      qariahAnalytics.trackBootRiskEnrolled({reason: 'splash_stalled'});
+
+      expect(posthog.capture).not.toHaveBeenCalled();
+      // No consent choice is applied before the stored choice is known.
+      expect(posthog.optIn).not.toHaveBeenCalled();
+
+      hydrated.mockReturnValue(true);
+      qariahAnalytics.trackBootRiskEnrolled({reason: 'splash_stalled'});
+      expect(posthog.capture).toHaveBeenCalledWith('boot_risk_enrolled', {
+        reason: 'splash_stalled',
+      });
+      hydrated.mockRestore();
+    });
+
     it('registers the platform super property on setPostHogInstance without identifying the device', async () => {
       const {analyticsService} = await loadService(undefined);
 
@@ -278,6 +320,98 @@ describe('AnalyticsService', () => {
     });
   });
 
+  describe('capture readiness (queued widget events)', () => {
+    it('is ready only once consent has hydrated and PostHog is attached', async () => {
+      const {analyticsService} = await loadService(undefined);
+      expect(analyticsService.isReadyToCapture()).toBe(false);
+
+      const listener = jest.fn();
+      analyticsService.onReadyToCapture(listener);
+      analyticsService.setPostHogInstance(
+        makeFakePostHog() as unknown as Parameters<
+          typeof analyticsService.setPostHogInstance
+        >[0],
+      );
+
+      expect(analyticsService.isReadyToCapture()).toBe(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('is ready without PostHog when the user has opted out', async () => {
+      const {analyticsService, consentStore} = await loadService(undefined);
+      consentStore.getState().setAnalyticsEnabled(false);
+
+      expect(analyticsService.isReadyToCapture()).toBe(true);
+    });
+
+    it('is ready without PostHog when analytics is disabled', async () => {
+      const {analyticsService} = await loadService('false');
+
+      expect(analyticsService.isReadyToCapture()).toBe(true);
+    });
+
+    it('stops calling a listener after unsubscribe', async () => {
+      const {analyticsService} = await loadService(undefined);
+      const listener = jest.fn();
+      analyticsService.onReadyToCapture(listener)();
+      analyticsService.setPostHogInstance(
+        makeFakePostHog() as unknown as Parameters<
+          typeof analyticsService.setPostHogInstance
+        >[0],
+      );
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('trackAdhkarSessionCompleted', () => {
+    const props = {
+      category: 'morning-adhkar',
+      duration_ms: 1000,
+      dhikr_count: 24,
+    };
+
+    it('dates a queued completion by when it happened', async () => {
+      const {analyticsService} = await loadService(undefined);
+      const posthog = makeFakePostHog();
+      analyticsService.setPostHogInstance(
+        posthog as unknown as Parameters<
+          typeof analyticsService.setPostHogInstance
+        >[0],
+      );
+      mockIncrementAdhkarSessions.mockClear();
+      const completedAt = new Date(Date.UTC(2026, 3, 14, 12));
+
+      analyticsService.trackAdhkarSessionCompleted(props, completedAt);
+
+      expect(posthog.capture).toHaveBeenCalledWith(
+        'adhkar_session_completed',
+        props,
+        {timestamp: completedAt},
+      );
+      expect(mockIncrementAdhkarSessions).toHaveBeenCalledWith('2026-04-14');
+    });
+
+    it('uses today and the default timestamp without a completion date', async () => {
+      const {analyticsService} = await loadService(undefined);
+      const posthog = makeFakePostHog();
+      analyticsService.setPostHogInstance(
+        posthog as unknown as Parameters<
+          typeof analyticsService.setPostHogInstance
+        >[0],
+      );
+      mockIncrementAdhkarSessions.mockClear();
+
+      analyticsService.trackAdhkarSessionCompleted(props);
+
+      expect(posthog.capture).toHaveBeenCalledWith(
+        'adhkar_session_completed',
+        props,
+      );
+      expect(mockIncrementAdhkarSessions).toHaveBeenCalledWith('2026-04-16');
+    });
+  });
+
   describe('applyConsent', () => {
     it('calls optOut() when disabled and optIn() when enabled', async () => {
       const {analyticsService} = await loadService(undefined);
@@ -303,6 +437,106 @@ describe('AnalyticsService', () => {
       const {analyticsService} = await loadService(undefined);
 
       expect(() => analyticsService.applyConsent(false)).not.toThrow();
+    });
+  });
+
+  describe('setSignedIn (signed_in super property)', () => {
+    type Service = Awaited<ReturnType<typeof loadService>>['analyticsService'];
+
+    function connect(service: Service): FakePostHog {
+      const posthog = makeFakePostHog();
+      service.setPostHogInstance(
+        posthog as unknown as Parameters<typeof service.setPostHogInstance>[0],
+      );
+      return posthog;
+    }
+
+    // Every value of `signed_in` given to PostHog, in order. It must arrive
+    // through registerForSession() only — never the persisted register().
+    function signedInCalls(posthog: FakePostHog): unknown[] {
+      const persisted = posthog.register.mock.calls.filter(
+        call => 'signed_in' in ((call as unknown[])[0] as object),
+      );
+      expect(persisted).toEqual([]);
+      return posthog.registerForSession.mock.calls
+        .map(call => (call as unknown[])[0] as Record<string, unknown>)
+        .filter(props => 'signed_in' in props)
+        .map(props => props.signed_in);
+    }
+
+    it('sets signed_in as an in-memory super property, never via identify()', async () => {
+      const {analyticsService} = await loadService(undefined);
+      const posthog = connect(analyticsService);
+
+      analyticsService.setSignedIn(true);
+      analyticsService.setSignedIn(false);
+
+      expect(posthog.registerForSession).toHaveBeenCalledWith({
+        signed_in: true,
+      });
+      expect(posthog.registerForSession).toHaveBeenCalledWith({
+        signed_in: false,
+      });
+      expect(signedInCalls(posthog)).toEqual([true, false]);
+      expect(posthog.identify).not.toHaveBeenCalled();
+    });
+
+    it('does not register anything before auth has reported a state', async () => {
+      const {analyticsService} = await loadService(undefined);
+      const posthog = connect(analyticsService);
+
+      expect(signedInCalls(posthog)).toEqual([]);
+    });
+
+    it('keeps a state reported before PostHog connects and applies it on connect', async () => {
+      // Session restore can resolve before the PostHog provider hands over
+      // its instance.
+      const {analyticsService} = await loadService(undefined);
+      analyticsService.setSignedIn(true);
+
+      const posthog = connect(analyticsService);
+
+      expect(signedInCalls(posthog)).toEqual([true]);
+    });
+
+    it('fails closed until consent hydrates, then applies the kept state', async () => {
+      const {analyticsService, consentStore} = await loadService(undefined);
+      const hydrated = jest
+        .spyOn(consentStore.persist, 'hasHydrated')
+        .mockReturnValue(false);
+
+      const posthog = connect(analyticsService);
+      analyticsService.setSignedIn(true);
+      expect(signedInCalls(posthog)).toEqual([]);
+
+      hydrated.mockRestore();
+      await consentStore.persist.rehydrate();
+
+      expect(signedInCalls(posthog)).toEqual([true]);
+    });
+
+    it('does not register while opted out, and applies the latest state on opt-in', async () => {
+      const {analyticsService, consentStore} = await loadService(undefined);
+      const posthog = connect(analyticsService);
+      analyticsService.setSignedIn(true);
+
+      consentStore.getState().setAnalyticsEnabled(false);
+      // A sign-out while opted out is kept, not sent.
+      analyticsService.setSignedIn(false);
+      expect(signedInCalls(posthog)).toEqual([true]);
+
+      consentStore.getState().setAnalyticsEnabled(true);
+      expect(signedInCalls(posthog)).toEqual([true, false]);
+    });
+
+    it('is a no-op when analytics is disabled via env flag', async () => {
+      const {analyticsService} = await loadService('false');
+      const posthog = connect(analyticsService);
+
+      analyticsService.setSignedIn(true);
+
+      expect(posthog.register).not.toHaveBeenCalled();
+      expect(posthog.registerForSession).not.toHaveBeenCalled();
     });
   });
 });

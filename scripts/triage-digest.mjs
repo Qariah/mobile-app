@@ -32,7 +32,14 @@
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname, join} from 'node:path';
-import {gh, GH_REPO, ensureLabels} from './lib/triage-common.mjs';
+import {
+  GH_REPO,
+  createIssue,
+  ensureLabels,
+  listIssues,
+  pinIssue,
+  updateIssue,
+} from './lib/triage-common.mjs';
 import {
   classify,
   parseTriageState,
@@ -75,23 +82,11 @@ function loadLedger() {
 }
 
 function listOpenIssues() {
-  const raw = gh([
-    'issue',
-    'list',
-    '--repo',
-    GH_REPO,
-    '--state',
-    'open',
-    '--limit',
-    '400',
-    '--json',
-    'number,title,labels,url',
-  ]);
-  return JSON.parse(raw).map(i => ({
+  return listIssues({state: 'open', limit: 400}).map(i => ({
     number: i.number,
     title: i.title,
     url: i.url,
-    labels: (i.labels || []).map(l => l.name),
+    labels: i.labels.map(l => l.name),
   }));
 }
 
@@ -147,17 +142,25 @@ function partition(issues, ledger) {
 
 // Active incidents = umbrella parents, annotated with member counts pulled from
 // the labels of every other issue (so the digest shows the de-dup at a glance).
-function incidentSummary(issues) {
+// A member whose fix is already built (bucket `awaiting-release`) is not open
+// work, so it is not counted here; `waitingCounts` counts it apart.
+function incidentSummary(issues, waiting = new Set()) {
   const memberCounts = new Map();
+  const waitingCounts = new Map();
   for (const it of issues) {
     for (const l of it.labels) {
+      if (l.startsWith('incident:') && waiting.has(it.number)) {
+        const k = l.slice('incident:'.length);
+        waitingCounts.set(k, (waitingCounts.get(k) || 0) + 1);
+        continue;
+      }
       if (l.startsWith('incident:')) {
         const k = l.slice('incident:'.length);
         memberCounts.set(k, (memberCounts.get(k) || 0) + 1);
       }
     }
   }
-  return memberCounts;
+  return {memberCounts, waitingCounts};
 }
 
 function bucketLine(it) {
@@ -177,9 +180,18 @@ function skipLine(it) {
   return `- #${it.number}${sev} — ${it.title} · _${why}_`;
 }
 
-function renderBody(buckets, loopQueue, memberCounts, generatedAt) {
-  const total = Object.values(buckets).reduce((n, a) => n + a.length, 0);
+function renderBody(
+  buckets,
+  loopQueue,
+  {memberCounts, waitingCounts},
+  generatedAt,
+) {
   const n = k => buckets[k].length;
+  // Open WORK excludes the issues whose fix is already built: nobody can act on
+  // them until the build reaches production.
+  const total =
+    Object.values(buckets).reduce((c, a) => c + a.length, 0) -
+    n('awaiting-release');
 
   const L = [];
   L.push(DIGEST_MARKER);
@@ -195,7 +207,8 @@ function renderBody(buckets, loopQueue, memberCounts, generatedAt) {
       `${n('investigation')} investigations · ${n('review')} reviews · ${n(
         'release-health',
       )} release-health · ` +
-      `${n('awaiting-merge')} awaiting merge`,
+      `${n('awaiting-merge')} awaiting merge · ` +
+      `${n('awaiting-release')} waiting for a release (fix built, not counted as open)`,
   );
   L.push('');
   L.push(`_Generated ${generatedAt}_`);
@@ -254,10 +267,11 @@ function renderBody(buckets, loopQueue, memberCounts, generatedAt) {
           'incident:'.length,
         );
         const c = memberCounts.get(k);
+        const w = waitingCounts.get(k);
         L.push(
           `- #${it.number} — ${it.title}${
             c ? ` · **${c} member signals**` : ''
-          }`,
+          }${w ? ` · ${w} more waiting for a release` : ''}`,
         );
       }
     } else {
@@ -283,6 +297,9 @@ function renderBody(buckets, loopQueue, memberCounts, generatedAt) {
     '- **🚨 incidents** = one root cause, many member signals (the de-dup). Fix the root, the members quiet.',
   );
   L.push(
+    '- **📦 waiting for a release** = a build already carries the fix (`fixed-in:<build>`). Not open work. `prod-close.mjs` closes these when production reaches the build (and the flag is on for that production build, for `behind-flag:<key>`).',
+  );
+  L.push(
     '- Closing/reopening is `triage-lifecycle.mjs`; this digest only reports.',
   );
   return L.join('\n');
@@ -299,48 +316,21 @@ function upsertDigestIssue(body, dryRun) {
   ensureLabels([DIGEST_LABEL], false);
   let existing = [];
   try {
-    existing = JSON.parse(
-      gh([
-        'issue',
-        'list',
-        '--repo',
-        GH_REPO,
-        '--label',
-        DIGEST_LABEL,
-        '--state',
-        'open',
-        '--limit',
-        '5',
-        '--json',
-        'number',
-      ]),
-    );
+    existing = listIssues({state: 'open', labels: DIGEST_LABEL, limit: 5});
   } catch {
     /* fall through to create */
   }
   if (existing.length) {
     const num = existing[0].number;
-    gh(['issue', 'edit', String(num), '--repo', GH_REPO, '--body', body]);
+    updateIssue(num, {body});
     return num;
   }
-  const url = gh([
-    'issue',
-    'create',
-    '--repo',
-    GH_REPO,
-    '--title',
-    DIGEST_TITLE,
-    '--label',
-    DIGEST_LABEL,
-    '--body',
+  const {number: num} = createIssue({
+    title: DIGEST_TITLE,
     body,
-  ]);
-  const num = Number((url.match(/\/issues\/(\d+)/) || [])[1]);
-  try {
-    if (num) gh(['issue', 'pin', String(num), '--repo', GH_REPO]);
-  } catch {
-    /* >3 pins, or no perms — non-fatal */
-  }
+    labels: [DIGEST_LABEL],
+  });
+  if (num) pinIssue(num); // >3 pins, no perms, or GraphQL refused — non-fatal
   return num;
 }
 
@@ -366,21 +356,23 @@ async function main() {
   const issues = listOpenIssues().filter(i => !i.labels.includes(DIGEST_LABEL));
   const buckets = partition(issues, ledger);
   const loopQueue = buildLoopQueue(buckets.actionable);
-  const memberCounts = incidentSummary(issues);
+  const waiting = new Set(buckets['awaiting-release'].map(it => it.number));
+  const counts = incidentSummary(issues, waiting);
   const generatedAt =
     new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 
-  const body = renderBody(buckets, loopQueue, memberCounts, generatedAt);
+  const body = renderBody(buckets, loopQueue, counts, generatedAt);
   const num = upsertDigestIssue(body, args.dryRun);
   const issueUrl = num
     ? `https://github.com/${GH_REPO}/issues/${num}`
     : '(dry-run, not written)';
 
   const headline =
-    `HEADLINE: ${issues.length} open · ${loopQueue.length} to fix · ` +
+    `HEADLINE: ${issues.length - waiting.size} open · ${loopQueue.length} to fix · ` +
     `${buckets['feature-request'].length} feature req · ${buckets['native-crash'].length} native crash · ` +
     `${buckets.investigation.length} investigate · ${buckets.review.length} reviews · ` +
-    `${buckets['release-health'].length} release-health · ${buckets['awaiting-merge'].length} awaiting-merge`;
+    `${buckets['release-health'].length} release-health · ${buckets['awaiting-merge'].length} awaiting-merge · ` +
+    `${waiting.size} waiting for a release`;
   logHuman(headline);
   logHuman(`DIGEST: ${issueUrl}`);
 

@@ -10,7 +10,7 @@
  *
  * Consumed by `AuthTelemetry.tsx`, which is a thin dispatcher over this.
  */
-import type {SignInFailureReason} from './events';
+import type {SignInFailureReason} from './qariahEvents';
 
 /** What a single status transition means, or `null` for "emit nothing". */
 export type SignInFunnelEvent =
@@ -99,5 +99,22 @@ export function deriveSignInEvent(
   }
   // Everything else (notably sign-out: authenticated → unauthenticated) is not
   // part of this funnel and must not be counted as an abandoned attempt.
+  return null;
+}
+
+/**
+ * The `signed_in` super property for an AuthContext status, or `null` for
+ * "leave it as it is".
+ *
+ *   authenticated    true   (boot restore of a saved session, or sign-in success)
+ *   unauthenticated  false  (no saved session at boot, a failed attempt, sign-out)
+ *   loading          null   (boot hydrate or an attempt in flight — not known)
+ *
+ * Unlike `deriveSignInEvent`, the FIRST observation counts here: reporting the
+ * restored session on every cold start is the whole point.
+ */
+export function signedInForStatus(status: string): boolean | null {
+  if (status === 'authenticated') return true;
+  if (status === 'unauthenticated') return false;
   return null;
 }

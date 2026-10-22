@@ -1,0 +1,95 @@
+# PLY-06 (TECH_DEBT #258) — the queue shows a remove ✕, and the ✕ removes the track.
+#
+# Guards the defect in 3.2.2 (2579) and earlier: no queue row showed its ✕. The track
+# row took the full row width and pushed the ✕ past the right edge of the screen.
+# Fixed in components/player/v2/PlayerContent/QueueList.tsx (a flex: 1, minWidth: 0
+# wrapper around the row content); the ✕ has testID `queue-remove-<index>` and the
+# queue control has testID `player-queue-button`.
+#
+# The flow plays one surah from a one-item playlist, so the queue has one track.
+# It opens the queue, checks that `queue-remove-0` is on screen, and taps it (the #237
+# path: remove the only track). With no track left, the full player and the mini player
+# close (PlayerSheet and FloatingPlayer render nothing without a current track), and
+# the playlist screen shows again.
+#
+# Android only for the queue steps: on iOS the full player sheet is one opaque a11y
+# element ("Bottom Sheet"), so Maestro cannot see the controls inside it (same limit
+# as player/playlist-session-restore.yaml). On iOS this flow runs the setup only;
+# check the queue ✕ on iOS by hand (PLY-06 device steps).
+#
+# Needs a build with the testIDs above (Sprint 46 or later).
+appId: com.qariah.app
+tags:
+  - regression
+  - player
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+
+# 1. Make a playlist with one surah (Hud, A'tii Qah Suhaimi). Same steps as
+#    player/playlist-session-restore.yaml, which passes on both platforms.
+- tapOn: '.*Listen'
+- tapOn: 'Reciters'
+- tapOn:
+    point: 17%,35%
+- extendedWaitUntil:
+    visible: '.*JUZ.*'
+    timeout: 10000
+- assertVisible: '.*Suhaimi.*'
+- tapOn:
+    text: 'More options'
+    index: 0
+- tapOn: '.*Add to Collection'
+- tapOn: '.*Create New Playlist'
+- tapOn: 'e.g., Morning Recitations'
+- inputText: 'QTest'
+- tapOn: 'Save'
+- tapOn:
+    point: 50%,10%
+
+# 2. Play the surah from the playlist: the queue has one track.
+- tapOn: '.*Collection'
+- tapOn: '.*Playlists.*'
+- tapOn: '.*QTest.*'
+- tapOn:
+    text: '.*11. Hud.*'
+    index: 0
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+    timeout: 20000
+
+# 3. Open the full player, then the queue. Remove the only track.
+- tapOn:
+    id: 'mini-player-expand'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: 'player-queue-button'
+      - extendedWaitUntil:
+          visible: '1 track'
+          timeout: 5000
+      - assertVisible:
+          id: 'queue-remove-0'
+      - tapOn:
+          id: 'queue-remove-0'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'queue-remove-0'
+          timeout: 5000
+      # The full player closes (its queue button goes away), and then no
+      # mini player shows. The playlist row text alone proves nothing: on
+      # Android it stays in the hierarchy behind an open sheet.
+      - extendedWaitUntil:
+          notVisible:
+            id: 'player-queue-button'
+          timeout: 5000
+      - assertNotVisible:
+          id: 'mini-player-bar'
+      - assertNotVisible:
+          id: 'mini-player-play-pause'
+      - assertVisible: '.*11. Hud.*'

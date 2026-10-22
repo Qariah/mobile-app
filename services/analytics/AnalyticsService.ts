@@ -29,28 +29,6 @@ import {
   SearchPerformedProps,
   TranslationViewedProps,
   AppBackgroundedProps,
-  OnboardingStartedProps,
-  OnboardingStepViewedProps,
-  OnboardingCompletedProps,
-  OnboardingSkippedProps,
-  ReciterProfileSurahsStalledProps,
-  ReciterProfileSurahsRenderedProps,
-  BootNotCompletedProps,
-  SplashHiddenProps,
-  SplashStalledProps,
-  PlaybackKilledInBackgroundProps,
-  PlaybackStoppedInBackgroundProps,
-  DeepLinkDroppedProps,
-  ColdStartBeganProps,
-  ScreenContentStalledProps,
-  ScreenContentRenderedProps,
-  V1RestoreCheckedProps,
-  V1RestoreMergedProps,
-  V1RestoreSkippedProps,
-  SignInStartedProps,
-  SignInSucceededProps,
-  SignInFailedProps,
-  SignInAbandonedProps,
 } from './events';
 import {localAggregationStore} from './LocalAggregationStore';
 import {MeaningfulListenTracker} from './MeaningfulListenTracker';
@@ -62,7 +40,7 @@ function isAnalyticsEnabled(): boolean {
 
 /**
  * Drop ingestion from dev builds and from simulators/emulators — the PostHog
- * mirror of Sentry's `beforeSend` dev/sim drop (app/_layout.tsx). Dev/sim
+ * mirror of Sentry's `beforeSend` dev/sim drop (qariahSentryOptions.ts). Dev/sim
  * traffic (Metro dev loop, internal-dev emulator runs, DerivedData rebuilds)
  * is not prod-user behavior; it inflates every per-user funnel and was a
  * documented source of measurement-artifact false alarms in the triage bot.
@@ -93,6 +71,11 @@ class AnalyticsServiceImpl {
   private meaningfulListenTracker: MeaningfulListenTracker;
   private sessionStartTime: number = Date.now();
   private sessionListenMs = 0;
+  private readyListeners = new Set<() => void>();
+  // @ai Qariah-only. The last signed-in state reported by setSignedIn(), or
+  // `null` before auth has resolved. Kept so the super property can be
+  // (re-)applied whenever PostHog connects or consent is granted later.
+  private signedIn: boolean | null = null;
 
   constructor() {
     this.meaningfulListenTracker = new MeaningfulListenTracker(
@@ -107,11 +90,17 @@ class AnalyticsServiceImpl {
     useAnalyticsConsentStore.subscribe(state => {
       this.applyConsent(state.analyticsEnabled);
     });
+    useAnalyticsConsentStore.persist.onFinishHydration(() => {
+      this.notifyIfReady();
+    });
   }
 
   async initialize(): Promise<void> {
     this.enabled = isAnalyticsEnabled();
-    if (!this.enabled) return;
+    if (!this.enabled) {
+      this.notifyIfReady();
+      return;
+    }
     this.deviceId = getOrCreateDeviceId();
     this.sessionStartTime = Date.now();
     this.sessionListenMs = 0;
@@ -146,12 +135,39 @@ class AnalyticsServiceImpl {
     const persist = useAnalyticsConsentStore.persist;
     if (persist.hasHydrated()) {
       this.applyConsent(useAnalyticsConsentStore.getState().analyticsEnabled);
+      this.notifyIfReady();
     } else {
       const unsub = persist.onFinishHydration(state => {
         unsub();
         this.applyConsent(state.analyticsEnabled);
       });
     }
+  }
+
+  /**
+   * Whether an event tracked now reaches its final destination: the saved
+   * consent choice is known and, when consent is granted, the PostHog instance
+   * is attached. With analytics off or consent declined the event is dropped
+   * from PostHog by design, so that also counts as ready. Queued events (widget
+   * completions) wait for this before they are drained.
+   */
+  isReadyToCapture(): boolean {
+    if (!useAnalyticsConsentStore.persist.hasHydrated()) return false;
+    if (!this.enabled || !isConsentGranted()) return true;
+    return this.posthog !== null;
+  }
+
+  /** Calls `listener` each time `isReadyToCapture()` may have become true. */
+  onReadyToCapture(listener: () => void): () => void {
+    this.readyListeners.add(listener);
+    return () => {
+      this.readyListeners.delete(listener);
+    };
+  }
+
+  private notifyIfReady(): void {
+    if (!this.isReadyToCapture()) return;
+    this.readyListeners.forEach(listener => listener());
   }
 
   /**
@@ -167,11 +183,50 @@ class AnalyticsServiceImpl {
     void applied.catch((error: unknown) => {
       console.warn('[Analytics] Failed to apply consent choice:', error);
     });
+    // @ai Qariah-only. setPostHogInstance() and the consent subscription both
+    // route through here, so this one line re-applies `signed_in` when PostHog
+    // connects, when consent hydrates, and when the user opts back in.
+    if (enabled) this.applySignedIn();
+  }
+
+  /**
+   * @ai Qariah-only. Report whether a QF account is signed in, as the
+   * `signed_in` SUPER PROPERTY — every later event carries it, so a signed-in
+   * person is countable on every launch, not only on the launch where they
+   * signed in.
+   *
+   * NOT identify(): identify() creates a server-side person profile, which this
+   * app deliberately avoids (see setPostHogInstance). A super property is a
+   * plain boolean on the event.
+   *
+   * registerForSession(), NOT register(): register() persists to disk, so the
+   * boot-window events of the NEXT launch (app_opened, cold_start_began) would
+   * carry this launch's value before auth resolves — a stale `true` after a
+   * session expired. registerForSession() lives in memory for this process
+   * only (only posthog.reset() clears it; a session rotation does not), so
+   * each launch starts without the property and gets it from auth.
+   *
+   * Called by services/analytics/AuthTelemetry (an observer of AuthContext), so
+   * `services/auth/` carries no analytics coupling. Safe to call before PostHog
+   * connects or before consent hydrates: the value is kept and applied later.
+   */
+  setSignedIn(signedIn: boolean): void {
+    this.signedIn = signedIn;
+    this.applySignedIn();
+  }
+
+  private applySignedIn(): void {
+    if (!this.posthog || this.signedIn === null) return;
+    // Same fail-closed gate as capture() and identifyUser(): nothing is given
+    // to PostHog until the persisted consent choice is known and granted.
+    if (!isConsentGranted()) return;
+    this.posthog.registerForSession({signed_in: this.signedIn});
   }
 
   private capture(
     event: string,
     properties: Record<string, string | number | boolean | null>,
+    timestamp?: Date,
   ): void {
     // Drop dev-build + simulator/emulator events at the single ingestion
     // chokepoint (mirrors Sentry's beforeSend dev/sim drop). Keeps the
@@ -181,15 +236,19 @@ class AnalyticsServiceImpl {
     // PostHog's own opt-out state — belt-and-suspenders. Fails closed until the
     // consent store has hydrated.
     if (!isConsentGranted()) return;
+    if (timestamp) {
+      this.posthog?.capture(event, properties, {timestamp});
+      return;
+    }
     this.posthog?.capture(event, properties);
   }
 
   /**
-   * @ai Qariah-only. Capture a diagnostics event whose name is owned by its
-   * own module (services/diagnostics/playbackHealth.ts), so that module does
-   * not have to edit the upstream-shared `events.ts`. It goes through the same
-   * `capture()` chokepoint, so the dev/simulator drop and the consent gate
-   * still apply.
+   * @ai Qariah-only. Capture an event whose name is owned by its own module
+   * (services/analytics/qariahEvents.ts, services/diagnostics/playbackHealth.ts),
+   * so that module does not have to edit the upstream-shared `events.ts`.
+   * It goes through the same `capture()` chokepoint, so the dev/simulator
+   * drop and the consent gate still apply.
    */
   captureDiagnosticEvent(
     event: string,
@@ -286,10 +345,20 @@ class AnalyticsServiceImpl {
     this.capture(ANALYTICS_EVENTS.ADHKAR_SESSION_STARTED, {...props});
   }
 
-  trackAdhkarSessionCompleted(props: AdhkarSessionCompletedProps): void {
-    this.capture(ANALYTICS_EVENTS.ADHKAR_SESSION_COMPLETED, {...props});
+  /** `completedAt` dates a completion made earlier (a queued widget event). */
+  trackAdhkarSessionCompleted(
+    props: AdhkarSessionCompletedProps,
+    completedAt?: Date,
+  ): void {
+    this.capture(
+      ANALYTICS_EVENTS.ADHKAR_SESSION_COMPLETED,
+      {...props},
+      completedAt,
+    );
     localAggregationStore.incrementAdhkarSessions(
-      localAggregationStore.getToday(),
+      completedAt
+        ? localAggregationStore.dayKey(completedAt)
+        : localAggregationStore.getToday(),
     );
   }
 
@@ -357,122 +426,6 @@ class AnalyticsServiceImpl {
       total_listen_ms: this.sessionListenMs,
     };
     this.capture(ANALYTICS_EVENTS.APP_BACKGROUNDED, {...props});
-  }
-
-  // --- Onboarding funnel (S35.3) ---
-
-  trackOnboardingStarted(props: OnboardingStartedProps): void {
-    this.capture(ANALYTICS_EVENTS.ONBOARDING_STARTED, {...props});
-  }
-
-  trackOnboardingStepViewed(props: OnboardingStepViewedProps): void {
-    this.capture(ANALYTICS_EVENTS.ONBOARDING_STEP_VIEWED, {...props});
-  }
-
-  trackOnboardingCompleted(props: OnboardingCompletedProps): void {
-    this.capture(ANALYTICS_EVENTS.ONBOARDING_COMPLETED, {...props});
-  }
-
-  trackOnboardingSkipped(props: OnboardingSkippedProps): void {
-    this.capture(ANALYTICS_EVENTS.ONBOARDING_SKIPPED, {...props});
-  }
-
-  // --- Silent-hang detection (REPORT-ONLY observability) ---
-  // @ai planning/observability-gap-samsung-hang-2026-06-08.md. Discrete fault +
-  // companion success signals for the Samsung "can't use the app" hang classes
-  // that never throw and never crash (so Sentry is blind) and produce no
-  // downstream event (so ratio detectors are blind). These give them a queryable,
-  // auto-filing signal. Pure telemetry — no behavioral side effects.
-
-  trackReciterProfileSurahsStalled(
-    props: ReciterProfileSurahsStalledProps,
-  ): void {
-    this.capture(ANALYTICS_EVENTS.RECITER_PROFILE_SURAHS_STALLED, {...props});
-  }
-
-  trackReciterProfileSurahsRendered(
-    props: ReciterProfileSurahsRenderedProps,
-  ): void {
-    this.capture(ANALYTICS_EVENTS.RECITER_PROFILE_SURAHS_RENDERED, {...props});
-  }
-
-  trackBootNotCompleted(props: BootNotCompletedProps): void {
-    this.capture(ANALYTICS_EVENTS.BOOT_NOT_COMPLETED, {...props});
-  }
-
-  trackSplashHidden(props: SplashHiddenProps): void {
-    this.capture(ANALYTICS_EVENTS.SPLASH_HIDDEN, {...props});
-  }
-
-  trackSplashStalled(props: SplashStalledProps): void {
-    this.capture(ANALYTICS_EVENTS.SPLASH_STALLED, {...props});
-  }
-
-  trackPlaybackKilledInBackground(
-    props: PlaybackKilledInBackgroundProps,
-  ): void {
-    this.capture(ANALYTICS_EVENTS.PLAYBACK_KILLED_IN_BACKGROUND, {...props});
-  }
-
-  trackDeepLinkDropped(props: DeepLinkDroppedProps): void {
-    this.capture(ANALYTICS_EVENTS.DEEPLINK_DROPPED, {...props});
-  }
-
-  // @ai Boot/first-screen content-readiness (the post-boot "spinner forever"
-  // class). Same discrete fault + companion success shape as the *_STALLED pair.
-  trackColdStartBegan(props: ColdStartBeganProps): void {
-    this.capture(ANALYTICS_EVENTS.COLD_START_BEGAN, {...props});
-  }
-
-  trackScreenContentStalled(props: ScreenContentStalledProps): void {
-    this.capture(ANALYTICS_EVENTS.SCREEN_CONTENT_STALLED, {...props});
-  }
-
-  trackScreenContentRendered(props: ScreenContentRenderedProps): void {
-    this.capture(ANALYTICS_EVENTS.SCREEN_CONTENT_RENDERED, {...props});
-  }
-
-  trackPlaybackStoppedInBackground(
-    props: PlaybackStoppedInBackgroundProps,
-  ): void {
-    this.capture(ANALYTICS_EVENTS.PLAYBACK_STOPPED_IN_BACKGROUND, {...props});
-  }
-
-  // --- v1 → v2 favorites restore funnel ---
-  // The 3.2.0 rollout's primary risk signal. Report-only: these emit values the
-  // restore path already computed and discarded — no behavior changes.
-
-  trackV1RestoreChecked(props: V1RestoreCheckedProps): void {
-    this.capture(ANALYTICS_EVENTS.V1_RESTORE_CHECKED, {...props});
-  }
-
-  trackV1RestoreMerged(props: V1RestoreMergedProps): void {
-    this.capture(ANALYTICS_EVENTS.V1_RESTORE_MERGED, {...props});
-  }
-
-  trackV1RestoreSkipped(props: V1RestoreSkippedProps): void {
-    this.capture(ANALYTICS_EVENTS.V1_RESTORE_SKIPPED, {...props});
-  }
-
-  // --- Sign-in funnel ---
-  // The gate in front of the restore funnel above. Emitted by an OBSERVER of
-  // AuthContext's public state (services/analytics/AuthTelemetry), so the auth
-  // implementation itself carries no analytics coupling.
-
-  trackSignInStarted(props: SignInStartedProps): void {
-    this.capture(ANALYTICS_EVENTS.SIGN_IN_STARTED, {...props});
-  }
-
-  trackSignInSucceeded(props: SignInSucceededProps): void {
-    this.capture(ANALYTICS_EVENTS.SIGN_IN_SUCCEEDED, {...props});
-  }
-
-  trackSignInFailed(props: SignInFailedProps): void {
-    this.capture(ANALYTICS_EVENTS.SIGN_IN_FAILED, {...props});
-  }
-
-  trackSignInAbandoned(props: SignInAbandonedProps): void {
-    this.capture(ANALYTICS_EVENTS.SIGN_IN_ABANDONED, {...props});
   }
 
   // --- Identity ---

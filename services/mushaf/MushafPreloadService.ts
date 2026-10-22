@@ -4,12 +4,17 @@ import {
   type SkTypeface,
 } from '@shopify/react-native-skia';
 import {Image} from 'react-native';
+import * as Sentry from '@sentry/react-native'; // @ai
 import {digitalKhattDataService} from './DigitalKhattDataService';
 import {quranTextService} from './QuranTextService';
 import {rewayahDiffService} from './RewayahDiffService';
-import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
+import {
+  useMushafSettingsStore,
+  type RewayahId,
+} from '@/store/mushafSettingsStore';
 import {migratePersistedId} from '@/services/rewayah/RewayahIdentity';
 
+// @ai-start
 const FONT_ASSETS: Record<string, number> = {
   DigitalKhattV1: require('@/data/mushaf/legacy/DigitalKhattQuranicV1.otf'),
   DigitalKhattV2: require('@/data/mushaf/digitalkhatt/DigitalKhattFont.otf'),
@@ -19,7 +24,9 @@ const FONT_ASSETS: Record<string, number> = {
   SurahNameQCF: require('@/data/mushaf/surah-name-qcf.ttf'),
   ManropeSemiBold: require('@/assets/fonts/Manrope-SemiBold.ttf'),
   ManropeRegular: require('@/assets/fonts/Manrope-Regular.ttf'),
+  PlexSansArabicSemiBold: require('@/assets/fonts/IBMPlexSansArabic-SemiBold.ttf'),
 };
+// @ai-end
 
 /**
  * Preloads everything the Mushaf screen needs at app startup (AppInitializer
@@ -42,6 +49,9 @@ class MushafPreloadService {
   private _surahNameTypeface: SkTypeface | null = null;
   private _state: MushafPreloadState = 'idle';
   private _initPromise: Promise<void> | null = null;
+  // Registered once (a retried init must not stack listeners).
+  private _rewayahSubscription: (() => void) | null = null;
+  private _diffRewayah: RewayahId | null = null;
   // `useSyncExternalStore` subscribers so mushaf components can read
   // fontMgr synchronously without needing a useFonts fallback that races
   // at first-mount.
@@ -132,17 +142,27 @@ class MushafPreloadService {
         store.setRewayah(normalized);
       }
 
+      // Keep line-text/layout caches and diff ranges in step with the DK
+      // service. The listener runs synchronously inside each commit that
+      // changes the active rewayah (after the maps are swapped, before cache
+      // subscribers re-render), so SkiaPage never recomputes line text or
+      // highlight offsets from the previous rewayah's caches. Registered
+      // before initialize() so the first commit (when the persisted rewayah
+      // is not Hafs, or a bookmark switch landed first) is covered too.
+      if (!this._rewayahSubscription) {
+        this._rewayahSubscription = digitalKhattDataService.onRewayahChange(
+          rewayah => {
+            quranTextService.clearCaches();
+            this._loadDiffsFor(rewayah);
+          },
+        );
+      }
+
       // DK data must be ready first; page lines are needed for layout computation
       await digitalKhattDataService.initialize();
 
-      // Load rewayah diff ranges for the current rewayah, then keep in sync.
-      // On switch the line-text caches and diff cache must be cleared before
-      // SkiaPage re-renders so line text and highlight offsets are recomputed.
-      rewayahDiffService.loadForRewayah(digitalKhattDataService.rewayah);
-      digitalKhattDataService.onRewayahChange(rewayah => {
-        quranTextService.clearCaches();
-        rewayahDiffService.loadForRewayah(rewayah);
-      });
+      // Hafs (the service's starting rewayah) commits without a change event.
+      this._loadDiffsFor(digitalKhattDataService.rewayah);
 
       await this.loadSkiaFonts();
 
@@ -166,6 +186,12 @@ class MushafPreloadService {
       this._notify();
       console.log(`[MushafPreload] Initialization ${this._state}`);
     }
+  }
+
+  private _loadDiffsFor(rewayah: RewayahId): void {
+    if (this._diffRewayah === rewayah) return;
+    rewayahDiffService.loadForRewayah(rewayah);
+    this._diffRewayah = rewayah;
   }
 
   private async loadSkiaFonts(): Promise<void> {
@@ -279,13 +305,56 @@ class MushafPreloadService {
 
 export const mushafPreloadService = new MushafPreloadService();
 
+// @ai-start
+// A rejected `mushaf-settings` read (a full device, QARIAHV2-20) keeps
+// hasHydrated() false for the whole process, so an unbounded wait left the
+// preload at 'loading' and the screen on an endless spinner. After this long
+// the preload renders with the store's in-memory values. This writes nothing:
+// the hydration-guarded storage refuses every write after a failed read.
+export const SETTINGS_HYDRATION_TIMEOUT_MS = 5000;
+let reportedHydrationTimeout = false;
+
 function waitForSettingsHydration(): Promise<void> {
   const persist = useMushafSettingsStore.persist;
   if (persist.hasHydrated()) return Promise.resolve();
   return new Promise<void>(resolve => {
+    const timer = setTimeout(() => {
+      unsub();
+      reportHydrationTimeout();
+      // A read that was only slow can still finish. The text was loaded for
+      // the default rewayah, so follow the saved one when it arrives.
+      const unsubLate = persist.onFinishHydration(state => {
+        unsubLate();
+        if (digitalKhattDataService.rewayah === state.rewayah) return;
+        digitalKhattDataService.switchRewayah(state.rewayah).catch(error => {
+          if (__DEV__) {
+            console.warn('[MushafPreload] Late rewayah resync failed:', error);
+          }
+        });
+      });
+      resolve();
+    }, SETTINGS_HYDRATION_TIMEOUT_MS);
     const unsub = persist.onFinishHydration(() => {
       unsub();
+      clearTimeout(timer);
       resolve();
     });
   });
 }
+
+function reportHydrationTimeout(): void {
+  if (__DEV__) {
+    console.warn(
+      '[MushafPreload] Settings did not hydrate; rendering with defaults',
+    );
+  }
+  if (reportedHydrationTimeout) return;
+  reportedHydrationTimeout = true;
+  Sentry.captureMessage('mushaf-settings-hydration-timeout', {
+    level: 'warning',
+    tags: {scope: 'mushaf-preload'},
+    extra: {timeoutMs: SETTINGS_HYDRATION_TIMEOUT_MS},
+    fingerprint: ['mushaf-settings-hydration-timeout'],
+  });
+}
+// @ai-end

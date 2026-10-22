@@ -1,8 +1,5 @@
 {
-  "platforms": ["apple", "android", "web"],
-  "apple": {
-    "modules": ["QariahAnrWatchdogModule"]
-  },
+  "platforms": ["android", "web"],
   "android": {
     "modules": ["expo.modules.qariahanrwatchdog.QariahAnrWatchdogModule"]
   }

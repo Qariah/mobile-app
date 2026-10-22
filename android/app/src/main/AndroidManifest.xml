@@ -16,7 +16,7 @@
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
   <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
   <!-- RECORD_AUDIO intentionally NOT declared: Qariah is playback-only. expo-audio
-       is configured with microphonePermission:false (app.config.ts) so prebuild
+       is configured with recordAudioAndroid:false (app.config.ts) so prebuild
        won't re-add it. (Sprint 32 — privacy hygiene.) -->
 
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -54,7 +54,7 @@
         <action android:name="androidx.media3.session.MediaSessionService"/>
       </intent-filter>
     </service>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
+    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
@@ -67,14 +67,23 @@
         <data android:scheme="exp+qariah"/>
         <data android:scheme="com.qariah.app"/>
       </intent-filter>
+      <intent-filter android:autoVerify="true" data-generated="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <data android:scheme="https" android:host="qariah.org" android:pathPrefix="/quran"/>
+        <data android:scheme="https" android:host="qariah.org" android:pathPrefix="/reciter"/>
+        <data android:scheme="https" android:host="qariah.org" android:pathPrefix="/mushaf"/>
+        <data android:scheme="https" android:host="qariah.org" android:pathPrefix="/adhkar"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
       <!-- Audio share-intent target (expo-share-intent: androidIntentFilters +
-           androidMultiIntentFilters = ['audio/*'], one pair each). The committed
-           manifest had accumulated THREE identical pairs from repeated non-clean
-           `expo prebuild` runs (the plugin's manifest mod appends rather than
-           replaces), so this was deduped to a single pair by hand (TECH_DEBT #169).
-           The plugin config already emits exactly one pair, so do NOT re-triple by
-           re-running prebuild without the clean flag; a clean prebuild regenerates
-           the whole file (re-apply the Qariah annotations above), or dedupe after. -->
+           androidMultiIntentFilters = ['audio/*'], one pair each). Older non-clean
+           prebuilds appended a copy of the pair on each run (TECH_DEBT #169).
+           patches/expo-share-intent+8.0.1.patch now drops an identical existing
+           filter before it adds the pair (TECH_DEBT #291), and the SDK 57 prebuild
+           recreates the native folders unless it gets the no-clean flag. So a
+           prebuild writes exactly one pair. A clean prebuild regenerates the whole
+           file: re-apply the Qariah annotations in this file after it. -->
       <intent-filter>
         <action android:name="android.intent.action.SEND"/>
         <data android:mimeType="audio/*"/>

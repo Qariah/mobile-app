@@ -1,14 +1,23 @@
 import React from 'react';
 import {View} from 'react-native';
 import {Stack} from 'expo-router';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+// @ai-end
 import {useTheme} from '@/hooks/useTheme';
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {MaxWidthContainer} from '@/components/layout/MaxWidthContainer';
 
 const EmptyHeaderBackground = () => <View />;
 
+// A deep link (widget, Live Activity, App Link) that opens a screen in this
+// stack lands on top of its first screen, so back always has a target.
+export const unstable_settings = {initialRouteName: 'index'};
+
+// @ai-start
 export default function SearchLayout() {
   const {theme} = useTheme();
+  const {t} = useTranslation('home');
 
   return (
     <MaxWidthContainer>
@@ -43,7 +52,7 @@ export default function SearchLayout() {
                   headerBlurEffect: undefined,
                   headerStyle: {backgroundColor: 'transparent'},
                   headerShadowVisible: false,
-                  headerTitle: 'Browse All',
+                  headerTitle: t('browse.browseAll'),
                   headerBackTitle: '',
                   headerBackground: EmptyHeaderBackground,
                   fullScreenGestureEnabled: false,
@@ -61,7 +70,7 @@ export default function SearchLayout() {
                   headerBlurEffect: undefined,
                   headerStyle: {backgroundColor: 'transparent'},
                   headerShadowVisible: false,
-                  headerTitle: 'All Surahs',
+                  headerTitle: t('browse.allSurahs'),
                   headerBackTitle: ' ',
                   headerBackButtonDisplayMode: 'minimal',
                   fullScreenGestureEnabled: false,
@@ -109,3 +118,4 @@ export default function SearchLayout() {
     </MaxWidthContainer>
   );
 }
+// @ai-end

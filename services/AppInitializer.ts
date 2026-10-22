@@ -26,10 +26,12 @@ import {usePlayCountStore} from '@/store/playCountStore';
 import {useLovedStore} from '@/services/player/store/lovedStore';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {useFavoriteRecitersStore} from '@/services/player/store/favoriteRecitersStore';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {startCarIntegration} from '@/services/car';
 import * as Font from 'expo-font';
+// Qariah: the Qariah-only imports (TECH_DEBT #243).
 import * as Sentry from '@sentry/react-native';
 import {raceInitTimeout, INIT_TIMED_OUT} from '@/services/initTimeout';
+import {applyQariahInitConfig} from '@/services/qariahInitConfig';
 
 // Qariah (#53): splash-blocking init budgets. Generous vs the measured healthy
 // path (the slowest service, the bundled Tafseer/translation DB import, runs
@@ -78,13 +80,14 @@ class AppInitializer {
   private services: ServiceInitializer[] = [];
   // Sprint 34 (S34.1) — REPORT-ONLY cold-start init timing. Records each
   // service's completion ms + the set still in-flight, so the slow-cold-start
-  // watchdog (app/_layout.tsx) and the batch-timeout capture can name the slow
+  // watchdog (services/qariahBoot.ts) and the batch-timeout capture can name the slow
   // service(s) in the field instead of an opaque `non-critical-batch`. Field
   // evidence (Sentry boot_step=catalog-ready 95%) localized the cold-start
   // hangs to this method but couldn't decompose the parallel batch; this probe
   // closes that gap so a future sprint builds the right lever (likely lazy-open
   // the off-Listen-path feature DBs) with data. NO behavior change.
   // See planning/v1-v2-fleet-compatibility-analysis-2026-06-12.md.
+  // review-by: 2027-01-15 (TECH_DEBT #234) — remove if nobody reads the `slow_init_service` tag
   private completedTimings: Array<{name: string; ms: number}> = [];
   private inFlight = new Set<string>();
 
@@ -242,6 +245,20 @@ class AppInitializer {
         }
 
         this.initialized = true;
+        // @ai Qariah (Sprint 46, Pass B review): the car integration is
+        // optional. A synchronous throw from its setup must not fail the boot
+        // of a phone that never connects a car.
+        try {
+          startCarIntegration();
+        } catch (error) {
+          console.warn(
+            '[AppInitializer] Car integration failed to start:',
+            error,
+          );
+          Sentry.captureException(error, {
+            tags: {scope: 'cold-start', boot_hook: 'startCarIntegration'},
+          });
+        }
         const totalTime = Date.now() - startTime;
         console.log(
           `[AppInitializer] All services initialized successfully (${totalTime}ms total)`,
@@ -282,7 +299,7 @@ class AppInitializer {
 
   /**
    * Sprint 34 (S34.1) — REPORT-ONLY snapshot of cold-start init progress, read
-   * by the slow-cold-start watchdog (app/_layout.tsx) when it fires so the
+   * by the slow-cold-start watchdog (services/qariahBoot.ts) when it fires so the
    * field event names the slow service(s). `completed` = finished services +
    * their ms (slowest-first); `inFlight` = started-but-not-done at read time
    * (the likely culprits when the watchdog trips mid-batch). No behavior change.
@@ -295,6 +312,27 @@ class AppInitializer {
       completed: [...this.completedTimings].sort((a, b) => b.ms - a.ms),
       inFlight: [...this.inFlight],
     };
+  }
+
+  /**
+   * @ai Qariah (TECH_DEBT #243) — remove a registered service by name. The
+   * other services keep their order. Used by services/qariahInitConfig.ts, so
+   * the upstream registerService() blocks below stay byte-identical.
+   */
+  unregisterService(name: string): void {
+    this.services = this.services.filter(s => s.name !== name);
+  }
+
+  /**
+   * @ai Qariah (TECH_DEBT #243) — replace the initialize() of a registered
+   * service. The service keeps its name, priority, critical flag and slot.
+   */
+  replaceServiceInitializer(
+    name: string,
+    initialize: () => Promise<void>,
+  ): void {
+    const service = this.services.find(s => s.name === name);
+    if (service) service.initialize = initialize;
   }
 }
 
@@ -364,27 +402,18 @@ appInitializer.registerService({
 });
 
 /**
- * Adhkar Service (Priority 4) — gated on `isFeatureEnabled('adhkar')`.
- * Qariah ships with `adhkar: false` (config/featureFlags.ts — no women-audio
- * canon at launch) and the surface is fully gated in the UI (no nav entry;
- * RecitersView's section is `isFeatureEnabled('adhkar') && …`). Seeding the
- * Adhkar DB here ran unconditionally on every cold start for a feature nobody
- * can reach; the "Adhkar Store Data" step below (loadCategories) was the single
- * slowest non-critical service (~2.5s on a Pixel 3). Skipping registration when
- * the flag is off removes that cold-start cost with zero trade-off; both
- * services re-register automatically when the flag flips on (v2.x).
- * (Cold-start investigation: planning/perf-investigation-pixel3-2026-05-31.md.)
+ * Adhkar Service (Priority 4)
+ * Initializes the Adhkar database and seeds data (depends on Database)
+ * Non-critical - app can function without adhkar
  */
-if (isFeatureEnabled('adhkar')) {
-  appInitializer.registerService({
-    name: 'Adhkar Service',
-    priority: 4,
-    critical: false,
-    initialize: async () => {
-      await adhkarService.initialize();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Adhkar Service',
+  priority: 4,
+  critical: false,
+  initialize: async () => {
+    await adhkarService.initialize();
+  },
+});
 
 /**
  * Mushaf Preload (Priority 5)
@@ -392,99 +421,61 @@ if (isFeatureEnabled('adhkar')) {
  * Eliminates loading screens in the Mushaf tab by having everything ready
  * before the user navigates there.
  * Non-critical - Mushaf tab will render empty frames until ready (rare race).
- *
- * Sprint 30 (B1) — gated on `!isFeatureEnabled('deferMushafPreload')`. When the
- * defer flag is on (Qariah default), this registration is SKIPPED so the ~2s
- * preload no longer blocks the splash; instead `app/_layout.tsx` `prepare()`
- * fires `mushafPreloadService.initialize()` non-awaited. The landing Listen tab
- * never touches the Mushaf font stack, so this is off its critical path. Flip
- * the flag off to restore the legacy splash-blocking behavior here.
- * (Cold-start: planning/perf-audit-2026-06-04.md; advances TECH_DEBT #110.)
  */
-if (!isFeatureEnabled('deferMushafPreload')) {
-  appInitializer.registerService({
-    name: 'Mushaf Preload',
-    priority: 5,
-    critical: false,
-    initialize: async () => {
-      await mushafPreloadService.initialize();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Mushaf Preload',
+  priority: 5,
+  critical: false,
+  initialize: async () => {
+    await mushafPreloadService.initialize();
+  },
+});
 
 /**
- * Adhkar Store Data (Priority 6) — gated on `isFeatureEnabled('adhkar')`.
- * See the Adhkar Service block above. Loads adhkar categories into the store;
- * skipped entirely while `adhkar: false`.
+ * Adhkar Store Data (Priority 6)
+ * Loads adhkar categories from database into Zustand store
+ * Non-critical - can be loaded later if fails
  */
-if (isFeatureEnabled('adhkar')) {
-  appInitializer.registerService({
-    name: 'Adhkar Store Data',
-    priority: 6,
-    critical: false,
-    initialize: async () => {
-      await useAdhkarStore.getState().loadCategories();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Adhkar Store Data',
+  priority: 6,
+  critical: false,
+  initialize: async () => {
+    await useAdhkarStore.getState().loadCategories();
+  },
+});
 
 /**
- * Uploads Service (Priority 6) — gated on `!isFeatureEnabled('deferNonCriticalBootServices')`.
- *
- * Sprint 38 (S38.2) — when the defer flag is on (Qariah default), this
- * registration is SKIPPED so the SQLite open + recitation load no longer runs
- * in the non-critical batch. UploadsService.initialize() is called lazily at
- * the top of every public method (already the case), so the DB opens on first
- * user-triggered access instead. userUploads is false in Qariah v2 so the
- * surface is fully hidden; no boot-path caller reads from the uploads store.
- * Flip the flag off to restore the legacy boot-time open (instant rollback).
- *
- * Field evidence: Sentry QARIAHV2-G / QARIAHV2-S named 'Uploads Service' as
- * a `slow_init_service` straggler on OnePlus 8 Pro / Android 11 (builds
- * 1345/1353). See planning/sprint-38-plan.md (S38.2).
+ * Uploads Service (Priority 7)
+ * Initializes the uploads database and loads recitations into store
+ * Non-critical - app can function without uploads
  */
-if (!isFeatureEnabled('deferNonCriticalBootServices')) {
-  appInitializer.registerService({
-    name: 'Uploads Service',
-    priority: 6,
-    critical: false,
-    initialize: async () => {
-      await uploadsService.initialize();
-      await useUploadsStore.getState().loadRecitations();
-      await useUploadsStore.getState().loadCustomReciters();
-      await uploadsService.maybeRunOrphanCleanup();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Uploads Service',
+  priority: 6,
+  critical: false,
+  initialize: async () => {
+    await uploadsService.initialize();
+    await useUploadsStore.getState().loadRecitations();
+    await useUploadsStore.getState().loadCustomReciters();
+    await uploadsService.maybeRunOrphanCleanup();
+  },
+});
 
 /**
- * Verse Annotations Service (Priority 7) — gated on `!isFeatureEnabled('deferNonCriticalBootServices')`.
- *
- * Sprint 38 (S38.2) — when the defer flag is on (Qariah default), this
- * registration is SKIPPED so the SQLite open + bookmark-cache warm no longer
- * runs in the non-critical batch. VerseAnnotationDatabaseService.ensureReady()
- * now self-initializes on first access (lazy-open, mirrors TafseerDbService
- * pattern from Sprint 35 S35.1). BookmarkChips.tsx already re-fetches all
- * bookmarks in a `useEffect` on mount, so the warm cache at boot was redundant
- * for that surface; other callers (sheets, hooks, collection screens) are
- * user-triggered and await the service's async methods, so they lazy-open
- * transparently. Flip the flag off to restore legacy boot-time behavior.
- *
- * Field evidence: Sentry QARIAHV2-G / QARIAHV2-S named 'Verse Annotations' as
- * a `slow_init_service` straggler on OnePlus 8 Pro / Android 11 (builds
- * 1345/1353). See planning/sprint-38-plan.md (S38.2).
+ * Verse Annotations Service (Priority 7)
+ * Initializes the verse annotations database for bookmarks, notes, highlights
+ * Non-critical - app can function without verse annotations
  */
-if (!isFeatureEnabled('deferNonCriticalBootServices')) {
-  appInitializer.registerService({
-    name: 'Verse Annotations',
-    priority: 7,
-    critical: false,
-    initialize: async () => {
-      await verseAnnotationService.initialize();
-      await warmBookmarkCache();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Verse Annotations',
+  priority: 7,
+  critical: false,
+  initialize: async () => {
+    await verseAnnotationService.initialize();
+    await warmBookmarkCache();
+  },
+});
 
 /**
  * Timestamp Service (Priority 9)
@@ -527,25 +518,14 @@ appInitializer.registerService({
   critical: false,
   initialize: async () => {
     await Font.loadAsync({
-      // Used on landing surfaces (RewayatCard renders the rewaya name in
-      // ScheherazadeNew-Bold on the Listen tab) — always load blocking.
       'ScheherazadeNew-Regular': require('@/assets/fonts/ScheherazadeNew-Regular.ttf'),
       'ScheherazadeNew-Medium': require('@/assets/fonts/ScheherazadeNew-Medium.ttf'),
       'ScheherazadeNew-Bold': require('@/assets/fonts/ScheherazadeNew-Bold.ttf'),
       'ScheherazadeNew-SemiBold': require('@/assets/fonts/ScheherazadeNew-SemiBold.ttf'),
       Uthmani: require('@/assets/fonts/Uthmani.otf'),
       QPC: require('@/assets/fonts/UthmanicHafs1Ver18.ttf'),
-      // Sprint 30 (B7) — the DigitalKhatt OTFs (2.5 MB each) are used by the RN
-      // `DigitalKhattV1`/`V2` font family ONLY on Mushaf-tab surfaces (reading
-      // views + mushaf sheets). When `deferMushafPreload` is on they ride with
-      // the deferred preload in `_layout.tsx` `prepare()` instead of blocking
-      // the splash; when off they load here (legacy behavior).
-      ...(isFeatureEnabled('deferMushafPreload')
-        ? {}
-        : {
-            DigitalKhattV1: require('@/data/mushaf/legacy/DigitalKhattQuranicV1.otf'),
-            DigitalKhattV2: require('@/data/mushaf/digitalkhatt/DigitalKhattFont.otf'),
-          }),
+      DigitalKhattV1: require('@/data/mushaf/legacy/DigitalKhattQuranicV1.otf'),
+      DigitalKhattV2: require('@/data/mushaf/digitalkhatt/DigitalKhattFont.otf'),
     });
   },
 });
@@ -556,75 +536,58 @@ appInitializer.registerService({
  * Used for verse themes, similar ayahs, and shared phrases in mushaf sheets.
  * Non-critical - similar verses features degrade gracefully without it.
  */
-// Sprint 35 (S35.1) — off-Listen feature DBs (QUL / Translation / Tafseer / WBW)
-// skip boot registration when `lazyOpenFeatureDbs` is on; each opens its SQLite
-// connection on first access to its (off-Listen) surface via an idempotent lazy
-// guard. Field-evidence: Tafseer DB is the dominant `slow_init_service` straggler
-// (TECH_DEBT #144). Flip the flag off to restore legacy boot-time opens.
-if (!isFeatureEnabled('lazyOpenFeatureDbs')) {
-  appInitializer.registerService({
-    name: 'QUL Data',
-    priority: 10,
-    critical: false,
-    initialize: async () => {
-      await qulDataService.initialize();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'QUL Data',
+  priority: 10,
+  critical: false,
+  initialize: async () => {
+    await qulDataService.initialize();
+  },
+});
 
 /**
  * Translation DB Service (Priority 10)
  * Opens translations.db for downloaded remote translations.
  * Non-critical — bundled translations work without it.
  */
-if (!isFeatureEnabled('lazyOpenFeatureDbs')) {
-  appInitializer.registerService({
-    name: 'Translation DB',
-    priority: 10,
-    critical: false,
-    initialize: async () => {
-      await translationDbService.initialize();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Translation DB',
+  priority: 10,
+  critical: false,
+  initialize: async () => {
+    await translationDbService.initialize();
+  },
+});
 
 /**
  * Tafseer DB Service (Priority 10)
  * Opens tafaseer.db for downloaded tafaseer.
  * Non-critical — tafseer features degrade gracefully without it.
  */
-// Tafseer DB: when lazy (flag on) the bundled Ibn Kathir import is folded into
-// `tafseerDbService.initialize()` (S35.1) so the default '169' tafseer is readable
-// on first off-Listen access; `loadDownloadedMeta` then runs on the tafseer
-// surface mount (TafseerContent) instead of at boot.
-if (!isFeatureEnabled('lazyOpenFeatureDbs')) {
-  appInitializer.registerService({
-    name: 'Tafseer DB',
-    priority: 10,
-    critical: false,
-    initialize: async () => {
-      await tafseerDbService.initialize();
-      await tafseerDbService.importBundledIbnKathir();
-      await useTafseerStore.getState().loadDownloadedMeta();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'Tafseer DB',
+  priority: 10,
+  critical: false,
+  initialize: async () => {
+    await tafseerDbService.initialize();
+    await tafseerDbService.importBundledIbnKathir();
+    await useTafseerStore.getState().loadDownloadedMeta();
+  },
+});
 
 /**
  * WBW Data Service (Priority 10)
  * Opens wbw-en.db for word-by-word translations.
  * Non-critical — WBW features degrade gracefully without it.
  */
-if (!isFeatureEnabled('lazyOpenFeatureDbs')) {
-  appInitializer.registerService({
-    name: 'WBW Data',
-    priority: 10,
-    critical: false,
-    initialize: async () => {
-      await wbwDataService.initialize();
-    },
-  });
-}
+appInitializer.registerService({
+  name: 'WBW Data',
+  priority: 10,
+  critical: false,
+  initialize: async () => {
+    await wbwDataService.initialize();
+  },
+});
 
 /**
  * Store Hydration (Priority 3)
@@ -649,3 +612,11 @@ appInitializer.registerService({
     useFavoriteRecitersStore.getState();
   },
 });
+
+// ============================================================================
+// QARIAH (TECH_DEBT #243)
+// Qariah's skips and overrides of the registrations above, in one place. It
+// runs at module load, after every upstream registration and before anything
+// can call initialize(). Details: services/qariahInitConfig.ts.
+// ============================================================================
+applyQariahInitConfig(appInitializer);

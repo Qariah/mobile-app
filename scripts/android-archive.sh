@@ -51,6 +51,24 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Refuse to run from a shell whose cwd is inside a DIFFERENT git checkout
+# (2026-09-27). An Android AAB build for one worktree, started from the main
+# checkout, derived the main checkout's commit count and wrote versionCode
+# 2428 / versionName 3.2.2 where 2027 / 3.2.1 was correct. generate-version.js
+# now runs git with `-C <its own repo>`, so the number no longer depends on
+# cwd; this guard stops the operator confusion that caused the mix-up. A cwd
+# outside any git checkout is allowed, because no other tree can be meant.
+SCRIPT_REPO_TOP="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+CWD_REPO_TOP="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$CWD_REPO_TOP" ] && [ "$CWD_REPO_TOP" != "$SCRIPT_REPO_TOP" ]; then
+    echo "FATAL: the shell is in a different checkout from this script." >&2
+    echo "  cwd checkout:    $CWD_REPO_TOP" >&2
+    echo "  script checkout: $SCRIPT_REPO_TOP" >&2
+    echo "  Run it from the checkout you want to build:" >&2
+    echo "    cd \"$SCRIPT_REPO_TOP\" && bash scripts/$(basename "${BASH_SOURCE[0]}") ..." >&2
+    exit 1
+fi
+
 # Don't fail the build when Sentry source-map upload hits a transient
 # network error (DNS, SSL_read, etc). Symbolication is best-effort; a
 # flaky upload should not block a release build. Same guard as ios-archive.sh.
@@ -90,7 +108,7 @@ for arg in "$@"; do
             ;;
         *)
             echo -e "${RED}❌ Unknown argument: $arg${NC}"
-            echo "Usage: ./scripts/android-archive.sh [--bundle] [--clean] [--prod|--prelive] [--upload=<internal|beta|production>]"
+            echo "Usage: ./scripts/android-archive.sh [--bundle] [--clean] [--prod|--prelive] [--upload=<internal|alpha|beta>]"
             exit 1
             ;;
     esac
@@ -98,9 +116,20 @@ done
 
 if [ -n "$UPLOAD_TRACK" ]; then
     case "$UPLOAD_TRACK" in
-        internal|alpha|beta|production) ;;
+        internal|alpha|beta) ;;
+        production)
+            # The uploader refuses production without an explicit --status, and
+            # this script cannot pass one. Refuse here, before a long build.
+            echo -e "${RED}❌ --upload=production is not supported: a production upload needs an explicit rollout status.${NC}"
+            echo -e "${RED}   Build against the production backend, then upload:${NC}"
+            echo -e "${RED}   ./scripts/android-archive.sh --bundle --prod${NC}"
+            echo -e "${RED}   ./scripts/android-upload-play.sh --track=production --status=draft${NC}"
+            echo -e "${RED}   (or --status=inProgress --user-fraction=0.01 for a staged rollout).${NC}"
+            echo -e "${RED}   Without --prod, a branch other than qariah-main builds against QF prelive.${NC}"
+            exit 1
+            ;;
         *)
-            echo -e "${RED}❌ --upload track must be one of: internal | alpha | beta | production (got: $UPLOAD_TRACK)${NC}"
+            echo -e "${RED}❌ --upload track must be one of: internal | alpha | beta (got: $UPLOAD_TRACK)${NC}"
             exit 1
             ;;
     esac
@@ -211,6 +240,16 @@ node "$SCRIPT_DIR/verify-version-sync.js" --fix || {
     echo -e "${RED}❌ Version sync patch failed — manual fix needed (see output above).${NC}"
     exit 1
 }
+
+# Bundled fallback catalog freshness. The app shows assets/data/catalog.json on
+# a first launch with an empty cache; the ops console writes only the live R2
+# catalog, so the bundle goes stale unless it is refreshed before a release.
+# Warning only: an offline build still runs.
+echo -e "\n${YELLOW}🔍 Checking the bundled catalog against the live catalog...${NC}"
+if ! node "$SCRIPT_DIR/sync-bundled-catalog.mjs" --check; then
+    echo -e "${YELLOW}⚠️  assets/data/catalog.json is not the live catalog, or the check could not run (see above).${NC}"
+    echo -e "${YELLOW}   Before a release build: node scripts/sync-bundled-catalog.mjs --apply, then commit it.${NC}"
+fi
 
 # Ensure android/local.properties points at the Android SDK. Gradle needs
 # this before any build; the file is gitignored, so fresh worktrees don't

@@ -1,0 +1,502 @@
+{
+  "tabs": {
+    "listen": "الاستماع",
+    "mushaf": "المصحف"
+  },
+  "brand": {
+    "sidebar": "قارئة"
+  },
+  "settings": {
+    "screens": {
+      "signIn": "تسجيل الدخول",
+      "yourData": "بياناتك",
+      "notifications": "الإشعارات"
+    },
+    "backgroundPlayback": "التشغيل في الخلفية",
+    "backgroundPlaybackDesc": "استمرار تشغيل الصوت عند إطفاء الشاشة",
+    "githubDesc": "تطبيق {{appName}} مفتوح المصدر. أضف نجمة، أو أبلغ عن مشكلة، أو أرسل طلب دمج",
+    "notifications": {
+      "rowDesc": "اختر الإشعارات التي تصلك",
+      "typesSection": "أنواع الإشعارات",
+      "followedRecitation": "الجديد من قارئاتك المفضّلات",
+      "followedRecitationDesc": "عند إضافة تلاوة جديدة لإحدى قارئاتك المفضّلات",
+      "newRecitation": "التلاوات الجديدة",
+      "newRecitationDesc": "عند إضافة تلاوة جديدة إلى تطبيق {{appName}}",
+      "kahfFriday": "تذكير سورة الكهف يوم الجمعة",
+      "kahfFridayDesc": "تذكير صباح كل جمعة بالاستماع إلى سورة الكهف",
+      "continueListening": "متابعة الاستماع",
+      "continueListeningDesc": "تذكير بمتابعة الاستماع من حيث توقفت، بعد بضعة أيام من آخر استماع",
+      "whatsNew": "الميزات الجديدة",
+      "whatsNewDesc": "عند صدور تحديث يضم ميزات جديدة",
+      "permissionOff": "الإشعارات معطّلة لتطبيق {{appName}} في إعدادات هاتفك.",
+      "allow": "السماح بالإشعارات",
+      "readFailed": "تعذّرت قراءة اختياراتك للإشعارات. حاول مرة أخرى لاحقًا."
+    }
+  },
+  "a11y": {
+    "openNotes": "فتح الملاحظات",
+    "sharePage": "مشاركة الصفحة",
+    "removeFromQueue": "إزالة من قائمة الانتظار",
+    "playRecitation": "تشغيل سورة {{surah}} بصوت {{reciter}}",
+    "playRecitationRange": "تشغيل سورة {{surah}}، {{range}}، بصوت {{reciter}}"
+  },
+  "listenTop": {
+    "eyebrow": "ابدأ الاستماع",
+    "title": "تصفّح حسب",
+    "reciters": "القارئات",
+    "surahs": "السور",
+    "shuffle": "تشغيل عشوائي",
+    "finding": "جارٍ البحث عن تلاوات عشوائية لقارئات مختلفات…"
+  },
+  "recent": {
+    "justNow": "الآن",
+    "minutesAgo_zero": "الآن",
+    "minutesAgo_one": "قبل دقيقة",
+    "minutesAgo_two": "قبل دقيقتين",
+    "minutesAgo_few": "قبل {{count}} دقائق",
+    "minutesAgo_many": "قبل {{count}} دقيقة",
+    "minutesAgo_other": "قبل {{count}} دقيقة",
+    "hoursAgo_zero": "الآن",
+    "hoursAgo_one": "قبل ساعة",
+    "hoursAgo_two": "قبل ساعتين",
+    "hoursAgo_few": "قبل {{count}} ساعات",
+    "hoursAgo_many": "قبل {{count}} ساعة",
+    "hoursAgo_other": "قبل {{count}} ساعة",
+    "yesterday": "أمس",
+    "daysAgo_zero": "اليوم",
+    "daysAgo_one": "أمس",
+    "daysAgo_two": "قبل يومين",
+    "daysAgo_few": "قبل {{count}} أيام",
+    "daysAgo_many": "قبل {{count}} يومًا",
+    "daysAgo_other": "قبل {{count}} يوم",
+    "weeksAgo_zero": "هذا الأسبوع",
+    "weeksAgo_one": "قبل أسبوع",
+    "weeksAgo_two": "قبل أسبوعين",
+    "weeksAgo_few": "قبل {{count}} أسابيع",
+    "weeksAgo_many": "قبل {{count}} أسبوعًا",
+    "weeksAgo_other": "قبل {{count}} أسبوع",
+    "longAgo": "منذ مدة"
+  },
+  "homeRows": {
+    "rewayat": "تصفّح حسب الرواية",
+    "country": "تصفّح حسب البلد",
+    "translation": "تصفّح حسب الترجمة",
+    "honored": "قارئات مكرَّمات",
+    "paradise": "قارئات راحلات رحمهنّ الله",
+    "newlyAdded": "أُضيفت حديثًا",
+    "fullQuran": "القرآن كاملًا",
+    "trending": "الأكثر استماعًا هذا الأسبوع",
+    "mostPlayed": "الأكثر تشغيلًا لديك",
+    "newlyAddedRecitations": "التلاوات المضافة حديثًا"
+  },
+  "countryCard": {
+    "reciters_zero": "لا توجد قارئات",
+    "reciters_one": "قارئة واحدة",
+    "reciters_two": "قارئتان",
+    "reciters_few": "{{count}} قارئات",
+    "reciters_many": "{{count}} قارئة",
+    "reciters_other": "{{count}} قارئة"
+  },
+  "translationCard": {
+    "items_zero": "لا توجد عناصر",
+    "items_one": "عنصر واحد",
+    "items_two": "عنصران",
+    "items_few": "{{count}} عناصر",
+    "items_many": "{{count}} عنصرًا",
+    "items_other": "{{count}} عنصر"
+  },
+  "browse": {
+    "translationTitle": "الترجمة {{language}}",
+    "recitationsFound_zero": "لا توجد تلاوات مطابقة للفلاتر الحالية",
+    "recitationsFound_one": "تلاوة واحدة مطابقة للفلاتر الحالية",
+    "recitationsFound_two": "تلاوتان مطابقتان للفلاتر الحالية",
+    "recitationsFound_few": "{{count}} تلاوات مطابقة للفلاتر الحالية",
+    "recitationsFound_many": "{{count}} تلاوة مطابقة للفلاتر الحالية",
+    "recitationsFound_other": "{{count}} تلاوة مطابقة للفلاتر الحالية",
+    "recitersFound_zero": "لا توجد قارئات مطابقة للفلاتر الحالية",
+    "recitersFound_one": "قارئة واحدة مطابقة للفلاتر الحالية",
+    "recitersFound_two": "قارئتان مطابقتان للفلاتر الحالية",
+    "recitersFound_few": "{{count}} قارئات مطابقات للفلاتر الحالية",
+    "recitersFound_many": "{{count}} قارئة مطابقة للفلاتر الحالية",
+    "recitersFound_other": "{{count}} قارئة مطابقة للفلاتر الحالية"
+  },
+  "reciter": {
+    "translationChip": "الترجمة {{language}}",
+    "recitations_zero": "لا توجد تلاوات",
+    "recitations_one": "تلاوة واحدة",
+    "recitations_two": "تلاوتان",
+    "recitations_few": "{{count}} تلاوات",
+    "recitations_many": "{{count}} تلاوة",
+    "recitations_other": "{{count}} تلاوة",
+    "collapseBio": "طيّ النبذة",
+    "expandBio": "عرض النبذة كاملة",
+    "readMore": "اقرأ المزيد",
+    "downloadAllA11y": "تنزيل جميع السور",
+    "cancelDownloadAllA11y": "إلغاء تنزيل جميع السور",
+    "allDownloadedA11y": "تم تنزيل جميع السور"
+  },
+  "ayahRange": {
+    "single": "الآية {{from}}",
+    "range": "الآيات {{from}}–{{to}}"
+  },
+  "notes": {
+    "personalNotes": "الملاحظات الشخصية",
+    "noPersonalNotes": "لا توجد ملاحظات شخصية بعد",
+    "reflections": "التدبّرات",
+    "noReflections": "لا توجد تدبّرات بعد",
+    "countNotes_zero": "لا توجد ملاحظات",
+    "countNotes_one": "ملاحظة واحدة",
+    "countNotes_two": "ملاحظتان",
+    "countNotes_few": "{{count}} ملاحظات",
+    "countNotes_many": "{{count}} ملاحظة",
+    "countNotes_other": "{{count}} ملاحظة",
+    "countReflections_zero": "لا توجد تدبّرات",
+    "countReflections_one": "تدبّر واحد",
+    "countReflections_two": "تدبّران",
+    "countReflections_few": "{{count}} تدبّرات",
+    "countReflections_many": "{{count}} تدبّرًا",
+    "countReflections_other": "{{count}} تدبّر",
+    "reflectionsHint": "اضغط مطوّلًا على آية لتنشر تدبّرًا وتشاركه على QuranReflect.",
+    "personalHint": "أضف ملاحظات شخصية على الآيات لتظهر هنا."
+  },
+  "verseActions": {
+    "addPersonalNote": "إضافة ملاحظة شخصية",
+    "editPersonalNote": "تعديل الملاحظة الشخصية",
+    "removePersonalNote": "إزالة الملاحظة الشخصية",
+    "publishReflection": "نشر تدبّر",
+    "editReflection": "تعديل التدبّر",
+    "removeReflection": "إزالة التدبّر",
+    "signInToPublishTitle": "سجّل الدخول للنشر",
+    "signInToPublishBody": "تُنشر التدبّرات في مجتمع QuranReflect باسمك. سجّل الدخول بحساب Quran Foundation للمتابعة، أو احفظ ملاحظة شخصية بدلًا من ذلك (لا يلزم تسجيل الدخول).",
+    "signInButton": "تسجيل الدخول"
+  },
+  "note": {
+    "publishingHint": "سيُنشر على QuranReflect، ويظهر باسمك في منصات مجتمع Quran Foundation.",
+    "saving": "جارٍ الحفظ…",
+    "updateReflection": "تحديث التدبّر"
+  },
+  "reflections": {
+    "viewMoreA11y_zero": "عرض التدبّرات على QuranReflect",
+    "viewMoreA11y_one": "عرض تدبّر آخر على QuranReflect",
+    "viewMoreA11y_two": "عرض تدبّرين آخرين على QuranReflect",
+    "viewMoreA11y_few": "عرض {{count}} تدبّرات أخرى على QuranReflect",
+    "viewMoreA11y_many": "عرض {{count}} تدبّرًا آخر على QuranReflect",
+    "viewMoreA11y_other": "عرض {{count}} تدبّر آخر على QuranReflect",
+    "viewMore_zero": "عرض المزيد على QuranReflect",
+    "viewMore_one": "عرض تدبّر آخر على QuranReflect",
+    "viewMore_two": "عرض تدبّرين آخرين على QuranReflect",
+    "viewMore_few": "عرض {{count}} تدبّرات أخرى على QuranReflect",
+    "viewMore_many": "عرض {{count}} تدبّرًا آخر على QuranReflect",
+    "viewMore_other": "عرض {{count}} تدبّر آخر على QuranReflect",
+    "anonymous": "مستخدم مجهول"
+  },
+  "links": {
+    "openFailedTitle": "تعذّر فتح الرابط",
+    "openFailedBody": "تعذّر على جهازك فتح {{destination}}. يُرجى المحاولة مرة أخرى، أو فتحه في المتصفح.",
+    "thisLink": "هذا الرابط",
+    "quranReflect": "QuranReflect",
+    "thisReflectionOnQR": "هذا التدبّر على QuranReflect",
+    "thisReflection": "هذا التدبّر"
+  },
+  "account": {
+    "section": "الحساب",
+    "signedIn": "تم تسجيل الدخول",
+    "qfAccount": "حساب Quran Foundation",
+    "yourData": "بياناتك",
+    "yourDataDesc": "تصدير البيانات واستيرادها، واستعادة المفضلة من تطبيق قارئة السابق",
+    "signOut": "تسجيل الخروج",
+    "signOutDesc": "تبقى بياناتك على هذا الجهاز",
+    "signInTitle": "تسجيل الدخول إلى تطبيق قارئة",
+    "signInDesc": "استعِد مفضلتك من تطبيق قارئة السابق"
+  },
+  "signIn": {
+    "settingsBody": "سجّل الدخول بحساب Quran Foundation لتستعيد مفضلتك من تطبيق قارئة السابق. لن نطلب منك ذلك إلا مرة واحدة.",
+    "withQF": "تسجيل الدخول عبر Quran Foundation",
+    "cancelA11y": "إلغاء تسجيل الدخول",
+    "onboardingTitle": "سجّل الدخول لمزامنة قراءتك",
+    "onboardingBody": "سجّل الدخول بحساب Quran Foundation لتحتفظ بالمفضلة وآخر ما استمعت إليه والعلامات المرجعية على جميع أجهزتك. يمكنك تخطّي هذه الخطوة الآن، وتسجيل الدخول لاحقًا في أي وقت من الإعدادات.",
+    "skipA11y": "تخطّي تسجيل الدخول الآن"
+  },
+  "common": {
+    "skipForNow": "ليس الآن",
+    "notNow": "ليس الآن",
+    "openSettings": "فتح الإعدادات"
+  },
+  "signOut": {
+    "title": "هل تريد تسجيل الخروج من تطبيق قارئة؟",
+    "body": "ستبقى المفضلة وسجل الاستماع والتنزيلات على هذا الجهاز. يمكنك تسجيل الدخول مجددًا في أي وقت من الإعدادات.",
+    "cancelA11y": "إلغاء تسجيل الخروج"
+  },
+  "data": {
+    "intro": "تُحفظ المفضلة وسجل الاستماع على هذا الجهاز. استخدم «التصدير» لحفظ نسخة احتياطية أو لنقل بياناتك إلى جهاز آخر، و«الاستيراد» لتحميل نسخة احتياطية.",
+    "backupSection": "النسخ الاحتياطي",
+    "restoreSection": "الاستعادة",
+    "export": "تصدير بياناتي",
+    "exportDesc": "احفظ نسخة احتياطية بصيغة JSON من المفضلة وآخر ما استمعت إليه وتفضيلاتك",
+    "import": "الاستيراد من ملف",
+    "importDesc": "حمّل نسخة احتياطية، أو استعِد بيانات أرسلها إليك فريق دعم قارئة",
+    "recheckV1": "إعادة التحقق من حسابك في تطبيق قارئة السابق",
+    "restoreV1": "الاستعادة من حسابك في تطبيق قارئة السابق",
+    "recheckV1Desc": "جلب المفضلة من تطبيق قارئة السابق مرة أخرى",
+    "restoreV1Desc": "البحث عن مفضلتك المحفوظة في تطبيق قارئة السابق",
+    "exportReady": "التصدير جاهز",
+    "exportFailed": "تعذّر التصدير",
+    "invalidFile": "ملف غير صالح",
+    "notQariahExport": "لا يبدو أن هذا الملف مُصدَّر من تطبيق قارئة",
+    "cannotRead": "تعذّرت قراءة الملف",
+    "cannotOpen": "تعذّر فتح الملف",
+    "unknownError": "خطأ غير معروف",
+    "surahFavoritesNotSaved": "تعذّر حفظ سورك المفضلة",
+    "outOfStorageRetry": "قد تكون مساحة التخزين في جهازك ممتلئة. وفّر بعض المساحة ثم حاول مرة أخرى",
+    "importComplete": "اكتمل الاستيراد",
+    "importAdded": "أُضيف: {{reciters}}، {{recitations}}، {{surahs}}",
+    "nothingNew": "لا يوجد جديد لإضافته",
+    "importFailed": "تعذّر الاستيراد",
+    "v1CheckFailed": "تعذّر التحقق من بيانات تطبيق قارئة السابق",
+    "tryLater": "حاول مرة أخرى لاحقًا",
+    "shareDialogTitle": "حفظ بياناتك من تطبيق قارئة",
+    "genericError": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
+  },
+  "import": {
+    "title_zero": "لا توجد عناصر للاستيراد",
+    "title_one": "استيراد عنصر واحد؟",
+    "title_two": "استيراد عنصرين؟",
+    "title_few": "استيراد {{count}} عناصر؟",
+    "title_many": "استيراد {{count}} عنصرًا؟",
+    "title_other": "استيراد {{count}} عنصر؟",
+    "from": "المصدر: {{source}} · تاريخ التصدير: {{date}}",
+    "sourceV1": "تطبيق قارئة السابق",
+    "sourceExport": "ملف مُصدَّر من تطبيق قارئة",
+    "sourceServer": "خادم قارئة",
+    "mergeNote": "ستُدمج هذه العناصر مع مفضلتك الحالية، ولن يُحذف أي شيء.",
+    "importing": "جارٍ الاستيراد…",
+    "confirm": "استيراد"
+  },
+  "v1": {
+    "welcomeBack": "مرحبًا بعودتك!",
+    "foundHistory": "وجدنا سجلك في تطبيق قارئة",
+    "nothingFound": "وجدنا حسابك، لكن لم نجد مفضلة محفوظة في تطبيق قارئة السابق. ستبدأ من جديد، فاستكشف كما تشاء.",
+    "foundList": "وجدنا في حسابك على تطبيق قارئة السابق: {{list}}. هل تريد استعادتها الآن؟",
+    "skippedNote_zero": "ملاحظة: {{count}} تلاوة تعود لقارئات لم يُضَفن إلى التطبيق الجديد بعد، ولن تُستعاد.",
+    "skippedNote_one": "ملاحظة: تلاوة واحدة تعود لقارئة لم تُضَف إلى التطبيق الجديد بعد، ولن تُستعاد.",
+    "skippedNote_two": "ملاحظة: تلاوتان تعودان لقارئات لم يُضَفن إلى التطبيق الجديد بعد، ولن تُستعادا.",
+    "skippedNote_few": "ملاحظة: {{count}} تلاوات تعود لقارئات لم يُضَفن إلى التطبيق الجديد بعد، ولن تُستعاد.",
+    "skippedNote_many": "ملاحظة: {{count}} تلاوة تعود لقارئات لم يُضَفن إلى التطبيق الجديد بعد، ولن تُستعاد.",
+    "skippedNote_other": "ملاحظة: {{count}} تلاوة تعود لقارئات لم يُضَفن إلى التطبيق الجديد بعد، ولن تُستعاد.",
+    "restoring": "جارٍ الاستعادة…",
+    "restoreFavorites": "استعادة المفضلة",
+    "favoritesRestored": "تمت استعادة المفضلة",
+    "notesRestored": "تمت استعادة الملاحظات الشخصية",
+    "outOfStorage": "قد تكون مساحة التخزين في جهازك ممتلئة. وفّر بعض المساحة، ثم أعد المحاولة من الإعدادات ← بياناتك",
+    "restoreComplete": "اكتملت الاستعادة",
+    "noMatches": "لا يحتوي حسابك على عناصر تطابق التطبيق الجديد بعد",
+    "restoreFailed": "تعذّرت استعادة المفضلة",
+    "retryFromSettings": "أعد المحاولة من الإعدادات ← بياناتك"
+  },
+  "battery": {
+    "title": "استمرار تشغيل الصوت في الخلفية",
+    "body": "في بعض الهواتف، يوقف النظام صوت تطبيق {{appName}} عند إطفاء الشاشة أو عند عمل التطبيق في الخلفية. لحل المشكلة، افتح الإعدادات واضبط «استخدام البطارية» لتطبيق {{appName}} على «غير مقيَّد»."
+  },
+  "notifications": {
+    "title": "السماح بالإشعارات لمواصلة التشغيل في الخلفية",
+    "body": "يستخدم تطبيق {{appName}} إشعار التشغيل لمواصلة تشغيل الصوت عند إطفاء الشاشة أو عند عمل التطبيق في الخلفية. الإشعارات محظورة حاليًا، لذا قد يتوقف الصوت في الخلفية. افتح الإعدادات للسماح بالإشعارات.",
+    "followedRecitation": {
+      "title": "جديد من {{reciterName}}",
+      "body": "سورة {{surahName}} متاحة الآن للاستماع.",
+      "bodyRange": "سورة {{surahName}}، الآيات {{from}}–{{to}}، متاحة الآن للاستماع."
+    },
+    "followedRecitationSummary": {
+      "title": "الجديد من قارئاتك المفضّلات",
+      "body_zero": "{{count}} تلاوة جديدة، منها تلاوة بصوت {{reciterName}}.",
+      "body_one": "تلاوة جديدة بصوت {{reciterName}}.",
+      "body_two": "تلاوتان جديدتان، منهما تلاوة بصوت {{reciterName}}.",
+      "body_few": "{{count}} تلاوات جديدة، منها تلاوة بصوت {{reciterName}}.",
+      "body_many": "{{count}} تلاوة جديدة، منها تلاوة بصوت {{reciterName}}.",
+      "body_other": "{{count}} تلاوة جديدة، منها تلاوة بصوت {{reciterName}}."
+    },
+    "newRecitation": {
+      "title": "تلاوة جديدة",
+      "body": "سورة {{surahName}} بصوت {{reciterName}}.",
+      "bodyRange": "سورة {{surahName}}، الآيات {{from}}–{{to}}، بصوت {{reciterName}}."
+    },
+    "newRecitationSummary": {
+      "title": "تلاوات جديدة",
+      "body_zero": "{{count}} تلاوة جديدة في تطبيق {{appName}}.",
+      "body_one": "تلاوة جديدة في تطبيق {{appName}}.",
+      "body_two": "تلاوتان جديدتان في تطبيق {{appName}}.",
+      "body_few": "{{count}} تلاوات جديدة في تطبيق {{appName}}.",
+      "body_many": "{{count}} تلاوة جديدة في تطبيق {{appName}}.",
+      "body_other": "{{count}} تلاوة جديدة في تطبيق {{appName}}."
+    },
+    "kahfFriday": {
+      "title": "اليوم الجمعة",
+      "body": "استمع إلى سورة الكهف."
+    },
+    "continueListening": {
+      "title": "متابعة الاستماع",
+      "body": "سورة {{surahName}} بصوت {{reciterName}} بانتظارك."
+    },
+    "channels": {
+      "followedRecitation": "الجديد من قارئاتك المفضّلات",
+      "newRecitation": "التلاوات الجديدة",
+      "kahfFriday": "تذكير سورة الكهف يوم الجمعة",
+      "continueListening": "متابعة الاستماع",
+      "whatsNew": "الميزات الجديدة"
+    },
+    "softPrompt": {
+      "allow": "السماح",
+      "title": "إشعارات تطبيق {{appName}}",
+      "footer": "يمكنك اختيار الإشعارات التي تصلك من الإعدادات.",
+      "choose": "اختيار الإشعارات"
+    }
+  },
+  "storage": {
+    "outOfSpaceTitle": "مساحة التخزين في جهازك ممتلئة",
+    "outOfSpaceMessage": "لا يتم حفظ التغييرات. وفّر بعض المساحة."
+  },
+  "errorBoundary": {
+    "first": "واجه تطبيق قارئة خطأً غير متوقع في هذه الشاشة. تنزيلاتك والعناصر المحفوظة في أمان.",
+    "repeat": "واجه تطبيق قارئة الخطأ نفسه مرة أخرى. يُرجى إغلاق التطبيق تمامًا ثم فتحه من جديد.",
+    "reference": "المرجع: {{id}}"
+  },
+  "support": {
+    "emailUsTitle": "راسلنا عبر البريد الإلكتروني",
+    "emailUsBody": "يُرجى التواصل معنا على {{email}}",
+    "emailSubjectSupport": "دعم قارئة",
+    "emailSubjectFeatureRequest": "طلب ميزة لتطبيق قارئة"
+  },
+  "debug": {
+    "copied": "تم نسخ معرّف التشخيص",
+    "title": "معرّف التشخيص",
+    "copy": "نسخ معرّف التشخيص"
+  },
+  "about": {
+    "versionA11y": "إصدار التطبيق (اضغط 5 مرات للتشخيص)",
+    "alhamdulillahBody": "الحمد لله الذي أنزل كتابه ويسّره للذِّكر. بُني تطبيق قارئة حبًّا في القرآن الكريم وفي النساء اللواتي تحمل أصواتهنّ تلاوته. نسأل الله أن يتقبّل هذا الجهد اليسير، وأن يجعله سببًا للخير لبناتنا وللأمة جمعاء.",
+    "missionBody": "يحتفي تطبيق قارئة بتلاوة النساء للقرآن الكريم، من المعاصرات ومن الأجيال السابقة، من شتّى أنحاء العالم وبروايات متعددة. جمعنا أكثر من 60 قارئة في مساحة واحدة هادئة وجميلة، حتى يجد كل من يستمع — ولا سيما فتيات الجيل القادم — في تلاوة القرآن صوتًا يشبهه.",
+    "commitmentBody": "نلتزم بأن نمنح هؤلاء القارئات، والكتاب الذي يتلونه، ما يستحقان من عناية وتقدير. سيبقى تطبيق قارئة بيتًا للقرآن الكريم يليق به، يُنتقى محتواه بعناية، وسنواصل إضافة القارئات وتحسين التجربة، إن شاء الله. شكرًا لكونك جزءًا من هذه الرحلة. تقبّل الله منا ومنكم.",
+    "highQualityAudioDesc": "تلاوات واضحة نقية لأفضل القارئات في العالم مع بث محسّن"
+  },
+  "credits": {
+    "builtOn": "مبنيّ على",
+    "bayaanTitle": "Bayaan",
+    "bayaanDesc": "أُعيد بناء تطبيق {{appName}} على أساس Bayaan، تطبيق القرآن مفتوح المصدر الذي طوّره {{handle}} والمساهمون. {{licence}}."
+  },
+  "onboarding": {
+    "welcomeTitle": "مرحبًا بك في تطبيق قارئة",
+    "tagline": "القرآن بصوتها",
+    "welcomeBody": "أول تطبيق للقرآن الكريم يحتفي بالقارئات المعاصرات والسابقات، ويوصل أصواتًا طال غيابها إلى جمهور في أنحاء العالم.",
+    "catalogTitle": "مجموعة مختارة بعناية",
+    "catalogBody": "اخترنا بعناية أكثر من 60 قارئة من أنحاء العالم، بروايات متعددة. والمزيد في الطريق.",
+    "followAlongBody": "تُظلَّل كل آية بالتزامن مع التلاوة فلا تفقد موضعك أبدًا. متاحة الآن لتلاوة زينب طلحة، وتتوسّع قريبًا إن شاء الله.",
+    "memorizeBody": "كرّر آية واحدة، أو شغّل نطاقًا من الآيات، أو كرّر صفحة كاملة. صُمّم للحفظ والمراجعة.",
+    "getStarted": "لنبدأ",
+    "welcomeHeadline": "القرآن بصوتها.",
+    "release_3_3": {
+      "arabicTitle": "تطبيق قارئة بالعربية",
+      "arabicBody": "أصبح معظم التطبيق متاحًا بالعربية، بتخطيط من اليمين إلى اليسار، مع أسماء القارئات ونبذاتهنّ بالعربية. يتبع لغة هاتفك، ويمكنك تغييرها في أي وقت من الإعدادات › اللغة.",
+      "widgetsTitle": "أدوات مصغّرة للشاشة الرئيسية",
+      "widgetsBody": "أضف الأدوات المصغّرة لتطبيق قارئة إلى شاشتك الرئيسية على iPhone وAndroid: تابع الاستماع أو القراءة، وشغّل سورة، واطّلع على آية اليوم.",
+      "recitationsTitle": "تلاوات جديدة",
+      "recitationsBody": "يعرض صف «التلاوات المضافة حديثًا» في تبويب الاستماع الآن أحدث التلاوات: السورة، والقارئة، ونطاق الآيات في التلاوة الجزئية."
+    }
+  },
+  "counts": {
+    "reciters_zero": "لا توجد قارئات",
+    "reciters_one": "قارئة واحدة",
+    "reciters_two": "قارئتان",
+    "reciters_few": "{{count}} قارئات",
+    "reciters_many": "{{count}} قارئة",
+    "reciters_other": "{{count}} قارئة",
+    "recitations_zero": "لا توجد تلاوات",
+    "recitations_one": "تلاوة واحدة",
+    "recitations_two": "تلاوتان",
+    "recitations_few": "{{count}} تلاوات",
+    "recitations_many": "{{count}} تلاوة",
+    "recitations_other": "{{count}} تلاوة",
+    "surahs_zero": "لا توجد سور",
+    "surahs_one": "سورة واحدة",
+    "surahs_two": "سورتان",
+    "surahs_few": "{{count}} سور",
+    "surahs_many": "{{count}} سورة",
+    "surahs_other": "{{count}} سورة",
+    "personalNotes_zero": "لا توجد ملاحظات شخصية",
+    "personalNotes_one": "ملاحظة شخصية واحدة",
+    "personalNotes_two": "ملاحظتان شخصيتان",
+    "personalNotes_few": "{{count}} ملاحظات شخصية",
+    "personalNotes_many": "{{count}} ملاحظة شخصية",
+    "personalNotes_other": "{{count}} ملاحظة شخصية",
+    "reciterFavorites_zero": "لا توجد قارئات مفضلات",
+    "reciterFavorites_one": "قارئة مفضلة واحدة",
+    "reciterFavorites_two": "قارئتان مفضلتان",
+    "reciterFavorites_few": "{{count}} قارئات مفضلات",
+    "reciterFavorites_many": "{{count}} قارئة مفضلة",
+    "reciterFavorites_other": "{{count}} قارئة مفضلة",
+    "recitationFavorites_zero": "لا توجد تلاوات مفضلة",
+    "recitationFavorites_one": "تلاوة مفضلة واحدة",
+    "recitationFavorites_two": "تلاوتان مفضلتان",
+    "recitationFavorites_few": "{{count}} تلاوات مفضلة",
+    "recitationFavorites_many": "{{count}} تلاوة مفضلة",
+    "recitationFavorites_other": "{{count}} تلاوة مفضلة",
+    "surahFavorites_zero": "لا توجد سور مفضلة",
+    "surahFavorites_one": "سورة مفضلة واحدة",
+    "surahFavorites_two": "سورتان مفضلتان",
+    "surahFavorites_few": "{{count}} سور مفضلة",
+    "surahFavorites_many": "{{count}} سورة مفضلة",
+    "surahFavorites_other": "{{count}} سورة مفضلة"
+  },
+  "auth": {
+    "signInFailed": "تعذّر تسجيل الدخول. يُرجى المحاولة مرة أخرى."
+  },
+  "list": {
+    "two": "{{first}} و{{second}}",
+    "more": "{{first}}، {{second}}",
+    "last": "{{items}}، و{{last}}"
+  },
+  "languages": {
+    "english": "الإنجليزية",
+    "spanish": "الإسبانية",
+    "russian": "الروسية"
+  },
+  "announcement": {
+    "2026-10-sprint48": {
+      "title": "الجديد في هذا التحديث",
+      "body": "التطبيق بالعربية، وأدوات مصغّرة للشاشة الرئيسية، وتلاوات جديدة. اضغط لمعرفة الجديد."
+    }
+  },
+  "countries": {
+    "DZ": "الجزائر",
+    "AU": "أستراليا",
+    "CM": "الكاميرون",
+    "CA": "كندا",
+    "EG": "مصر",
+    "FI": "فنلندا",
+    "GN": "غينيا",
+    "ID": "إندونيسيا",
+    "JO": "الأردن",
+    "KE": "كينيا",
+    "MY": "ماليزيا",
+    "MR": "موريتانيا",
+    "MA": "المغرب",
+    "NG": "نيجيريا",
+    "PK": "باكستان",
+    "PS": "فلسطين",
+    "PH": "الفلبين",
+    "RU": "روسيا",
+    "SG": "سنغافورة",
+    "SO": "الصومال",
+    "ES": "إسبانيا",
+    "TZ": "تنزانيا",
+    "GM": "غامبيا",
+    "TN": "تونس",
+    "US": "الولايات المتحدة الأمريكية",
+    "YE": "اليمن",
+    "XJ": "تركستان الشرقية"
+  },
+  "rewayat": {
+    "al-kisai": "قراءة الكسائي",
+    "english-translation": "ترجمة معاني القرآن بالإنجليزية",
+    "spanish-translation": "ترجمة معاني القرآن بالإسبانية",
+    "russian-translation": "ترجمة معاني القرآن بالروسية"
+  }
+}

@@ -1,4 +1,4 @@
-import React, {useCallback, useRef, useEffect} from 'react';
+import React, {useCallback, useRef, useEffect, useState} from 'react';
 import {View, StyleProp, ViewStyle, Platform, BackHandler} from 'react-native';
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -57,6 +57,23 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const {theme} = useTheme();
   const bottomSheetRef = useRef<BottomSheet>(null);
 
+  // @ai TECH_DEBT #267 — the sheet is in the tree only from its first open
+  // until its close animation ends. gorhom 5.2.14 starts a sheet at the window
+  // height and does not move a sheet that mounts closed (index -1) to its real
+  // closed position. On Android the window height excludes the navigation
+  // bar, and Settings draws edge to edge, so the top of the closed sheet (the
+  // "Sign out of Qariah?" title) showed under the tab bar. A sheet that mounts
+  // open animates in, and its close animation ends at the real closed
+  // position; then `handleSheetClose` removes it.
+  const [mounted, setMounted] = useState(isVisible);
+  useEffect(() => {
+    if (isVisible) setMounted(true);
+  }, [isVisible]);
+  const handleSheetClose = useCallback(() => {
+    setMounted(false);
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     if (isVisible) {
       bottomSheetRef.current?.expand();
@@ -111,6 +128,13 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     [isVisible],
   );
 
+  // @ai TECH_DEBT #267 — after the hooks: a closed sheet that is not in its
+  // close animation draws nothing. (On the first open render `mounted` is
+  // still false; `isVisible` keeps the sheet in the tree.)
+  if (!isVisible && !mounted) {
+    return null;
+  }
+
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -126,7 +150,7 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       enableDynamicSizing={false}
       handleComponent={CustomHandle}
       enableContentPanningGesture
-      onClose={onClose}
+      onClose={handleSheetClose}
       // The elevated BottomSheet Body is a SEPARATE sibling from the backdrop
       // above; gorhom drops its touch-interactivity asynchronously too, so on
       // slow CPUs it can still swallow touches while the sheet is logically

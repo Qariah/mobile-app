@@ -15,7 +15,8 @@
 import {useEffect, useRef} from 'react';
 import * as ExpoLinking from 'expo-linking';
 import * as Sentry from '@sentry/react-native';
-import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {qariahAnalytics} from '@/services/analytics/qariahEvents';
+import {stripQueryAndFragment} from '@/services/analytics/scrubEventUrls';
 
 // Generous vs a slow-but-working cold start (#53's force-reveal fires at 12s);
 // only fires when navigation truly never happened.
@@ -36,6 +37,36 @@ function normalizePath(p: string | null | undefined): string {
 // First path segment of an already-normalized path ("reciter/x" -> "reciter").
 function firstSegment(normalized: string): string {
   return normalized.split('/')[0];
+}
+
+// @ai Qariah (Sprint 46, Pass B): some upstream widget links open a redirect
+// route. app/player.tsx redirects to the Home tab (pathname "/") and opens the
+// full player; app/quran/[surah].tsx redirects to the Mushaf reader. Once the
+// redirect has run, the pathname is the redirect target, not the link's first
+// segment, so it counts as a landing too. Without this, the cold-start replay
+// navigated a second time and the watchdog reported a false drop.
+const REDIRECT_LANDINGS: Readonly<Record<string, readonly string[]>> = {
+  player: [''],
+  quran: ['mushaf'],
+};
+
+/**
+ * True when the live pathname shows that the link reached its target: the
+ * same first segment (`/reciter/<slug>` for `qariah://reciter/<slug>`), or the
+ * landing of a redirect route (REDIRECT_LANDINGS). Exact first-segment
+ * equality, not a substring, so `/(d.settings)/reciter-choice` cannot match a
+ * reciter link.
+ * @ai
+ */
+export function linkTargetReached(
+  pathname: string | null | undefined,
+  targetPath: string,
+): boolean {
+  const now = normalizePath(pathname);
+  const target = firstSegment(normalizePath(targetPath));
+  const landed = firstSegment(now);
+  if (now && landed === target) return true;
+  return (REDIRECT_LANDINGS[target] ?? []).includes(landed);
 }
 
 /**
@@ -69,7 +100,7 @@ export function deepLinkTargetPath(url: string): string | null {
 }
 
 /**
- * Mount-once hook (lives in AnalyticsConnector, inside the router context).
+ * Mount-once hook (lives in QariahRootEffects, inside the router context).
  * `pathname` must be the live expo-router pathname.
  */
 export function useDeepLinkWatchdog(pathname: string): void {
@@ -85,8 +116,7 @@ export function useDeepLinkWatchdog(pathname: string): void {
   useEffect(() => {
     const pending = pendingRef.current;
     if (!pending) return;
-    const now = normalizePath(pathname);
-    if (now && firstSegment(now) === firstSegment(pending.targetPath)) {
+    if (linkTargetReached(pathname, pending.targetPath)) {
       clearTimeout(pending.timer);
       pendingRef.current = null;
       Sentry.addBreadcrumb({
@@ -101,10 +131,8 @@ export function useDeepLinkWatchdog(pathname: string): void {
   useEffect(() => {
     let unmounted = false;
 
-    const matchesTarget = (targetPath: string): boolean => {
-      const now = normalizePath(pathnameRef.current);
-      return Boolean(now) && firstSegment(now) === firstSegment(targetPath);
-    };
+    const matchesTarget = (targetPath: string): boolean =>
+      linkTargetReached(pathnameRef.current, targetPath);
 
     const watch = (url: string, cold: boolean): void => {
       const targetPath = deepLinkTargetPath(url);
@@ -150,13 +178,15 @@ export function useDeepLinkWatchdog(pathname: string): void {
           level: 'warning',
           tags: {scope: 'navigation', link_cold: String(cold)},
           extra: {
-            url,
+            // @ai No query string and no fragment: a link can carry a secret
+            // (the QF OAuth code, issue #609). The target path stays.
+            url: stripQueryAndFragment(url),
             target_path: targetPath,
             pathname_at_check: landedOn,
             elapsed_ms: Date.now() - receivedAt,
           },
         });
-        analyticsService.trackDeepLinkDropped({
+        qariahAnalytics.trackDeepLinkDropped({
           target_path: targetPath,
           pathname_at_check: landedOn,
           cold,
