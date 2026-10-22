@@ -2,9 +2,9 @@
 
 **Women reciters of the Qur'an — a recitation app for iOS and Android.**
 
-[![React Native](https://img.shields.io/badge/React_Native-0.83-61DAFB?logo=react)](https://reactnative.dev)
-[![Expo](https://img.shields.io/badge/Expo_SDK-55-000020?logo=expo)](https://expo.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)](https://www.typescriptlang.org)
+[![React Native](https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react)](https://reactnative.dev)
+[![Expo](https://img.shields.io/badge/Expo_SDK-57-000020?logo=expo)](https://expo.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 ---
@@ -13,9 +13,16 @@
 >
 > This is the **public AGPL source mirror** of the Qariah mobile app, published to satisfy the
 > source-availability terms of the GNU Affero General Public License. It is **automatically
-> generated and force-pushed** from a private development workspace, so it is effectively
-> **read-only**: pull requests opened here are overwritten on the next publish. See the
+> generated** from a private development workspace: each publish adds one snapshot commit, so it
+> is effectively **read-only** and pull requests opened here are not merged. See the
 > [Contributing & feedback](#contributing--feedback) section for where changes and bug reports go.
+>
+> Each branch holds one line of the app:
+>
+> | Branch | Source of |
+> | --- | --- |
+> | `main` | The current development line, and the betas built from it |
+> | `release/*`, `hotfix/*` | A store release built from an older line. Each snapshot commit names the build it is the source of. |
 >
 > It ships a **placeholder catalog** (a single example reciter) so the tree builds and runs. The
 > real Qariah catalog, audio, reciter photos, and biographies are **not in this repository** —
@@ -70,8 +77,8 @@ keys. Signing in (Quran Foundation OAuth) only adds optional cross-device sync.
 
 | Layer | Technology |
 | --- | --- |
-| Runtime | React 19 + React Native 0.83 + Expo SDK 55 |
-| Language | TypeScript 5.9 (strict) |
+| Runtime | React 19 + React Native 0.86 + Expo SDK 57 |
+| Language | TypeScript 6.0 (strict) |
 | Navigation | Expo Router (file-based) |
 | Audio | expo-audio (background playback) |
 | Mushaf rendering | @shopify/react-native-skia (Digital Khatt) |
