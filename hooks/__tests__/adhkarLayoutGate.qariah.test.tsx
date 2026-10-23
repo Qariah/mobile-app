@@ -103,13 +103,20 @@ it('replaces itself with the Home screen when nothing is underneath', async () =
 });
 
 it('does not navigate when it unmounts before the frame', async () => {
-  const renderer = await mount();
-  await act(async () => {
-    renderer.unmount();
-  });
-  await act(async () => {
-    await nextFrame();
-  });
+  // Fake timers: on a slow machine the real frame could fire inside mount(),
+  // before the unmount (Sprint 50: 1 failure in 3 runs under load).
+  jest.useFakeTimers();
+  try {
+    const renderer = await mount();
+    await act(async () => {
+      renderer.unmount();
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(100);
+    });
+  } finally {
+    jest.useRealTimers();
+  }
   expect(mockNavigation.goBack).not.toHaveBeenCalled();
   expect(mockNavigation.dispatch).not.toHaveBeenCalled();
 });

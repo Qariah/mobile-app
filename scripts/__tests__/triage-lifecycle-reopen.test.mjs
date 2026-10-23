@@ -6,7 +6,9 @@
 // Node built-in test runner (node:test + node:assert) for the pure
 // shouldReopen() / parseVersionCodeFromRelease() helpers exported from
 // triage-lifecycle.mjs, plus a hermetic (no-network) smoke test of
-// sentryReleaseVersionCode()'s "unset token → unknown" degrade path.
+// sentryReleaseVersionCode()'s "unset token → unknown" degrade path. The
+// tests of the recency indexes and of the closing-pass guard are in
+// triage-lifecycle-index.test.mjs.
 //
 // Run:  node --test scripts/__tests__/triage-lifecycle-reopen.test.mjs
 //

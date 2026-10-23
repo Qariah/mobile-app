@@ -52,8 +52,18 @@ export function addMemoryPressureListener(cb: (stats: HeapStats) => void): {
   remove(): void;
 } {
   try {
-    return native?.addListener('onMemoryPressure', cb) ?? {remove() {}};
+    return (
+      native?.addListener('onMemoryPressure', cb) ?? {
+        remove() {
+          // There is no listener to remove.
+        },
+      }
+    );
   } catch {
-    return {remove() {}};
+    return {
+      remove() {
+        // There is no listener to remove.
+      },
+    };
   }
 }

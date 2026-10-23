@@ -5,6 +5,7 @@
  */
 
 import {RECITERS, type Reciter} from '@/data/reciterData';
+import {recitationAudioUrl} from '@/utils/recitationAudioUrl'; // Qariah (TECH_DEBT #70)
 
 /**
  * Resolve the audio URL for a given rewayat and surah number.
@@ -13,13 +14,12 @@ export function resolveMushafAudioUrl(
   rewayatId: string,
   surahNumber: number,
 ): string {
-  const paddedSurah = surahNumber.toString().padStart(3, '0');
-
   const reciter = RECITERS.find(r => r.rewayat.some(rw => rw.id === rewayatId));
   if (reciter) {
     const rewayat = reciter.rewayat.find(rw => rw.id === rewayatId);
     if (rewayat) {
-      return `${rewayat.server}/${paddedSurah}.mp3`;
+      // Qariah (TECH_DEBT #70): a partial can be at its suffixed path.
+      return recitationAudioUrl(rewayat, surahNumber);
     }
   }
 

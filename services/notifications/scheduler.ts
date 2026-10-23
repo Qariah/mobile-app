@@ -315,7 +315,7 @@ export function continueListeningCandidate(
  */
 export function continueListeningTrigger(
   lastPlayAt: Date | number,
-): NotificationTrigger {
+): Extract<NotificationTrigger, {kind: 'date'}> {
   const played = new Date(lastPlayAt);
   const at = new Date(played);
   at.setDate(at.getDate() + CONTINUE_LISTENING_DELAY_DAYS);

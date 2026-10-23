@@ -1,0 +1,12 @@
+# Frame 3: one reciter profile (Zaynab Talha), surahs in ascending order.
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- runFlow:
+    file: ../subflows/open-reciter.yaml
+    env: {QUERY: 'Zaynab', RECITER: '${R_ZAYNAB}'}
+- tapOn: ${L_ASC}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 3000}
+- takeScreenshot: ${OUT}/03-reciter

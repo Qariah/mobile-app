@@ -12,10 +12,8 @@
 # close (PlayerSheet and FloatingPlayer render nothing without a current track), and
 # the playlist screen shows again.
 #
-# Android only for the queue steps: on iOS the full player sheet is one opaque a11y
-# element ("Bottom Sheet"), so Maestro cannot see the controls inside it (same limit
-# as player/playlist-session-restore.yaml). On iOS this flow runs the setup only;
-# check the queue ✕ on iOS by hand (PLY-06 device steps).
+# Both platforms since Sprint 50: before it, the iOS full player sheet was one opaque
+# a11y element ("Bottom Sheet"), and the queue steps ran on Android only.
 #
 # Needs a build with the testIDs above (Sprint 46 or later).
 appId: com.qariah.app
@@ -64,32 +62,28 @@ tags:
 # 3. Open the full player, then the queue. Remove the only track.
 - tapOn:
     id: 'mini-player-expand'
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - tapOn:
-          id: 'player-queue-button'
-      - extendedWaitUntil:
-          visible: '1 track'
-          timeout: 5000
-      - assertVisible:
-          id: 'queue-remove-0'
-      - tapOn:
-          id: 'queue-remove-0'
-      - extendedWaitUntil:
-          notVisible:
-            id: 'queue-remove-0'
-          timeout: 5000
-      # The full player closes (its queue button goes away), and then no
-      # mini player shows. The playlist row text alone proves nothing: on
-      # Android it stays in the hierarchy behind an open sheet.
-      - extendedWaitUntil:
-          notVisible:
-            id: 'player-queue-button'
-          timeout: 5000
-      - assertNotVisible:
-          id: 'mini-player-bar'
-      - assertNotVisible:
-          id: 'mini-player-play-pause'
-      - assertVisible: '.*11. Hud.*'
+- tapOn:
+    id: 'player-queue-button'
+- extendedWaitUntil:
+    visible: '1 track'
+    timeout: 5000
+- assertVisible:
+    id: 'queue-remove-0'
+- tapOn:
+    id: 'queue-remove-0'
+- extendedWaitUntil:
+    notVisible:
+      id: 'queue-remove-0'
+    timeout: 5000
+# The full player closes (its queue button goes away), and then no
+# mini player shows. The playlist row text alone proves nothing: on
+# Android it stays in the hierarchy behind an open sheet.
+- extendedWaitUntil:
+    notVisible:
+      id: 'player-queue-button'
+    timeout: 5000
+- assertNotVisible:
+    id: 'mini-player-bar'
+- assertNotVisible:
+    id: 'mini-player-play-pause'
+- assertVisible: '.*11. Hud.*'

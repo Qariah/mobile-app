@@ -1,0 +1,24 @@
+# Close the full player when it is open, then pause the audio. On iOS the
+# player sheet is one accessibility element ("Bottom Sheet") and its close
+# button has no label, so the flow taps the button's place: top left, or top
+# right in Arabic (PLAYER_CLOSE, see run.sh).
+appId: com.qariah.app
+---
+- repeat:
+    while:
+      visible: 'Bottom Sheet'
+    times: 3
+    commands:
+      - tapOn:
+          point: ${PLAYER_CLOSE}
+      - waitForAnimationToEnd:
+          timeout: 2000
+- runFlow:
+    when:
+      visible:
+        id: 'mini-player-play-pause'
+        text: ${L_PAUSE}
+    commands:
+      - tapOn:
+          id: 'mini-player-play-pause'
+          waitToSettleTimeoutMs: 500

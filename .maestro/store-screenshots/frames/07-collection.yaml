@@ -1,0 +1,9 @@
+# Frame 7: Collection with the demo data.
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- tapOn: ${L_COLLECTION}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 2000}
+- takeScreenshot: ${OUT}/07-collection

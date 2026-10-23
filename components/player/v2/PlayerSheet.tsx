@@ -383,6 +383,10 @@ export const PlayerSheet = () => {
         handleComponent={renderHandleComponent}
         enableContentPanningGesture
         enableOverDrag={false}
+        // @ai Sprint 50: gorhom makes the whole sheet ONE accessibility element
+        // ("Bottom Sheet") by default, so VoiceOver, TalkBack and UI tests cannot
+        // reach the player controls. Expose the content instead.
+        accessible={false}
         style={[styles.sheet, sheetMode !== 'full' && styles.sheetUntouchable]}
         backgroundStyle={[styles.background, {backgroundColor: 'transparent'}]}>
         {/* Play-path UI-freeze fix (companion to the SurahItem selector narrowing —

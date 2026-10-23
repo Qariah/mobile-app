@@ -78,14 +78,11 @@ export interface Rewayat {
    * that have v1 data; absent entries default to `is_full: true` for
    * back-compat with pre-Sprint-19 catalog snapshots.
    *
-   * Storage path today is `{server}/{surah-padded}.mp3` for BOTH full and
-   * partial recordings (legacy v1-migration convention — all 326 partial
-   * rows live at the unsuffixed path, verified by
-   * `scripts/audit-partial-audio-paths.mjs` 2026-05-18). A future
-   * `audio_path?: 'suffixed'` flag on `SurahMetadata` will distinguish
-   * recordings uploaded by the Sprint-19+ ops console at the suffixed
-   * path `{server}/{surah-padded}-{from}-{to}.mp3`. See TECH_DEBT #70 for
-   * the staged migration trigger.
+   * The audio path is `{server}/{surah-padded}.mp3` for a full recording
+   * and for a legacy partial (the v1 migration put all partials at the
+   * unsuffixed path). A partial with `audio_path: 'suffixed'` is at
+   * `{server}/{surah-padded}-{from}-{to}.mp3` (Sprint 50, TECH_DEBT #70).
+   * `utils/recitationAudioUrl.ts` builds both paths.
    */
   surah_metadata?: SurahMetadata[];
   /**
@@ -114,6 +111,11 @@ export interface SurahMetadata {
   // appeared in the catalog. The ops console and the Sprint 48 backfill
   // (`scripts/catalog-added-at.mjs`) write it. Treat a missing value as "unknown".
   added_at?: string;
+  // Qariah (Sprint 50, TECH_DEBT #70): 'suffixed' means that the audio of this
+  // partial is at `{server}/{surah-padded}-{from}-{to}.mp3`. The entry must
+  // also have `is_full: false` and `range`. A missing value means the legacy
+  // path `{server}/{surah-padded}.mp3`.
+  audio_path?: 'suffixed';
 }
 
 // Mutable array — populated in-place by dataService after API fetch.

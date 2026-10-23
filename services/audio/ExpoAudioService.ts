@@ -71,6 +71,10 @@ class ExpoAudioService {
   // returns it, so playerStore.play() waits for the load before it plays.
   private loadingUrl: string | null = null;
   private loadingDone: Promise<void> | null = null;
+  // @ai The players that a load gave a source (replace()). A player that is
+  // not in the set has had no source, so no status can belong to an earlier
+  // source (QP-07, see waitForLoaded()).
+  private sourcedPlayers = new WeakSet<AudioPlayer>();
   // @ai Called with the URL when a load that timed out reports an error
   // later (setSourceLostHandler). cleanup() keeps it.
   private sourceLostHandler: ((url: string) => void) | null = null;
@@ -243,15 +247,23 @@ class ExpoAudioService {
       // on a slow device with a busy main thread the old poll loop (~110 reads)
       // turned into a multi-second JS-thread hard-lock at play, while audio kept
       // playing on its own native thread (Redmi Note 9 freeze, 2026-06-19).
+      // @ai QP-07: true when this load gives the player its first source (a
+      // new player on a cold start). Record it before replace().
+      const firstSource = !this.sourcedPlayers.has(this.player);
+      this.sourcedPlayers.add(this.player);
       // @ai An error that the player reports after the timeout means that
       // this source did not load: forget it, so that a later play() loads it
       // again (TECH_DEBT #271).
-      const ready = this.waitForLoaded(5000, () => {
-        if (generation === this.loadGeneration && this.currentUrl === url) {
-          this.currentUrl = null;
-          this.sourceLostHandler?.(url);
-        }
-      });
+      const ready = this.waitForLoaded(
+        5000,
+        () => {
+          if (generation === this.loadGeneration && this.currentUrl === url) {
+            this.currentUrl = null;
+            this.sourceLostHandler?.(url);
+          }
+        },
+        firstSource, // @ai QP-07
+      );
 
       // Replace current audio with new source
       await this.player.replace(source);
@@ -326,13 +338,22 @@ class ExpoAudioService {
   private waitForLoaded(
     timeoutMs = 5000,
     onLateError?: () => void,
+    firstSource = false, // @ai QP-07
   ): Promise<LoadWaitResult> {
     const player = this.player;
     if (!player) return Promise.resolve('timeout'); // @ai
 
     return new Promise<LoadWaitResult>(resolve => {
       let settled = false;
-      let seenUnloaded = false;
+      // @ai-start QP-07: the first source of a player needs no isLoaded:false
+      // first. The player had no earlier source, so no status can be stale.
+      // On iOS this is necessary: expo-audio sends no isLoaded:false after
+      // replace(), only isLoaded:true when the item is ready, and no other
+      // status while the player has never played. Without this rule, the
+      // cold-start restore load of a source that was ready in less than
+      // 500 ms waited for the 5 s timeout, and a tap on Play waited with it.
+      let seenUnloaded = firstSource;
+      // @ai-end
       // @ai After a timeout the listener stays, to see a late error.
       let watchLate = false;
       // @ai An error that comes before the new source reports isLoaded:false,

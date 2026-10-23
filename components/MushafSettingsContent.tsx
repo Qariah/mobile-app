@@ -940,6 +940,9 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{checked: wbwShowTranslation}}
+          // @ai TECH_DEBT #316: on iOS the checkbox had no label of its own
+          // (VoiceOver read only "checkbox"). Use the visible title.
+          accessibilityLabel={t('mushafSettings.translation')}
           style={({pressed}) => [
             styles.settingRow,
             pressed && styles.settingRowPressed,
@@ -960,6 +963,7 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{checked: wbwShowTransliteration}}
+          accessibilityLabel={t('mushafSettings.transliteration')} // @ai #316
           style={({pressed}) => [
             styles.settingRow,
             pressed && styles.settingRowPressed,

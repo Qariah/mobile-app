@@ -34,6 +34,9 @@ jest.mock('@/services/dataService', () => ({
 jest.mock('@/services/car/sessionGate', () => ({
   waitForSessionRestored: jest.fn(async () => undefined),
 }));
+jest.mock('@/services/closeSheetsBeforeLink', () => ({
+  closeOpenSheets: jest.fn(async () => undefined),
+}));
 
 import {appTapDeps, resumeLastSession} from '../tapActions';
 
@@ -108,5 +111,14 @@ describe('appTapDeps', () => {
     mockPlayer.sheetMode = 'full';
     deps.closePlayer();
     expect(closePlayerSheet).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the sheets as a link does (TECH_DEBT #261)', async () => {
+    const {closeOpenSheets} = jest.requireMock(
+      '@/services/closeSheetsBeforeLink',
+    ) as {closeOpenSheets: jest.Mock};
+    const deps = appTapDeps({push: jest.fn(), navigate: jest.fn()}, () => true);
+    await deps.closeSheets();
+    expect(closeOpenSheets).toHaveBeenCalledTimes(1);
   });
 });

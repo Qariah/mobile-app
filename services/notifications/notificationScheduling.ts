@@ -11,8 +11,9 @@
 //   pending notice. A Qariah subscription; the upstream player does not
 //   change.
 // - The prefs store: the Al-Kahf switch syncs the native state
-//   (`notificationsSync.ts`); "continue listening" OFF cancels its notice,
-//   and ON schedules it for the last play of the process.
+//   (`notificationsSync.ts`); "continue listening" OFF cancels its notice and
+//   removes the stored play, and ON schedules it for the last play of the
+//   process.
 // - The app state: back to `active`, a sync (the permission can have changed
 //   in the system settings, or in the Android 13+ dialog of the first launch).
 //   At most once in `FOREGROUND_SYNC_MIN_MS`, unless the last sync saw no
@@ -30,12 +31,32 @@
 // (`permission_granted`, `holdout_assigned`, `foreground`), it is scheduled
 // with its own play time (review of Task 16, M2: the play just before the
 // iOS opt-in must get its notice).
+//
+// The play of the pending notice is also kept in MMKV
+// (`continueListeningStore.ts`, key `continue_listening_last_play`), with the
+// time of the notice (Sprint 50, TECH_DEBT #330). Android removes the alarms
+// of a force-stopped app, and the next process has no play in memory. So the
+// boot step reads the record: when the time of the notice is still in the
+// future, it schedules the notice again at that time, with the same id. When
+// the time is past, it posts nothing (no late notice) and removes the record.
+// It schedules again also when the notice shows as pending: after a
+// force-stop, the `expo-notifications` store on Android still lists the
+// notice, but no alarm fires it. The same id replaces a pending notice, so
+// iOS (which keeps the notice across a force-quit) gets no second notice.
+// A play start before the boot step wins over the record.
 import {AppState, type AppStateStatus} from 'react-native';
 import {SURAHS} from '@/data/surahData';
 import {getReciterByIdSync} from '@/services/dataService';
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import type {Track} from '@/types/audio';
+import {notificationsStorage} from './catalogDiff';
+import {
+  clearContinuePlay,
+  clearContinuePlayIfPast,
+  readContinuePlay,
+  writeContinuePlay,
+} from './continueListeningStore';
 import {isNotificationsHoldout} from './holdout';
 import {
   getHydratedNotificationPrefs,
@@ -48,6 +69,7 @@ import {
   type ContinueListeningText,
 } from './scheduler';
 import type {
+  KeyValueStorage,
   NotificationPermissionStatus,
   NotificationPrefsSnapshot,
   Notifier,
@@ -70,8 +92,8 @@ export interface PlayedTrack {
 /**
  * - `scheduled`: a new notice (none was pending).
  * - `rescheduled`: the pending notice moved.
- * - `skipped`: off, the holdout, no permission, the toggles unreadable, or
- *   the same track a short time ago.
+ * - `skipped`: off, the holdout, no permission, the toggles unreadable, the
+ *   same track a short time ago, or the time of the notice is past.
  * - `failed`: a native call failed.
  */
 export type ContinueScheduleResult =
@@ -86,6 +108,8 @@ export interface ContinueScheduleDeps {
   readPrefs: () => Promise<NotificationPrefsSnapshot | null>;
   /** The surah and the reciter in the app language. */
   textFor: (track: PlayedTrack) => ContinueListeningText;
+  /** Default: `Date.now`. */
+  now?: () => number;
 }
 
 /** The part of a player track that the notice needs, or `null` (an upload, no surah). */
@@ -118,14 +142,30 @@ export function continueTextFor(track: PlayedTrack): ContinueListeningText {
 /**
  * Schedules "continue listening" 3 calendar days after `playedAt` for
  * `track`, when its toggle is on, the user is not in the holdout and the
- * permission is granted. Never throws.
+ * permission is granted. With `fireAt` (epoch milliseconds), the notice comes
+ * at that time: the boot step keeps the time of the first schedule.
+ *
+ * A time of the notice that is now or past gives `skipped`, also when it
+ * passes during the checks: nothing is scheduled. On Android, a past date
+ * makes `expo-notifications` remove the stored request (the pending notice
+ * goes), and on iOS the call rejects. A replay in a long-lived process (the
+ * switch ON again, a granted sync) or a boot just before the time can give
+ * such a date (review of Task 10). Never throws.
  */
 export async function scheduleContinueListening(
   track: PlayedTrack,
   playedAt: Date,
   deps: ContinueScheduleDeps,
+  fireAt?: number,
 ): Promise<ContinueScheduleResult> {
   try {
+    const trigger =
+      fireAt === undefined
+        ? continueListeningTrigger(playedAt)
+        : {kind: 'date' as const, at: fireAt};
+    const now = deps.now ?? Date.now;
+    const isPast = (): boolean => trigger.at <= now();
+    if (isPast()) return 'skipped';
     const allowed = async (): Promise<boolean> => {
       if (deps.isHoldout()) return false;
       const prefs = await deps.readPrefs();
@@ -141,7 +181,9 @@ export async function scheduleContinueListening(
       : false;
     // The switch can change during the awaits above (review L6).
     if (!(await allowed())) return 'skipped';
-    await deps.notifier.schedule(candidate, continueListeningTrigger(playedAt));
+    // The time can pass during the awaits above.
+    if (isPast()) return 'skipped';
+    await deps.notifier.schedule(candidate, trigger);
     return pending ? 'rescheduled' : 'scheduled';
   } catch {
     return 'failed';
@@ -172,8 +214,14 @@ export interface NotificationSchedulingDeps {
   /** Default: `onNotificationsSynced` of `notificationsSync.ts`. */
   subscribeSynced?: (listener: (result: SyncOutcome) => void) => () => void;
   now?: () => number;
-  /** Each "continue listening" result. Default: `notification_scheduled` for a new notice. */
+  /**
+   * Each "continue listening" result of a play (not of the boot step that
+   * schedules the stored play again). Default: `notification_scheduled` for a
+   * new notice.
+   */
   onContinueScheduled?: (result: ContinueScheduleResult) => void;
+  /** The store of the last play. Default: `notificationsStorage` (MMKV `qariah-notifications`). */
+  storage?: KeyValueStorage;
 }
 
 /** Play starts from the player store: the state becomes `playing`. */
@@ -269,12 +317,36 @@ const state: SchedulingState = {
   deps: {},
 };
 
+function storageOf(deps: NotificationSchedulingDeps): KeyValueStorage {
+  return deps.storage ?? notificationsStorage;
+}
+
 function handlePlayStart(track: PlayedTrack, at: number): void {
   state.lastPlay = {track, at};
   if (!state.ready) {
     state.pendingPlay = {track, at};
     return;
   }
+  scheduleContinueFor(track, at, continueListeningTrigger(at).at, 'play');
+}
+
+/**
+ * - `play`: a play start (also a play that a sync or the switch schedules
+ *   again).
+ * - `restore`: the boot step schedules the stored play again (TECH_DEBT #330).
+ */
+type ContinueSource = 'play' | 'restore';
+
+/**
+ * One schedule of the notice for the play of `track` at `at`, at `fireAt`.
+ * A success keeps the play in MMKV (`continueListeningStore.ts`).
+ */
+function scheduleContinueFor(
+  track: PlayedTrack,
+  at: number,
+  fireAt: number,
+  source: ContinueSource,
+): void {
   const key = trackKey(track);
   const last = state.lastScheduled;
   if (last && last.key === key && at - last.at < CONTINUE_RESCHEDULE_MIN_MS) {
@@ -284,12 +356,33 @@ function handlePlayStart(track: PlayedTrack, at: number): void {
   state.lastScheduled = attempt;
   const grantedSyncsAtStart = state.grantedSyncs;
   const deps = state.deps;
-  void scheduleContinueListening(track, new Date(at), {
-    notifier: (deps.notifier ?? defaultNotifier)(),
-    isHoldout: deps.isHoldout ?? isNotificationsHoldout,
-    readPrefs: deps.readPrefs ?? (() => getHydratedNotificationPrefs()),
-    textFor: deps.textFor ?? continueTextFor,
-  }).then(result => {
+  void scheduleContinueListening(
+    track,
+    new Date(at),
+    {
+      notifier: (deps.notifier ?? defaultNotifier)(),
+      isHoldout: deps.isHoldout ?? isNotificationsHoldout,
+      readPrefs: deps.readPrefs ?? (() => getHydratedNotificationPrefs()),
+      textFor: deps.textFor ?? continueTextFor,
+      now: deps.now,
+    },
+    fireAt,
+  ).then(result => {
+    // The time of the notice is past: nothing was scheduled, and a stored
+    // play with a past time is of no use. A newer play keeps its record.
+    if (result === 'skipped') {
+      const now = (deps.now ?? Date.now)();
+      if (fireAt <= now) clearContinuePlayIfPast(now, storageOf(deps));
+    }
+    // Keep the play of the pending notice for the next process. Not when the
+    // switch went OFF (it sets `lastScheduled` to null and removes the
+    // record) or a newer play started meanwhile.
+    if (
+      (result === 'scheduled' || result === 'rescheduled') &&
+      state.lastScheduled === attempt
+    ) {
+      writeContinuePlay({track, playedAt: at, fireAt}, storageOf(deps));
+    }
     if (result === 'failed' || result === 'skipped') {
       // Nothing is pending for this play: the next play start, or a sync
       // that ends granted, schedules it.
@@ -297,24 +390,51 @@ function handlePlayStart(track: PlayedTrack, at: number): void {
       // A granted sync came while this attempt ran: try once more.
       if (
         result === 'skipped' &&
+        state.ready &&
         state.grantedSyncs !== grantedSyncsAtStart &&
         state.lastPlay?.at === at
       ) {
-        handlePlayStart(track, at);
+        scheduleContinueFor(track, at, fireAt, source);
       }
     }
     if (__DEV__) {
-      console.log(`[notifications] continue listening: ${result}`);
+      const label = source === 'restore' ? ' (restore)' : '';
+      console.log(`[notifications] continue listening${label}: ${result}`);
       (
         require('./notificationsSync') as typeof import('./notificationsSync')
       ).devLogScheduled();
     }
+    // The boot step sets the same notice again: it is not a new notice.
+    if (source === 'restore') return;
     try {
       (deps.onContinueScheduled ?? reportContinueScheduled)(result);
     } catch {
       // A listener must not break the scheduling.
     }
   });
+}
+
+/**
+ * The boot step (TECH_DEBT #330): schedules the stored play again when the
+ * time of its notice is still in the future. A time that is past posts
+ * nothing, and the record goes. A holdout user gets nothing (and loads no
+ * notifier). The checks of `scheduleContinueListening` (the switch, the
+ * permission) apply.
+ */
+function restoreContinueListening(): void {
+  const deps = state.deps;
+  const storage = storageOf(deps);
+  const saved = readContinuePlay(storage);
+  if (!saved) return;
+  if (saved.fireAt <= (deps.now ?? Date.now)()) {
+    clearContinuePlay(storage);
+    return;
+  }
+  if ((deps.isHoldout ?? isNotificationsHoldout)()) return;
+  // The play of this process from now on: the switch ON again and a granted
+  // sync use it, as for a play start.
+  state.lastPlay = {track: saved.track, at: saved.playedAt};
+  scheduleContinueFor(saved.track, saved.playedAt, saved.fireAt, 'restore');
 }
 
 /** `notification_scheduled` for a NEW "continue listening" notice. */
@@ -344,6 +464,8 @@ function handlePrefsChange(
   }
   if (previous.continue_listening && !next.continue_listening) {
     state.lastScheduled = null;
+    // The next process must not schedule the notice again.
+    clearContinuePlay(storageOf(deps));
     try {
       void (deps.notifier ?? defaultNotifier)()
         .cancelByType('continue_listening')
@@ -421,8 +543,10 @@ export function startNotificationScheduling(
 
 /**
  * The boot step ran: from now on the subscriptions act. A play start that
- * came before is handled now. The boot sync already read the switches and
- * the permission, so the foreground sync waits `FOREGROUND_SYNC_MIN_MS`.
+ * came before is handled now. Else the stored play gets its notice again
+ * when its time is still in the future (TECH_DEBT #330, see the file header).
+ * The boot sync already read the switches and the permission, so the
+ * foreground sync waits `FOREGROUND_SYNC_MIN_MS`.
  */
 export function setNotificationSchedulingReady(): void {
   if (state.ready) return;
@@ -430,7 +554,11 @@ export function setNotificationSchedulingReady(): void {
   state.lastForegroundSync = (state.deps.now ?? Date.now)();
   const pending = state.pendingPlay;
   state.pendingPlay = null;
-  if (pending) handlePlayStart(pending.track, pending.at);
+  if (pending) {
+    handlePlayStart(pending.track, pending.at);
+    return;
+  }
+  restoreContinueListening();
 }
 
 /** Tests only. */

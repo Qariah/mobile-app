@@ -25,6 +25,11 @@
 //   Friday Al-Kahf reminder while its toggle is on and the permission is
 //   granted (else cancel it), and cancel a "continue listening" notice whose
 //   toggle is off or that has no permission.
+// - Each time the sync cancels "continue listening" (the holdout, the toggle
+//   off, no permission), it also removes the stored play
+//   (`continueListeningStore.ts`), so the boot step of a later process does
+//   not schedule it again (TECH_DEBT #330). The boot step, not the sync,
+//   schedules the stored play again (`notificationScheduling.ts`).
 //
 // The toggles come from `getHydratedNotificationPrefs()`: when they cannot be
 // read, the sync changes no scheduled notice (the defaults are not the user's
@@ -33,6 +38,7 @@
 // One sync at a time: a call during a sync runs one more sync after it.
 // Never throws.
 import {notificationsStorage} from './catalogDiff';
+import {clearContinuePlay} from './continueListeningStore';
 import {isNotificationsHoldout} from './holdout';
 import {getHydratedNotificationPrefs} from './prefsStore';
 import {KAHF_FRIDAY_TRIGGER, kahfFridayCandidate} from './scheduler';
@@ -206,6 +212,8 @@ async function syncOnce(
       deps.unregister ?? backgroundTaskModule().unregisterQariahCatalogTask;
     const unregistered = await unregister();
     const registration = unregistered ? 'unregistered' : 'not_registered';
+    // A holdout user gets no "continue listening" notice.
+    clearContinuePlay(storage);
     if (!readWereActive(storage)) {
       return {reason, holdout: true, registration, cancelled: 0};
     }
@@ -250,6 +258,8 @@ async function syncOnce(
     prefs &&
     (permission !== 'granted' || prefs.continue_listening !== true)
   ) {
+    // Also when the native cancel fails: the notice is not wanted.
+    clearContinuePlay(storage);
     try {
       await notifier.cancelByType('continue_listening');
       continueCancelled = true;

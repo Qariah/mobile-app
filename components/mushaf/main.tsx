@@ -78,7 +78,7 @@ import {
 } from '@/services/mushaf/QCFFontLoader'; // @ai
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService';
 // @ai-start
-import {appLayoutDirection, isRTL} from '@/utils/rtl';
+import {pagerDirectionProps} from './pagerDirection'; // @ai Qariah (TECH_DEBT #315)
 import {useTranslation} from 'react-i18next';
 import i18n from '@/i18n';
 import {getSurahDisplayName, localizeDigits} from '@/i18n/format';
@@ -111,6 +111,9 @@ interface Spread {
 }
 
 const SPREAD_COUNT = Math.ceil(TOTAL_PAGES / 2);
+// @ai Qariah (TECH_DEBT #315): the pagers follow the native layout direction
+// (./pagerDirection.ts), not the app language.
+const PAGER_DIRECTION = pagerDirectionProps();
 
 function pageToSpreadIndex(page: number): number {
   return Math.floor((page - 1) / 2);
@@ -1374,8 +1377,8 @@ export default function MushafViewer({
               offset: metrics.screenWidth * index,
               index,
             })}
-            inverted={!isRTL}
-            style={appLayoutDirection}
+            // @ai Qariah (TECH_DEBT #315)
+            {...PAGER_DIRECTION}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
             windowSize={7}
@@ -1433,8 +1436,8 @@ export default function MushafViewer({
               offset: metrics.screenWidth * index,
               index,
             })}
-            inverted={!isRTL}
-            style={appLayoutDirection}
+            // @ai Qariah (TECH_DEBT #315)
+            {...PAGER_DIRECTION}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
             windowSize={7}

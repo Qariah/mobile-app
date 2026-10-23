@@ -87,6 +87,7 @@ import {getRecitationStyleLabel} from '@/components/player/v2/recitationStyle';
 import {rankSurahs} from '@/utils/search/catalog'; // @ai
 // @ai-end
 import {hasPagerReachedInitialPage} from './utils/pagerLayout'; // @ai
+import {NAVIGATION_TITLE_INSET} from './components/NavigationButtons'; // @ai
 
 interface ReciterProfileProps {
   id: string;
@@ -1408,12 +1409,17 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                 zIndex: 15,
                 paddingTop: insets.top,
                 paddingBottom: moderateScale(10),
+                // @ai Qariah (TECH_DEBT #320): the title stays between the icons.
+                paddingHorizontal: NAVIGATION_TITLE_INSET,
                 backgroundColor: theme.colors.background,
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: stickyTitleOpacity,
               }}>
+              {/* @ai Qariah (TECH_DEBT #320): one line; a long name ends in "…". */}
               <Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
                 style={{
                   fontSize: moderateScale(16),
                   fontFamily: 'Manrope-Bold',

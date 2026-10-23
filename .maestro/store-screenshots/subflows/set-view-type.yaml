@@ -1,0 +1,31 @@
+# Set the Mushaf view type to TYPE (the label of the Mushaf or List option) on
+# the Settings tab page. (The reader's own settings sheet closes when Maestro
+# scrolls it.) The selected option reads "<TYPE>, " plus a check glyph: tap
+# only when TYPE is not selected yet. The Mushaf option has the same label as
+# the Mushaf tab, and the page option comes first in the hierarchy (index 0).
+appId: com.qariah.app
+---
+- runFlow: home.yaml
+- runFlow: settings-root.yaml
+- tapOn: ${L_MUSHAF_SETTINGS}
+- waitForAnimationToEnd:
+    timeout: 2000
+- runFlow:
+    when:
+      notVisible: '${TYPE}, .+'
+    commands:
+      - tapOn:
+          text: '${TYPE}'
+          index: 0
+- waitForAnimationToEnd:
+    timeout: 1000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: ${L_BACK}

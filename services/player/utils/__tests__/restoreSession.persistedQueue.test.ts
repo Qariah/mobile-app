@@ -1189,16 +1189,29 @@ describe('playerStore.play() — a load of the shown track still runs (second re
     jest.useFakeTimers();
     try {
       startFirstSession();
+      // @ai QP-07: load one track first. The first source of a player ends
+      // at once on an error status (no earlier source can send it), so only
+      // a later load tests the 500 ms rule for an early error.
+      const first = expoAudioService.loadTrack(cdnUrl('rw-a', 2));
+      await jest.advanceTimersByTimeAsync(10);
+      await first;
+      expect(expoAudioService.holdsSource(cdnUrl('rw-a', 2))).toBe(true);
+
       player.replace.mockImplementationOnce(async (src: {uri: string}) => {
         player.sources.push(src.uri);
         player.emit({error: 'Source error'}); // at once, before isLoaded:false
       });
       const load = expoAudioService.loadTrack(cdnUrl('rw-b', 11));
-      await jest.advanceTimersByTimeAsync(5000);
+      const settled = jest.fn(); // @ai
+      load.then(settled, settled); // @ai
+      await jest.advanceTimersByTimeAsync(100); // @ai
+      expect(settled).not.toHaveBeenCalled(); // @ai the error can be old
+      await jest.advanceTimersByTimeAsync(4900);
       await load;
 
       expect(expoAudioService.getCurrentUrl()).toBeNull();
       expect(expoAudioService.holdsSource(cdnUrl('rw-b', 11))).toBe(false);
+      expect(expoAudioService.getPlaybackState()).toBe('error'); // @ai
     } finally {
       jest.useRealTimers();
     }
@@ -1242,3 +1255,89 @@ describe('playerStore.play() — a load of the shown track still runs (second re
     expect(usePlayerStore.getState().playback.state).toBe('playing');
   });
 });
+
+// @ai-start QP-07 / PLY-04 (Sprint 50). On the test iPhone (Release build), a
+// tap on Play in the restored mini player at once after a cold start showed
+// Play for more than 3 s, then Pause (3 of 3 on the baseline build). On iOS,
+// expo-audio sends no isLoaded:false after replace(). It sends one
+// isLoaded:true when the item is ready, and no other status while the player
+// has never played. The restore load is the first source of a new player, and
+// waitForLoaded() ignored an isLoaded:true in its first 500 ms, so a source
+// that was ready sooner waited for the 5 s load timeout. The tap waits for
+// that load (TECH_DEBT #271), so it played about 5 s late.
+
+/** A load as iOS reports it: only isLoaded:true, `readyAfterMs` later. */
+function iosShaped(p: FakeAudioPlayer, readyAfterMs: number): FakeAudioPlayer {
+  p.replace.mockImplementation(async (source: {uri: string}) => {
+    p.sources.push(source.uri);
+    p.isLoaded = false;
+    p.currentTime = 0;
+    setTimeout(() => {
+      p.isLoaded = true;
+      p.duration = 300;
+      p.emit({isLoaded: true});
+    }, readyAfterMs);
+  });
+  return p;
+}
+
+describe('restoreSession — QP-07: a tap on Play right after a cold start (iOS load status)', () => {
+  // Fake timers from the restore on: the 100 ms restore timer, the 200 ms
+  // load and the 5 s load timeout run on the test clock, not on the machine.
+  it('Q1: a tap during the restore load plays when that load ends, not after the 5 s load timeout', async () => {
+    await playlistSessionPaused();
+    await restart();
+    jest.useFakeTimers();
+    try {
+      await restoreSession();
+      const p = iosShaped(new FakeAudioPlayer(), 200);
+      inject(p);
+      // The 100 ms restore timer fires: the restore load runs until 300 ms.
+      await jest.advanceTimersByTimeAsync(150);
+
+      const shownUrl = shownTrack()?.url ?? '';
+      expect(p.sources).toEqual([shownUrl]);
+      expect(expoAudioService.runningLoad(shownUrl)).not.toBeNull();
+      expect(p.play).not.toHaveBeenCalled();
+
+      const tap = usePlayerStore.getState().play();
+      // To 350 ms: after the restore load ends, before the 500 ms window ends
+      // and long before the 5 s load timeout.
+      await jest.advanceTimersByTimeAsync(200);
+
+      expect(p.play).toHaveBeenCalledTimes(1);
+      expect(usePlayerStore.getState().playback.state).toBe('playing');
+      expect(p.sources).toEqual([shownUrl]); // The tap used the restore load.
+      expect(p.seekTo).toHaveBeenCalledWith(18);
+      await tap;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('Q2: a tap before the restore load starts loads the shown track and plays when that load ends', async () => {
+    await playlistSessionPaused();
+    await restart();
+    jest.useFakeTimers();
+    try {
+      await restoreSession();
+      const p = iosShaped(new FakeAudioPlayer(), 200);
+      inject(p);
+
+      const tap = usePlayerStore.getState().play();
+      // To 250 ms: the load of the tap ends at 200 ms.
+      await jest.advanceTimersByTimeAsync(250);
+
+      const shownUrl = shownTrack()?.url ?? '';
+      expect(p.play).toHaveBeenCalledTimes(1);
+      expect(usePlayerStore.getState().playback.state).toBe('playing');
+      // One load: the restore skipped its load, and the play owns the load.
+      expect(p.sources).toEqual([shownUrl]);
+      expect(p.seekTo).toHaveBeenCalledWith(18);
+      await tap;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+// @ai-end

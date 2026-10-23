@@ -403,6 +403,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - QariahAppGroup (1.0.0):
+    - ExpoModulesCore
   - QariahMemory (1.0.0):
     - ExpoModulesCore
   - RCTDeprecation (0.86.3)
@@ -2835,6 +2837,7 @@ DEPENDENCIES:
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - NitroMmkv (from `../node_modules/react-native-mmkv`)
   - NitroModules (from `../node_modules/react-native-nitro-modules`)
+  - QariahAppGroup (from `../modules/qariah-app-group/ios`)
   - QariahMemory (from `../modules/qariah-memory/ios`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
   - RCTRequired (from `../node_modules/react-native/Libraries/Required`)
@@ -3056,6 +3059,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-mmkv"
   NitroModules:
     :path: "../node_modules/react-native-nitro-modules"
+  QariahAppGroup:
+    :path: "../modules/qariah-app-group/ios"
   QariahMemory:
     :path: "../modules/qariah-memory/ios"
   RCTDeprecation:
@@ -3303,6 +3308,7 @@ SPEC CHECKSUMS:
   MMKVCore: d078dce7d6586a888b2c2ef5343b6242678e3ee8
   NitroMmkv: a60955600b80130d938a60849c47a7442458923c
   NitroModules: 09f34ca7604c921e4980ba5e53dfb9c4d35d4ad1
+  QariahAppGroup: 149c118ed4b6e9c054678a82dbdb4c97ad07b1cb
   QariahMemory: bc8a3333ae6a0e895efc49e6f55fc7fd6fa71507
   RCTDeprecation: 96f68ebf33f8762466b01d57d6e873c4f30efb07
   RCTRequired: 166eed8ad6d8440e73e56d09a9090366609823d2

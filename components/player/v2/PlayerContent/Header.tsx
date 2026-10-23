@@ -19,6 +19,7 @@ import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {getQCFSurahNameChar} from '@/constants/surahNameGlyphs';
 import {useResponsive} from '@/hooks/useResponsive';
+import {useTranslation} from 'react-i18next'; // @ai Qariah: the button labels
 
 const fallbackSurahNames: Record<number, string> = {};
 (
@@ -33,6 +34,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['common', 'home']); // @ai Qariah: the button labels
   const {isTablet} = useResponsive();
   const glassColorScheme = useGlassColorScheme();
   const {setSheetMode} = usePlayerActions();
@@ -157,7 +159,12 @@ export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
       <PillWrapper
         style={[styles.closeButton, pillStyle, {left: edgeInset}]}
         {...pillProps}>
-        <Pressable style={styles.glassButtonInner} onPress={handleClose}>
+        <Pressable
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('actions.close')} // @ai
+          testID="player-close" // @ai
+          style={styles.glassButtonInner}
+          onPress={handleClose}>
           {USE_GLASS ? (
             <SymbolView
               name="xmark"
@@ -180,7 +187,12 @@ export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
       <PillWrapper
         style={[styles.optionsButton, pillStyle, {right: edgeInset}]}
         {...pillProps}>
-        <Pressable style={styles.glassButtonInner} onPress={onOptionsPress}>
+        <Pressable
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('home:surahItem.moreOptions')} // @ai
+          testID="player-more" // @ai
+          style={styles.glassButtonInner}
+          onPress={onOptionsPress}>
           {USE_GLASS ? (
             <SymbolView
               name="ellipsis"

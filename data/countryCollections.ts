@@ -1,5 +1,6 @@
 import {RECITERS, type Reciter} from './reciterData';
 import {countrySlug as slugify} from './countryISO';
+import type {AppLanguage} from '@/i18n/language';
 
 export interface CountryInfo {
   /** Kebab-case slug for routing — e.g. "saudi-arabia". */
@@ -40,8 +41,11 @@ const CURATED_COUNTRIES: Record<string, {name: string; flag?: string}> = {
  * Aggregate `RECITERS` by `country`, returning one entry per distinct
  * country with the reciter count. Reciters with no `country` value are
  * dropped silently.
+ *
+ * Qariah (TECH_DEBT #323): the names are in `language` (default: the app
+ * language). The order does not depend on the language or on the platform.
  */
-export function getAllCountries(): CountryInfo[] {
+export function getAllCountries(language?: AppLanguage): CountryInfo[] {
   // Qariah (TECH_DEBT #303): lazy, so an import of the country data does not open MMKV.
   // Qariah (Sprint 47, Pass C): country names in the UI language.
   const {getCountryDisplayName} =
@@ -56,12 +60,18 @@ export function getAllCountries(): CountryInfo[] {
     } else {
       const curated = CURATED_COUNTRIES[id];
       counts.set(id, {
-        name: curated?.name ?? getCountryDisplayName(reciter.country),
+        name: curated?.name ?? getCountryDisplayName(reciter.country, language),
         count: 1,
       });
     }
   }
 
+  // Qariah (TECH_DEBT #323): sort by the id (the English catalog name in
+  // lower case, `countrySlug`) without diacritics, with a plain comparison. A
+  // `localeCompare` of the display names used the ICU data of the device: in
+  // Arabic, iOS showed Spain first and Android showed Australia first. Now
+  // each platform and each language shows the same order. For the catalog
+  // countries, the English order is the same as before.
   return Array.from(counts.entries())
     .map(([id, {name, count}]) => ({
       id,
@@ -69,7 +79,25 @@ export function getAllCountries(): CountryInfo[] {
       flag: CURATED_COUNTRIES[id]?.flag,
       reciterCount: count,
     }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        compareText(countrySortKey(a.id), countrySortKey(b.id)) ||
+        compareText(a.id, b.id),
+    );
+}
+
+// Qariah (TECH_DEBT #323): a comparison of UTF-16 code units. It uses no
+// locale data, so each platform gives the same result.
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Qariah (TECH_DEBT #323): the sort key of a country id, without diacritics
+// ("côte-d'ivoire" → "cote-d'ivoire", "türkiye" → "turkiye"). Without this
+// step, a plain comparison puts an accented letter after "z". NFD and the
+// Unicode mark class are Unicode data, not locale data.
+function countrySortKey(id: string): string {
+  return id.normalize('NFD').replace(/\p{M}/gu, '');
 }
 
 /** True when the reciter's `country` has this slug. The Browse filter uses it. */

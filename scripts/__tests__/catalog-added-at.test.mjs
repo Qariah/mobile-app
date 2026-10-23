@@ -3,7 +3,7 @@
 // node --test (CI: .github/workflows/test.yml "Script tests"). The pure core
 // runs on a 4-version fixture history; loadHistory runs on a fake fetch and a
 // temporary cache folder. No test uses the network.
-/* global Response, structuredClone -- Node 18+ globals: the fake fetch builds its answers with Response */
+/* global Response, structuredClone, globalThis -- Node 18+ globals: the fake fetch builds its answers with Response */
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -17,6 +17,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import transform, {
   ALLOWED_FIELDS,
+  ALLOWED_REWAYAH_FIELDS,
   cacheDir,
   computeAddedAt,
   formatReport,
@@ -619,4 +620,51 @@ test('loadHistory names no host in an error, and stops after its tries', async (
 
 test('the default export is the transform of catalog-r2-mutate.mjs', () => {
   assert.equal(typeof transform, 'function');
+});
+
+test('the transform declares the rewayah field that it changes (TECH_DEBT #326)', async () => {
+  const dir = mkdtempSync(
+    path.join(process.env.TMPDIR || tmpdir(), 'catalog-added-at-transform-'),
+  );
+  const origin = 'https://cdn.example.com';
+  const saved = {
+    fetch: globalThis.fetch,
+    url: process.env.EXPO_PUBLIC_CATALOG_VERSION_URL,
+    cache: process.env.CATALOG_HISTORY_CACHE,
+  };
+  const restoreEnv = (name, value) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+  globalThis.fetch = async url => {
+    if (url === `${origin}/catalog/catalog-version.json`) {
+      return new Response(
+        JSON.stringify({
+          version: 4,
+          updated_at: '2026-09-22T10:47:45Z',
+          url: `${origin}/catalog/history/v4.json`,
+        }),
+        {status: 200},
+      );
+    }
+    const k = Number(/\/catalog\/history\/v(\d+)\.json$/.exec(url)?.[1]);
+    return new Response(JSON.stringify(version(k)), {
+      status: 200,
+      headers: {'last-modified': `${[D1, D2, D3, D4][k - 1]}T12:00:00Z`},
+    });
+  };
+  process.env.EXPO_PUBLIC_CATALOG_VERSION_URL = `${origin}/catalog/catalog-version.json`;
+  process.env.CATALOG_HISTORY_CACHE = dir;
+  try {
+    // The live catalog must equal the newest history version (v4).
+    const result = await transform(version(4));
+    assert.deepEqual(result.allowedFields, ALLOWED_FIELDS);
+    assert.deepEqual(result.allowedRewayahFields, ALLOWED_REWAYAH_FIELDS);
+    assert.deepEqual(ALLOWED_REWAYAH_FIELDS, ['surah_metadata']);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    restoreEnv('EXPO_PUBLIC_CATALOG_VERSION_URL', saved.url);
+    restoreEnv('CATALOG_HISTORY_CACHE', saved.cache);
+    rmSync(dir, {recursive: true, force: true});
+  }
 });

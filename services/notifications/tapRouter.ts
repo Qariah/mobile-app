@@ -195,6 +195,13 @@ export interface OpenTapDeps {
    * under it (the mini player stays).
    */
   closePlayer: () => void;
+  /**
+   * Closes the open action sheets and resolves when they are closed (or
+   * after a time limit). The sheets render above every screen and above the
+   * player, so a tap must not open its screen or the player under a sheet
+   * (TECH_DEBT #261). Never rejects.
+   */
+  closeSheets: () => Promise<void>;
 }
 
 export type OpenTapResult = TapAction['kind'] | 'no_navigator' | 'failed';
@@ -219,6 +226,10 @@ export async function openNotificationTap(
       byId: deps.byId,
       bySlug: deps.bySlug,
     });
+    // Each action opens a screen or the player. A tap does not go through
+    // the link handler (app/+native-intent.ts), so close the open sheets
+    // here, before the action (TECH_DEBT #261).
+    await deps.closeSheets();
     // A screen must not open under the full player (a play or a resume
     // opens the player itself).
     if (action.kind !== 'play' && action.kind !== 'resume') {

@@ -26,7 +26,7 @@ import {useAmbientStore} from '@/store/ambientStore';
 import Color from 'color';
 // @ai-start
 import {localizeDigits} from '@/i18n/format';
-import {useTranslation} from 'react-i18next'; // Qariah: the queue label
+import {useTranslation} from 'react-i18next'; // Qariah: the control labels
 // @ai-end
 
 interface ControlButtonsProps {
@@ -62,7 +62,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
   followAlongAvailable,
 }) => {
   const {theme} = useTheme();
-  const {t} = useTranslation(); // Qariah: the queue label
+  const {t} = useTranslation(['common', 'qariah', 'reader', 'sheets']); // Qariah: the control labels
   const glassColorScheme = useGlassColorScheme();
   const {updateSettings} = usePlayerActions();
   const playbackRate = usePlayerStore(s => s.playback.rate);
@@ -89,6 +89,16 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
   const isTimerActive =
     settings.sleepTimerEnd !== null && settings.sleepTimerEnd > Date.now();
 
+  // @ai-start
+  // Qariah: the screen reader says the repeat mode after the "Repeat" label.
+  const repeatModeLabel = {
+    none: t('qariah:a11y.player.repeatOff'),
+    queue: t('qariah:a11y.player.repeatQueue'),
+    track: t('qariah:a11y.player.repeatTrack'),
+  }[settings.repeatMode];
+  const followAlongOn = followAlongAvailable && followAlongActive;
+  // @ai-end
+
   const activeBackgroundColor = Color(theme.colors.text).alpha(0.08).toString();
   const defaultIconColor = theme.colors.text;
   const activeIconColor = theme.colors.text;
@@ -108,6 +118,9 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
         <PillWrapper style={styles.glassButton} {...pillProps}>
           <Pressable
             onPress={handleMushafLayoutPress}
+            accessibilityRole="button" // @ai
+            accessibilityLabel={t('reader:mushaf.settings')} // @ai
+            testID="player-mushaf-settings" // @ai
             style={styles.glassButtonInner}>
             <Ionicons
               name="options-outline"
@@ -120,6 +133,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 
       <Pressable
         onPress={onSpeedPress}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:playbackSpeed.title')} // @ai
+        accessibilityValue={{text: localizeDigits(`${playbackRate}x`)}} // @ai
+        testID="player-speed" // @ai
         style={[
           styles.button,
           playbackRate !== 1 && {backgroundColor: activeBackgroundColor},
@@ -137,6 +154,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 
       <Pressable
         onPress={handleRepeatPress}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:verseActions.repeat')} // @ai
+        accessibilityValue={{text: repeatModeLabel}} // @ai
+        testID="player-repeat" // @ai
         style={[
           styles.button,
           settings.repeatMode !== 'none' && {
@@ -159,6 +180,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 
       <Pressable
         onPress={onSleepTimerPress}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:sleepTimer.title')} // @ai
+        accessibilityState={{selected: isTimerActive}} // @ai
+        testID="player-sleep-timer" // @ai
         style={[
           styles.button,
           isTimerActive && {backgroundColor: activeBackgroundColor},
@@ -173,6 +198,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
       {onAmbientPress && (
         <Pressable
           onPress={onAmbientPress}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('sheets:ambient.title')} // @ai
+          accessibilityState={{selected: ambientEnabled}} // @ai
+          testID="player-ambient" // @ai
           style={[
             styles.button,
             ambientEnabled && {backgroundColor: activeBackgroundColor},
@@ -187,6 +216,10 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 
       <Pressable
         onPress={onFollowAlongPress}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:followAlong.title')} // @ai
+        accessibilityState={{selected: followAlongOn}} // @ai
+        testID="player-locate-verse" // @ai
         style={[
           styles.button,
           followAlongAvailable &&

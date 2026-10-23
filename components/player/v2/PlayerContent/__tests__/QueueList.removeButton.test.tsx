@@ -73,7 +73,14 @@ jest.mock('@/components/TrackItem', () => {
   };
 });
 
-jest.mock('@/components/ReciterImage', () => ({ReciterImage: () => null}));
+// @ai TECH_DEBT #262: the mock keeps the props, so a test can read them.
+jest.mock('@/components/ReciterImage', () => {
+  const {View} = require('react-native');
+  return {
+    // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+    ReciterImage: props => <View testID="queue-reciter-image" {...props} />,
+  };
+});
 jest.mock('@/components/NowPlayingIndicator', () => ({
   NowPlayingIndicator: () => null,
 }));
@@ -245,3 +252,38 @@ describe('QueueList — content clear of the player overlays (TECH_DEBT #295)', 
   });
 });
 // @ai-end
+
+// @ai TECH_DEBT #262: the row of an upload that is tagged to a catalog
+// reciter shows the reciter photo, as the mini player does.
+describe('QueueList — the photo of an upload row (TECH_DEBT #262)', () => {
+  it('gives ReciterImage the photo URL of a tagged upload', () => {
+    const photo = 'https://example.test/reciters/zaynab-talha/photo.jpg?v=1';
+    mockState.queue.tracks = [
+      track('u1', {
+        isUserUpload: true,
+        surahId: '18',
+        reciterName: 'Zaynab Talha',
+        artwork: photo,
+      }),
+    ];
+    renderQueue();
+    const image = screen.getByTestId('queue-reciter-image');
+    expect(image.props.imageUrl).toBe(photo);
+    expect(image.props.reciterName).toBe('Zaynab Talha');
+  });
+
+  it('gives no URL when the upload has no remote photo', () => {
+    mockState.queue.tracks = [
+      track('u1', {
+        isUserUpload: true,
+        surahId: '18',
+        reciterName: 'Zaynab Talha',
+        artwork: 'data:image/png;base64,iVBORw0KGgo=',
+      }),
+    ];
+    renderQueue();
+    expect(
+      screen.getByTestId('queue-reciter-image').props.imageUrl,
+    ).toBeUndefined();
+  });
+});

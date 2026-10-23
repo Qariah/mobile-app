@@ -11,6 +11,7 @@ import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {closePlayerSheet, expandPlayerSheet} from '@/services/player/sheetRef';
 import {playRecitation} from '@/services/player/utils/playRecitation';
+import {closeOpenSheets} from '@/services/closeSheetsBeforeLink';
 import {
   MUSHAF_RESTORE_WAIT_MS,
   SESSION_WAIT_MS,
@@ -70,5 +71,7 @@ export function appTapDeps(
     closePlayer: () => {
       if (usePlayerStore.getState().sheetMode === 'full') closePlayerSheet();
     },
+    // The same close and time limit as a link (TECH_DEBT #261).
+    closeSheets: () => closeOpenSheets(),
   };
 }

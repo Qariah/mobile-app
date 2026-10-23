@@ -1,0 +1,66 @@
+# NTF-01 (iOS), the permission banner — the part that was an owner case until Sprint 50.
+# On a fresh install the permission is not asked yet: the Notifications page shows the banner
+# with "Allow notifications", and the button shows the iOS system dialog. After "Don't Allow"
+# the banner says that notifications are off and its button is "Open Settings", which opens the
+# app's page in the iOS Settings app. The flow changes no setting on the phone: it answers the
+# app's own dialog only.
+#
+# iOS only (Android asks at the first launch; the onboarding subflow taps "Allow" there). Run it
+# with the iPhone runner on the test iPhone (scripts/iphone-device-test.sh) or on a simulator.
+# `settings/notifications.yaml` covers the page and the switches on both platforms.
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+  - notifications
+  - ios-only
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Settings'
+- scrollUntilVisible:
+    element: '.*Choose the notifications you get.*'
+    direction: DOWN
+    timeout: 15000
+    centerElement: true
+- tapOn: '.*Choose the notifications you get.*'
+
+# 1. Before the first answer: the banner asks, and its button shows the system dialog.
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-banner'
+    timeout: 10000
+- assertVisible: 'Allow notifications'
+- tapOn:
+    id: 'notifications-permission-button'
+- extendedWaitUntil:
+    visible: "Don.t Allow"
+    timeout: 15000
+- tapOn: "Don.t Allow"
+
+# 2. After "Don't Allow": the banner says the notifications are off; its button opens Settings.
+- extendedWaitUntil:
+    visible: '.*Notifications are off for Qariah.*'
+    timeout: 10000
+- assertVisible: 'Open Settings'
+- tapOn:
+    id: 'notifications-permission-button'
+# The iOS Settings app opens. iOS 27 quirk (2026-10-21, the test iPhone): when the Settings
+# app was not running, it opens at the "Apps" list, not at the app's page. Then go back to
+# the app (it keeps its state) and tap the button again: now the app's page opens.
+- extendedWaitUntil:
+    visible: 'Notifications, Off|Search Apps'
+    timeout: 10000
+- runFlow:
+    when:
+      visible: 'Search Apps'
+    commands:
+      - launchApp:
+          stopApp: false
+      - tapOn:
+          id: 'notifications-permission-button'
+# The app's page in Settings: its Notifications row says Off.
+- extendedWaitUntil:
+    visible: 'Notifications, Off'
+    timeout: 10000

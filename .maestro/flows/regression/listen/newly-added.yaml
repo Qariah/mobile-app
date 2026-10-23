@@ -10,13 +10,14 @@
 #
 # Checks:
 #   1. The row shows, with recitation cards.
-#   2. A tap on the first card starts that recitation: the mini player (`mini-player-expand`)
-#      names the surah and the reciter of the card. The state is fresh, so no mini player
-#      shows before the tap.
-#   3. Android only: the full player opens (`player-queue-button`). For a partial recitation,
-#      the track line shows the range of the card ("Hafs • Murattal • Ayahs 1–69"). On iOS the
-#      full player sheet is one opaque a11y element (as in player/queue-remove.yaml), so check
-#      the full player there by hand (LST-06 steps).
+#   2. A tap on the first card starts that recitation: the full player opens (`player-queue-button`)
+#      and names the surah and the reciter of the card. For a partial recitation, the track line
+#      shows the range of the card ("Hafs • Murattal • Ayahs 1–69"). The state is fresh, so no
+#      mini player shows before the tap.
+#   3. The full player closes (`player-close`), and the mini player (`mini-player-expand`) names
+#      the surah and the reciter of the card. Since Sprint 50 the iOS full player exposes its
+#      controls (`accessible={false}` on the sheet), and VoiceOver treats the open sheet as modal,
+#      so the mini player behind it is not in the iOS tree until the sheet closes.
 #
 # Not checked here: that the ayah list starts at the first ayah of the range. The list follows
 # the audio, so the first row scrolls away while the flow runs (a first version failed on
@@ -47,7 +48,7 @@ tags:
 - assertNotVisible:
     id: 'mini-player-bar'
 
-# 2. Read the first card, tap it, and check the mini player.
+# 2. Read the first card, tap it, and check the full player.
 - copyTextFrom:
     id: 'recitation-card'
     index: 0
@@ -62,22 +63,23 @@ tags:
     waitToSettleTimeoutMs: 1000
 - extendedWaitUntil:
     visible:
+      id: 'player-queue-button'
+    timeout: 20000
+- assertVisible: '.*${output.card.surah}.*'
+- assertVisible: '.*${output.card.reciter}.*'
+- runFlow:
+    when:
+      true: ${output.card.range != ''}
+    commands:
+      # Maestro text is case-insensitive: "ayahs 1–69" matches "Ayahs 1–69".
+      - assertVisible: '.* • ${output.card.range}'
+
+# 3. Close the full player, and check the mini player.
+- tapOn:
+    id: 'player-close'
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
       id: 'mini-player-expand'
       text: '${output.card.surah}.*, .*${output.card.reciter}.*'
     timeout: 20000
-
-# 3. The full player (Android only, see the header).
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - extendedWaitUntil:
-          visible:
-            id: 'player-queue-button'
-          timeout: 10000
-      - runFlow:
-          when:
-            true: ${output.card.range != ''}
-          commands:
-            # Maestro text is case-insensitive: "ayahs 1–69" matches "Ayahs 1–69".
-            - assertVisible: '.* • ${output.card.range}'

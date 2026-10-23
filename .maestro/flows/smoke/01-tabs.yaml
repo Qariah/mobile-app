@@ -6,11 +6,15 @@ tags:
 - launchApp:
     clearState: true
 - runFlow: ../../subflows/skip-onboarding.yaml
+# Search is the LAST tab of this flow. On iOS 26 and later, a tap on the Search tab
+# collapses the tab bar into one button, so "Collection" and "Settings" are not on
+# screen after it (TECH_DEBT #219; seen on the iPhone 17 Pro simulator, iOS 26.5, and on
+# the test iPhone, iOS 27.0). The order does not change what the flow proves.
 - tapOn: "Mushaf"
-- tapOn: "Search"
 - tapOn: "Collection"
 - tapOn: "Settings"
 # a Settings content row (proves the Settings screen rendered, not just its tab label)
 - assertVisible: "Default Reciter.*"   # iOS joins the row title + subtitle into one label
 - tapOn: ".*Listen"
 - assertVisible: "Browse by"
+- tapOn: "Search"

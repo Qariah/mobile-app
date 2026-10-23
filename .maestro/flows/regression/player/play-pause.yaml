@@ -1,0 +1,73 @@
+# QP-05 → PLY-01 — tap a surah; it plays; pause and play; the mini player shows the surah and
+# the reciter, with no ✕. Added in Sprint 50 for the test iPhone (the iPhone runner) and the
+# simulator; on Android the agent also reads `dumpsys media_session` (case catalog QP-05).
+#
+# Needs a build with the player testIDs (Sprint 50: `player-close`, `mini-player-play-pause`).
+# The play: Listen → Surahs → search "Mulk" → Al-Mulk → Zaynab Talha (the path of the
+# NTF card flows, which pass on Android and iOS). On iOS a tap on a recitation opens the full
+# player; close it to reach the mini player.
+appId: com.qariah.app
+tags:
+  - regression
+  - player
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Listen'
+- tapOn: 'Surahs'
+- tapOn: 'Search surahs.*'
+- inputText: 'Mulk'
+- hideKeyboard
+- tapOn: '.*Al-Mulk.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+# The reciters are in alphabetical order, so Zaynab Talha is at the end of the list.
+- scrollUntilVisible:
+    element: '.*Zaynab Talha.*'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: ".*Zaynab Talha.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      visible:
+        id: 'player-close'
+    commands:
+      - tapOn:
+          id: 'player-close'
+
+# The mini player shows the surah, and the audio plays (the button offers Pause).
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+    timeout: 10000
+- assertVisible:
+    id: 'mini-player-expand'
+    text: '.*Al-Mulk.*Zaynab Talha.*'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Pause'
+    timeout: 10000
+# The mini player has no close button (TECH_DEBT #227).
+- assertNotVisible:
+    id: 'mini-player-close'
+
+# Pause, then play.
+- tapOn:
+    id: 'mini-player-play-pause'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Play'
+    timeout: 5000
+- tapOn:
+    id: 'mini-player-play-pause'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Pause'
+    timeout: 5000

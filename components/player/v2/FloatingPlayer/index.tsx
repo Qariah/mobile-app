@@ -22,6 +22,7 @@ import {useResponsive} from '@/hooks/useResponsive';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 import {getTrackDisplayTitle, getTrackArtistDisplay} from '@/i18n/format';
+import {trackArtworkUrl} from '@/utils/trackArtworkUrl'; // TECH_DEBT #262
 // @ai-end
 
 // @ai-start
@@ -124,6 +125,7 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
           accessibilityHint={t('a11y.openPlayer')}
           testID="mini-player-expand">
           <ReciterImage
+            imageUrl={trackArtworkUrl(currentTrack)} // @ai TECH_DEBT #262
             reciterName={currentTrack.reciterName}
             style={styles.artwork}
           />

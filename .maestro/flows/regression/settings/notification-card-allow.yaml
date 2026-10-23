@@ -1,0 +1,67 @@
+# NTF-08 (iOS), the "Allow" half — after the first completed play, the notification card shows;
+# "Allow" shows the iOS system dialog; after "Allow" there, the Notifications page shows no
+# "Notifications are off" banner. `settings/notification-card.yaml` covers the card and
+# "Not now".
+#
+# iOS only: on Android the card asks for no permission (NTF-11). Run it with the iPhone runner
+# on the test iPhone (scripts/iphone-device-test.sh), which shows a system alert's buttons as
+# elements, or on a simulator. On Android, exclude the tag: --exclude-tags=ios-only.
+#
+# `clearState` reinstalls the app on the test iPhone, so the permission is not asked yet. A
+# build with no PostHog key counts as "consent off": its arm is `notify`, so the card shows.
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+  - notifications
+  - ios-only
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Listen'
+- tapOn: 'Surahs'
+- tapOn: 'Search surahs.*'
+- inputText: 'Kawthar'
+- hideKeyboard
+- tapOn: '.*Al-Kawthar.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: ".*Qah Suhaimi.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# 1. The play ends; the card shows.
+- extendedWaitUntil:
+    visible: '.*Notifications from Qariah.*'
+    timeout: 240000
+
+# 2. "Allow" on the card shows the system dialog; "Allow" there grants the permission.
+- tapOn:
+    id: 'notification-soft-prompt-allow'
+- extendedWaitUntil:
+    visible: 'Allow'
+    timeout: 15000
+- tapOn: 'Allow'
+- assertNotVisible: '.*Notifications from Qariah.*'
+
+# 3. The Notifications page shows no "off" banner, and the switches are on it.
+- runFlow:
+    when:
+      visible:
+        id: 'player-queue-button'
+    commands:
+      - tapOn: 'Close'
+- tapOn: '.*Settings'
+- scrollUntilVisible:
+    element: '.*Choose the notifications you get.*'
+    direction: DOWN
+    timeout: 15000
+    centerElement: true
+- tapOn: '.*Choose the notifications you get.*'
+- extendedWaitUntil:
+    visible:
+      id: 'notification-switch-kahf_friday'
+    timeout: 10000
+- assertNotVisible:
+    id: 'notifications-permission-banner'

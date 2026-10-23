@@ -1,0 +1,90 @@
+# Frame 6: the full player; the ayah of the recitation is highlighted.
+# Zaynab Talha has ayah timings. Ya-Sin 36:1 plays from 6.1 s to 10.5 s: the
+# flow waits for the player time 0:07-0:09 (T_PLAYER), then takes eight shots
+# 1.5 seconds apart: keep the one with 36:1 highlighted as 06-player. The player does not always expose its time label (not in
+# the Arabic UI), so the wait ends after 4 s at the latest
+# (the time from the tap to the expanded player adds about 4 s).
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- runFlow:
+    file: ../subflows/open-reciter.yaml
+    env: {QUERY: 'Zaynab', RECITER: '${R_ZAYNAB}'}
+- tapOn: ${L_ASC}
+- scrollUntilVisible:
+    element: ${S_YASIN}
+    direction: DOWN
+    speed: 80
+    timeout: 120000
+    # The iPad row is wider than the screen, so it is never 100% visible.
+    visibilityPercentage: 50
+- swipe:
+    start: 50%,60%
+    end: 50%,45%
+    duration: 600
+- tapOn:
+    text: ${S_YASIN}
+    waitToSettleTimeoutMs: 1000
+# The iPad keeps its player in the sidebar, which Maestro cannot see.
+- runFlow:
+    when:
+      true: ${IPAD == 'true'}
+    commands:
+      - runFlow:
+          file: ../subflows/wait.yaml
+          env: {MS: 1500}
+      - tapOn:
+          point: ${PLAYER_OPEN}
+          waitToSettleTimeoutMs: 1000
+- runFlow:
+    when:
+      true: ${IPAD != 'true'}
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: 'mini-player-play-pause'
+          timeout: 30000
+      - tapOn:
+          id: 'mini-player-expand'
+          waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible: ${T_PLAYER}
+    timeout: 4000
+    optional: true
+- takeScreenshot: ${OUT}/06-player-1
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-2
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-3
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-4
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-5
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-6
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-7
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/06-player-8
+# The iPad player has no labelled Play/Pause: pause it by position (it plays).
+- runFlow:
+    when:
+      true: ${IPAD == 'true'}
+    commands:
+      - tapOn:
+          point: ${PLAYER_PAUSE}
+- runFlow: ../subflows/close-player.yaml

@@ -9,11 +9,18 @@ import {useProgress} from '@/services/player/store/progressStore';
 import {localizeDigits} from '@/i18n/format';
 import {forceLTR} from '@/utils/rtl';
 import {invertLtrNativeSlider} from '@/i18n/qariahIosLanguage'; // Qariah
+import {useTranslation} from 'react-i18next'; // Qariah: the slider label
+import {Platform, type AccessibilityActionEvent} from 'react-native'; // Qariah
 // @ai-end
+
+// Qariah: one VoiceOver swipe on the slider moves the position by this many
+// seconds (the same step as the skip buttons).
+const A11Y_SEEK_STEP = 15; // @ai
 
 // @ai-start
 export const ProgressBar = React.memo(() => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['qariah']); // @ai Qariah: the slider label
   const {seekTo} = usePlayerActions();
   const progress = useProgress();
   const [isSeeking, setIsSeeking] = useState(false);
@@ -61,6 +68,50 @@ export const ProgressBar = React.memo(() => {
     }
   }, []);
 
+  // @ai-start
+  // Qariah (iOS): on Fabric, React Native puts the label and the testID of
+  // the Slider on its wrapper view, which is not an accessibility element.
+  // VoiceOver focuses the UISlider inside, which has no label. So on iOS the
+  // wrapper is the accessibility element: it says the position and moves it
+  // by A11Y_SEEK_STEP for each swipe up or down. Android puts the props on
+  // the SeekBar itself, so it keeps the native behavior.
+  const handleAccessibilityAction = useCallback(
+    async (event: AccessibilityActionEvent) => {
+      const {actionName} = event.nativeEvent;
+      if (actionName !== 'increment' && actionName !== 'decrement') return;
+      const step =
+        actionName === 'increment' ? A11Y_SEEK_STEP : -A11Y_SEEK_STEP;
+      const current = progress.seekPosition ?? progress.position;
+      const target = Math.min(
+        Math.max(0, current + step),
+        progress.duration || 0,
+      );
+      try {
+        progress.setPosition(target);
+        await seekTo(target);
+      } catch (error) {
+        console.error('Error seeking:', error);
+      }
+    },
+    [progress, seekTo],
+  );
+
+  const iosAccessibility =
+    Platform.OS === 'ios'
+      ? {
+          accessible: true,
+          accessibilityValue: {
+            text: t('qariah:a11y.player.positionValue', {
+              position: localizeDigits(formatTime(displayTime)),
+              duration: localizeDigits(formatTime(progress.duration)),
+            }),
+          },
+          accessibilityActions: [{name: 'increment'}, {name: 'decrement'}],
+          onAccessibilityAction: handleAccessibilityAction,
+        }
+      : {};
+  // @ai-end
+
   return (
     <View style={[styles.container, forceLTR]}>
       <View style={styles.timeContainer}>
@@ -75,6 +126,10 @@ export const ProgressBar = React.memo(() => {
         style={styles.slider}
         // Qariah: stays left to right when UIKit runs RTL (iOS Arabic).
         inverted={invertLtrNativeSlider}
+        accessibilityRole="adjustable" // @ai
+        accessibilityLabel={t('qariah:a11y.player.position')} // @ai
+        testID="player-progress" // @ai
+        {...iosAccessibility} // @ai
         minimumValue={0}
         maximumValue={progress.duration || 1}
         tapToSeek

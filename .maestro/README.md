@@ -29,6 +29,33 @@ Maestro 2.10.0 — the tag is the mechanism.
 
 Install the build under test first if needed: `scripts/android-device-smoke.sh --apk=<release.apk>` (it self-locks — see below).
 
+### Physical test iPhone (Sprint 50, TECH_DEBT #299)
+
+Maestro does not support a physical iPhone (2.6.1 cannot build its driver; 2.11.0 refuses physical
+iOS devices). The same flows run on the test iPhone through **WebDriverAgent** (the XCUITest runner
+of Appium) and a small runner in `scripts/iphone/`:
+
+```bash
+# Build the app for the phone as in qariah-boot-gate-verify ("iOS — physical test iPhone"),
+# then (WebDriverAgent builds and starts by itself; the device lock is inside):
+scripts/iphone-device-test.sh --app "<dd>/Build/Products/Release-iphoneos/Qariah.app" .maestro/flows/smoke/
+scripts/iphone-device-test.sh QP-04 QP-09          # case ids map to their flows (case catalog)
+```
+
+- **Evidence:** PASS or FAIL, a screenshot at the end of each flow (and at a failure), the screen
+  tree at a failure, and `summary.json`, in `~/claude/.scratch/iphone-device-test/<time>/` (or `--out`).
+- **Meaning:** the runner keeps Maestro's rules: full-match, case-insensitive text regex; `id` =
+  `testID`; `index` in screen order; `tapOn` and `assert*` wait up to 15 s; `runFlow` `when` checks
+  once. A system alert ("Allow" for notifications) shows as a tappable element. A command that
+  the runner does not know fails the flow ("unsupported"); it never skips.
+- **clearState** uninstalls and installs the app again (a physical phone has no "clear data"). The
+  keychain survives an uninstall on iOS, so a QF sign-in survives too: sign out once on the phone
+  for a true first run.
+- **By hand** (the peer of `adb shell input`): `scripts/iphone.sh tap "Reciters"`,
+  `tap --id recitation-card --index 0`, `type`, `swipe down`, `tree`, `screenshot <png>`,
+  `a11y <png>` (a box on each element that VoiceOver can reach), `alert accept`, `lock`,
+  `orientation landscape`, `open qariah://…`. Start WebDriverAgent first: `scripts/iphone/wda.sh start`.
+
 ## Device contention (there is ONE Pixel)
 
 `qariah-boot-gate-verify`, the daily `qariah-triage-loop` smoke, and any Maestro run all drive the same device. Two at once collide — the worst case is gotcha #7 (the Maestro gRPC instrumentation wedge). **Wrap every device command in the lock:**

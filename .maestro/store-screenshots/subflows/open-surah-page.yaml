@@ -1,0 +1,24 @@
+# Open the surah SURAH (a regex) in the Mushaf reader from the Mushaf tab.
+appId: com.qariah.app
+---
+- runFlow: home.yaml
+- tapOn: ${L_MUSHAF_TAB}
+# The grid keeps its scroll position: go back to the top first. A faster
+# scroll skips cells on the iPad.
+- scrollUntilVisible:
+    element: ${G_FATIHAH}
+    direction: UP
+    speed: 50
+    timeout: 60000
+- scrollUntilVisible:
+    element: ${SURAH}
+    direction: DOWN
+    speed: 30
+    timeout: 90000
+    visibilityPercentage: 80
+    centerElement: true
+- tapOn: ${SURAH}
+- extendedWaitUntil:
+    visible:
+      id: 'mushaf-settings-button'
+    timeout: 10000

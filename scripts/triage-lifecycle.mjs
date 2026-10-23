@@ -33,7 +33,9 @@
 // SAFETY: only ever touches issues that carry a lane dedup marker (never a
 // hand-authored issue), and never an issue that is an `incident` umbrella.
 // Comments a reason on every issue it closes/reopens. Re-running is a no-op once
-// the signal state is unchanged.
+// the signal state is unchanged. The two closing passes skip every issue of a
+// source whose recency index is incomplete (token missing, a response that is
+// not OK, a request that throws): a missing id would read as "quiet".
 //
 //   set -a && source .env.local && set +a
 //   node scripts/triage-lifecycle.mjs --dry-run            # print the plan, change nothing
@@ -96,19 +98,40 @@ const now = Date.now();
 const quietCutoff = now - QUIET_DAYS * 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
-// Source recency adapters. Each returns a map keyed by the source's id →
-// { lastSeenMs, status, users, ... }. Built lazily + cached so a pass that
-// only touches Sentry never mints a Play token. Play's entries carry
-// `newestVersionCode` directly — it's free, already in the bulk response
+// Source recency adapters. Each returns `{idx, complete}`. `idx` is a map keyed
+// by the source's id → { lastSeenMs, status, users, ... }. Built lazily + cached
+// so a pass that only touches Sentry never mints a Play token. Play's entries
+// carry `newestVersionCode` directly — it's free, already in the bulk response
 // (Play's own `lastAppVersion`/`firstAppVersion` rolls forward as new events
 // land under the same aggregated errorIssue). Sentry's bulk issues-list
 // response carries NO release info at all, so its entries carry `id` (the
 // issue's internal numeric id) instead; `sentryReleaseVersionCode(id)`
 // (below, near `fixedInVersion`) resolves the versionCode lazily, per-issue,
 // only when the reopen-on-recurrence pass actually needs it.
+//
+// `complete` is false when the adapter could not read the whole source: the
+// token or the service account is missing, a response is not OK, or a request
+// throws. A closing pass reads a missing id as "quiet", so it must never use an
+// incomplete index. See recencyForClose(), below.
 // ---------------------------------------------------------------------------
+// Sentry accepts only '', '24h' and '14d' as `statsPeriod` on the project
+// issues list. Any other value, such as '90d', returns HTTP 400
+// (TECH_DEBT #174). On this endpoint `statsPeriod` sets only the stats window
+// of each issue in the response. It does not filter which issues come back
+// (the query, `sort=date` and `limit=100` do). So one period is enough.
+export const SENTRY_STATS_PERIOD = '14d';
+
 let _sentryIndex = null;
-async function sentryIndex() {
+let _playIndex = null;
+const _incompleteWarned = new Set();
+// Test hook: clear the memoized indexes and the warning memory, so a test can
+// build them again.
+export function resetIndexCachesForTests() {
+  _sentryIndex = null;
+  _playIndex = null;
+  _incompleteWarned.clear();
+}
+export async function sentryIndex() {
   if (_sentryIndex) return _sentryIndex;
   const TOKEN = process.env.SENTRY_READ_TOKEN;
   const ORG = process.env.SENTRY_ORG || 'qariah';
@@ -119,45 +142,57 @@ async function sentryIndex() {
   const idx = {};
   if (!TOKEN) {
     console.warn(
-      '  ⚠ SENTRY_READ_TOKEN unset — Sentry recency unavailable (Sentry issues skipped).',
+      '  ⚠ SENTRY_READ_TOKEN unset — Sentry recency unavailable. The passes close and reopen no Sentry issue.',
     );
-    return (_sentryIndex = idx);
+    return (_sentryIndex = {idx, complete: false});
   }
-  // Pull all issues across statuses in a 14d window (covers the quiet horizon)
-  // AND a wider one so closed-but-recurred issues are visible.
-  for (const period of ['14d', '90d']) {
-    for (const q of ['is:unresolved', 'is:resolved', 'is:ignored']) {
-      let url = `${HOST}/api/0/projects/${ORG}/${PROJECT}/issues/?statsPeriod=${period}&query=${encodeURIComponent(
-        q,
-      )}&limit=100&sort=date`;
-      try {
-        const res = await fetch(url, {
-          headers: {Authorization: `Bearer ${TOKEN}`},
-        });
-        if (!res.ok) continue;
-        const list = await res.json();
-        for (const i of list) {
-          const prev = idx[i.shortId];
-          const lastSeenMs = Date.parse(i.lastSeen) || 0;
-          if (!prev || lastSeenMs > prev.lastSeenMs) {
-            idx[i.shortId] = {
-              id: i.id,
-              lastSeenMs,
-              status: i.status,
-              users: i.userCount || 0,
-            };
-          }
-        }
-      } catch {
-        /* best-effort */
+  // Pull all issues across statuses. A response that is not OK prints a
+  // warning and marks the index incomplete. It must never be silent: an issue
+  // that is missing from the index looks quiet to the closing passes.
+  let complete = true;
+  for (const q of ['is:unresolved', 'is:resolved', 'is:ignored']) {
+    const url = `${HOST}/api/0/projects/${ORG}/${PROJECT}/issues/?statsPeriod=${encodeURIComponent(
+      SENTRY_STATS_PERIOD,
+    )}&query=${encodeURIComponent(q)}&limit=100&sort=date`;
+    try {
+      const res = await fetch(url, {
+        headers: {Authorization: `Bearer ${TOKEN}`},
+      });
+      if (!res.ok) {
+        const detail = await res
+          .text()
+          .then(t => t.slice(0, 200))
+          .catch(() => '');
+        console.warn(
+          `  ⚠ Sentry issue list failed: HTTP ${res.status} (query=${q}). Recency for this slice is missing.${detail ? ` ${detail}` : ''}`,
+        );
+        complete = false;
+        continue;
       }
+      const list = await res.json();
+      for (const i of list) {
+        const prev = idx[i.shortId];
+        const lastSeenMs = Date.parse(i.lastSeen) || 0;
+        if (!prev || lastSeenMs > prev.lastSeenMs) {
+          idx[i.shortId] = {
+            id: i.id,
+            lastSeenMs,
+            status: i.status,
+            users: i.userCount || 0,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn(
+        `  ⚠ Sentry issue list errored (query=${q}): ${e.message}. Recency for this slice is missing.`,
+      );
+      complete = false;
     }
   }
-  return (_sentryIndex = idx);
+  return (_sentryIndex = {idx, complete});
 }
 
-let _playIndex = null;
-async function playIndex() {
+export async function playIndex() {
   if (_playIndex) return _playIndex;
   const idx = {};
   let sa;
@@ -165,10 +200,11 @@ async function playIndex() {
     sa = loadServiceAccount();
   } catch (e) {
     console.warn(
-      `  ⚠ Play SA unavailable — Play recency unavailable (Play issues skipped): ${e.message}`,
+      `  ⚠ Play SA unavailable — Play recency unavailable. The passes close and reopen no Play issue: ${e.message}`,
     );
-    return (_playIndex = idx);
+    return (_playIndex = {idx, complete: false});
   }
+  let complete = true;
   try {
     const token = await mintPlayToken(sa, {scope: 'reporting'});
     const PKG = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME;
@@ -177,6 +213,16 @@ async function playIndex() {
       `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PKG}/errorIssues:search?pageSize=100`,
       {headers: {Authorization: `Bearer ${token}`}},
     );
+    if (!res.ok) {
+      const detail = await res
+        .text()
+        .then(t => t.slice(0, 200))
+        .catch(() => '');
+      console.warn(
+        `  ⚠ Play error-issue search failed: HTTP ${res.status}. Recency for Play is missing.${detail ? ` ${detail}` : ''}`,
+      );
+      return (_playIndex = {idx, complete: false});
+    }
     const data = await res.json();
     for (const i of data.errorIssues || []) {
       const id = String(i.name || '')
@@ -193,10 +239,11 @@ async function playIndex() {
     }
   } catch (e) {
     console.warn(
-      `  ⚠ Play recency query failed (Play issues skipped): ${e.message}`,
+      `  ⚠ Play recency query failed. The passes close and reopen no Play issue: ${e.message}`,
     );
+    complete = false;
   }
-  return (_playIndex = idx);
+  return (_playIndex = {idx, complete});
 }
 
 // Recency for one issue, from its marker. Returns null if the source isn't
@@ -204,11 +251,11 @@ async function playIndex() {
 async function recencyFor(marker) {
   if (!marker) return null;
   if (marker.source === 'sentry') {
-    const idx = await sentryIndex();
+    const {idx} = await sentryIndex();
     return idx[marker.id] || null;
   }
   if (marker.source === 'play-vitals') {
-    const idx = await playIndex();
+    const {idx} = await playIndex();
     return idx[marker.id] || null;
   }
   // posthog / user-voice lanes: no cheap per-marker recency.
@@ -218,6 +265,30 @@ async function recencyFor(marker) {
 // Is this lane eligible for resolve-on-quiet at all? Only the telemetry lanes
 // whose signal can genuinely "go quiet" (a review is a fixed past event).
 const QUIET_ELIGIBLE = new Set(['sentry', 'play-vitals']);
+
+// Recency for a CLOSING pass (resolve-on-quiet, close-on-fix). Both passes read
+// "not in the index" as "quiet". That is true only when the index holds the
+// whole source. When the index is incomplete, return
+// `skip: true`: the caller must skip the issue and close nothing. Print one
+// warning line for each source in a run. A closing pass must call this
+// function, not recencyFor(). Other lanes have no index, so they never skip.
+export async function recencyForClose(marker) {
+  const source = marker && marker.source;
+  if (QUIET_ELIGIBLE.has(source)) {
+    const {complete} =
+      source === 'sentry' ? await sentryIndex() : await playIndex();
+    if (!complete) {
+      if (!_incompleteWarned.has(source)) {
+        _incompleteWarned.add(source);
+        console.warn(
+          `  ⚠ ${source} recency is incomplete (see the warnings above). resolve-on-quiet and close-on-fix skip every ${source} issue in this run.`,
+        );
+      }
+      return {rec: null, skip: true};
+    }
+  }
+  return {rec: await recencyFor(marker), skip: false};
+}
 
 function ghClose(num, comment) {
   if (DRY_RUN) return;
@@ -455,11 +526,12 @@ async function main() {
         );
         continue;
       }
-      const rec = await recencyFor(issue.marker);
+      const {rec, skip} = await recencyForClose(issue.marker);
+      if (skip) continue; // incomplete index: "not found" proves nothing
       // Conservatism: if we can't find the signal in the source at all, it may
       // be a stale/aged-out id (Play ids churn across windows). Treat
-      // "not found" as quiet ONLY for Sentry (where a missing shortId in a 90d
-      // pull is a strong quiet signal); for Play, a missing id is ambiguous
+      // "not found" as quiet ONLY for Sentry (where a missing shortId in the
+      // issue pull is a strong quiet signal); for Play, a missing id is ambiguous
       // (the id may have rotated) → skip, don't close.
       let quiet, lastSeenMs;
       if (rec) {
@@ -514,7 +586,8 @@ async function main() {
         );
         continue;
       }
-      const rec = await recencyFor(issue.marker);
+      const {rec, skip} = await recencyForClose(issue.marker);
+      if (skip) continue; // incomplete index: "signal gone" proves nothing
       // Close when: no recency (signal gone) OR last seen is quiet OR (Play) the
       // newest affected build is below the fix version (so it only persists on
       // pre-fix builds).

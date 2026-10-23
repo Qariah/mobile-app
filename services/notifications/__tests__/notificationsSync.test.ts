@@ -12,6 +12,7 @@ import {
   type NotificationsSyncDeps,
 } from '../notificationsSync';
 import {KAHF_FRIDAY_TRIGGER} from '../scheduler';
+import {CONTINUE_LISTENING_LAST_PLAY_KEY} from '../continueListeningStore';
 import type {
   KeyValueStorage,
   NotificationPermissionStatus,
@@ -361,6 +362,79 @@ describe('syncNotifications', () => {
     } finally {
       __setNotificationAnalyticsSinkForTests(null);
     }
+  });
+
+  describe('the stored play of "continue listening" (TECH_DEBT #330)', () => {
+    const STORED = JSON.stringify({
+      v: 1,
+      track: {reciterId: 'r1', reciterName: 'Z', surahId: 18, rewayatId: 'w1'},
+      playedAt: 1,
+      fireAt: 2,
+    });
+    const withRecord = () =>
+      memoryStorage({[CONTINUE_LISTENING_LAST_PLAY_KEY]: STORED});
+
+    it('removes it when the sync cancels the notice (the toggle off, no permission)', async () => {
+      for (const [permission, toggles] of [
+        ['granted', prefs({continue_listening: false})],
+        ['denied', prefs()],
+        ['undetermined', prefs()],
+      ] as const) {
+        const storage = withRecord();
+        await syncNotifications(
+          'boot',
+          deps(fakeNotifier(permission), {
+            readPrefs: async () => toggles,
+            storage,
+          }),
+        );
+        expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+          false,
+        );
+      }
+    });
+
+    it('removes it when the native cancel fails', async () => {
+      const storage = withRecord();
+      const notifier = fakeNotifier('denied');
+      notifier.cancelByType.mockRejectedValue(new Error('native'));
+      const result = await syncNotifications('boot', deps(notifier, {storage}));
+      expect(result.continueCancelled).toBe(false);
+      expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(false);
+    });
+
+    it.each([
+      ['after the notify side ran', {[NOTIFICATIONS_WERE_ACTIVE_KEY]: '1'}],
+      ['when the notify side never ran', {}],
+    ])('the holdout removes it (%s)', async (_label, initial) => {
+      const storage = memoryStorage({
+        ...initial,
+        [CONTINUE_LISTENING_LAST_PLAY_KEY]: STORED,
+      });
+      await syncNotifications(
+        'boot',
+        deps(fakeNotifier(), {isHoldout: () => true, storage}),
+      );
+      expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(false);
+    });
+
+    it('keeps it while the toggle is on and the permission is granted (the boot step schedules it)', async () => {
+      const storage = withRecord();
+      const notifier = fakeNotifier();
+      await syncNotifications('boot', deps(notifier, {storage}));
+      expect(storage.values.get(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(STORED);
+      // The sync itself schedules only the Al-Kahf reminder.
+      expect([...notifier.scheduled.keys()]).toEqual(['kahf_friday']);
+    });
+
+    it('keeps it when the toggles could not be read', async () => {
+      const storage = withRecord();
+      await syncNotifications(
+        'boot',
+        deps(fakeNotifier('denied'), {readPrefs: async () => null, storage}),
+      );
+      expect(storage.values.get(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(STORED);
+    });
   });
 
   it('tells the listeners, and never rejects', async () => {

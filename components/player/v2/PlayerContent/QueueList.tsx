@@ -23,6 +23,7 @@ import {
   getTrackDisplayTitle,
   getTrackArtistDisplay,
 } from '@/i18n/format';
+import {trackArtworkUrl} from '@/utils/trackArtworkUrl'; // TECH_DEBT #262
 // @ai-end
 
 interface UploadQueueItemProps {
@@ -88,6 +89,7 @@ const UploadQueueItem: React.FC<UploadQueueItemProps> = React.memo(
       <Pressable style={uploadQueueStyles.container} onPress={onPress}>
         {track.reciterName && track.reciterName !== 'My Recitations' ? (
           <ReciterImage
+            imageUrl={trackArtworkUrl(track)} // @ai TECH_DEBT #262
             reciterName={track.reciterName}
             style={uploadQueueStyles.reciterImage}
           />

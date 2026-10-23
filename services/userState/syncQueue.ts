@@ -53,7 +53,7 @@ export interface FlushResult {
  * to a single network roundtrip — important when a burst of favorites toggles
  * each fires its own enqueue.
  */
-export function scheduleSyncFlush(reason: string = 'manual'): void {
+export function scheduleSyncFlush(reason = 'manual'): void {
   const now = Date.now();
   // If a flush is already in-flight, don't pile on; the next post-flush
   // schedule (from syncBus.flushScheduler) will catch the new writes.
@@ -75,13 +75,11 @@ export function scheduleSyncFlush(reason: string = 'manual'): void {
  * Drains the queue. Returns a summary; never throws (errors per-row are
  * logged + recorded in sync_queue.last_error).
  */
-export async function flushSyncQueue(
-  reason: string = 'manual',
-): Promise<FlushResult> {
+export async function flushSyncQueue(reason = 'manual'): Promise<FlushResult> {
   if (inFlight) return inFlight;
   inFlight = (async () => {
     if (__DEV__) console.log(`[userState/syncQueue] flush start (${reason})`);
-    let result: FlushResult = {
+    const result: FlushResult = {
       attempted: 0,
       succeeded: 0,
       retryable: 0,

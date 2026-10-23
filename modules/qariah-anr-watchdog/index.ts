@@ -49,8 +49,18 @@ export function addMainThreadStallListener(
   cb: (event: MainThreadStallEvent) => void,
 ): {remove(): void} {
   try {
-    return native?.addListener('onMainThreadStall', cb) ?? {remove() {}};
+    return (
+      native?.addListener('onMainThreadStall', cb) ?? {
+        remove() {
+          // There is no listener to remove.
+        },
+      }
+    );
   } catch {
-    return {remove() {}};
+    return {
+      remove() {
+        // There is no listener to remove.
+      },
+    };
   }
 }

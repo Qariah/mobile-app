@@ -79,6 +79,13 @@ const REPO_ROOT = path.resolve(
 /** The only reciter field that this transform changes. */
 export const ALLOWED_FIELDS = ['rewayat'];
 
+/**
+ * The only rewayah field that this transform changes. Inside `rewayat`,
+ * scripts/catalog-r2-mutate.mjs refuses any other changed rewayah field, for
+ * example `surah_list` (TECH_DEBT #326).
+ */
+export const ALLOWED_REWAYAH_FIELDS = ['surah_metadata'];
+
 export const FETCH_TIMEOUT_MS = 30_000;
 export const FETCH_CONCURRENCY = 4;
 const FETCH_TRIES = 3;
@@ -614,6 +621,7 @@ export default async function transform(reciters) {
   return {
     reciters: out,
     allowedFields: ALLOWED_FIELDS,
+    allowedRewayahFields: ALLOWED_REWAYAH_FIELDS,
     summary: `added_at backfill (Sprint 48): ${formatReport(report, fetchInfo).join(' | ')}`,
     report,
     fetchInfo,

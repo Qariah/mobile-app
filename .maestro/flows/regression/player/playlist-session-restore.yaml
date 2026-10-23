@@ -89,14 +89,8 @@ tags:
     id: 'mini-player-play-pause'
 - tapOn:
     id: 'mini-player-expand'
-# Android only: on iOS the full player sheet is one opaque a11y element ("Bottom
-# Sheet"), so Maestro cannot read the elapsed time there. On iOS this flow runs the
-# restore path but cannot see the defect; the iOS proof for #271 compares two
-# screenshots of the full player instead.
-- runFlow:
-    when:
-      platform: Android
-    commands:
-      - extendedWaitUntil:
-          visible: '0:(3[5-9]|[4-5][0-9])'
-          timeout: 60000
+# Both platforms since Sprint 50: before it, the iOS full player sheet was one opaque
+# a11y element ("Bottom Sheet"), and the elapsed-time check ran on Android only.
+- extendedWaitUntil:
+    visible: '0:(3[5-9]|[4-5][0-9])'
+    timeout: 60000

@@ -262,7 +262,9 @@ function onMemoryPressure(
       extra: {...stats, last_pss_mb: lastUsedMB},
     });
     // Confined flush — the device may OOM right after this fires.
-    void Sentry.flush().catch(() => {});
+    void Sentry.flush().catch(() => {
+      // Report only. A failed flush needs no action.
+    });
   } catch {
     // report-only — must never throw from a pressure callback
   }
@@ -371,7 +373,11 @@ function syncMemoryProbe(): void {
  * extra resolution is wanted and overhead is acceptable).
  */
 export function startMemoryWatch(): () => void {
-  if (started) return () => {};
+  if (started) {
+    return () => {
+      // The first call already started the watch. It owns the stop function.
+    };
+  }
   started = true;
   void captureMemorySnapshot('boot');
   // S35.2 — (re)evaluate the memory probe at boot (diagnostic builds enable it

@@ -46,8 +46,9 @@ interface NoteData {
 }
 
 // @ai-start
-const NotesScreen = () => {
-  if (!isFeatureEnabled('verseNotes')) return null;
+// The flag check is in the outer component. The inner component calls its
+// hooks on every render, so the rules of hooks hold (TECH_DEBT #236).
+const NotesScreenContent = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -392,6 +393,9 @@ const NotesScreen = () => {
     </View>
   );
 };
+
+const NotesScreen = () =>
+  isFeatureEnabled('verseNotes') ? <NotesScreenContent /> : null;
 // @ai-end
 
 export default NotesScreen;

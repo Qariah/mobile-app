@@ -38,7 +38,17 @@
     "sharePage": "Share page",
     "removeFromQueue": "Remove from queue",
     "playRecitation": "Play {{surah}} by {{reciter}}",
-    "playRecitationRange": "Play {{surah}}, {{range}}, by {{reciter}}"
+    "playRecitationRange": "Play {{surah}}, {{range}}, by {{reciter}}",
+    "player": {
+      "previous": "Previous",
+      "skipBack": "Skip back {{seconds}} seconds",
+      "skipForward": "Skip forward {{seconds}} seconds",
+      "position": "Playback position",
+      "repeatOff": "Off",
+      "repeatQueue": "Queue",
+      "repeatTrack": "Current recitation",
+      "positionValue": "{{position}} of {{duration}}"
+    }
   },
   "listenTop": {
     "eyebrow": "START LISTENING",

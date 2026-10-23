@@ -13,6 +13,8 @@
     "web": "expo start --web",
     "test": "jest --watchAll",
     "test:ci": "jest --watchAll=false --ci --reporters=default",
+    "test:scripts": "node --test scripts/__tests__/*.test.mjs",
+    "typecheck": "node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit",
     "test:widget-fixtures": "bash scripts/check-widget-fixtures.sh && bash scripts/check-widget-system-surfaces.sh && bash scripts/check-widget-content.sh",
     "generate:widget-data": "tsx scripts/generate-widget-data.ts",
     "check:rewayah-manifest": "node scripts/rewayah/gen-manifest.mjs --check",

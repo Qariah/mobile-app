@@ -15,6 +15,7 @@ import {
 // @ai-start
 import {localizeDigits} from '@/i18n/format';
 import {forceLTR} from '@/utils/rtl';
+import {useTranslation} from 'react-i18next'; // Qariah: the control labels
 // @ai-end
 
 const SEEK_INTERVAL = 15; // seconds
@@ -22,6 +23,7 @@ const SEEK_INTERVAL = 15; // seconds
 // @ai-start
 export const Controls = () => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['common', 'qariah']); // @ai Qariah: the control labels
   const {play, pause, skipToNext, skipToPrevious, seekTo} = usePlayerActions();
   const playbackState = usePlayerStore(s => s.playback.state);
   const playbackPosition = usePlayerStore(s => s.playback.position);
@@ -87,12 +89,18 @@ export const Controls = () => {
   }, [trackLoading, playbackPosition, seekTo]);
 
   const isLastTrack = currentIndex === tracksLength - 1;
+  const seekSeconds = localizeDigits(SEEK_INTERVAL); // @ai
 
   return (
     <View style={[styles.container, forceLTR]}>
       <Pressable
         onPress={handleSeekBackward}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('qariah:a11y.player.skipBack', {
+          seconds: seekSeconds,
+        })} // @ai
+        testID="player-skip-back" // @ai
         style={trackLoading && styles.disabledButton}>
         <View style={styles.seekBackwardContainer}>
           <SeekBackwardIcon
@@ -118,6 +126,9 @@ export const Controls = () => {
         <Pressable
           onPress={handlePrevious}
           style={[styles.sideButton, trackLoading && styles.disabledButton]}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('qariah:a11y.player.previous')} // @ai
+          testID="player-previous" // @ai
           disabled={trackLoading}>
           <PreviousIcon
             color={
@@ -130,6 +141,11 @@ export const Controls = () => {
           <Pressable
             onPress={handlePlayPause}
             disabled={trackLoading}
+            accessibilityRole="button" // @ai
+            accessibilityLabel={
+              optimisticIsPlaying ? t('actions.pause') : t('actions.play')
+            } // @ai the label follows the icon
+            testID="player-play-pause" // @ai
             style={styles.playPauseButton}>
             {optimisticIsPlaying ? (
               <PauseIcon color={theme.colors.text} size={moderateScale(32)} />
@@ -141,6 +157,9 @@ export const Controls = () => {
         <Pressable
           onPress={handleNext}
           style={[styles.sideButton, isLastTrack && styles.disabledButton]}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('actions.next')} // @ai
+          testID="player-next" // @ai
           disabled={isLastTrack || trackLoading}>
           <NextIcon
             color={isLastTrack ? theme.colors.textSecondary : theme.colors.text}
@@ -151,6 +170,11 @@ export const Controls = () => {
       <Pressable
         onPress={handleSeekForward}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('qariah:a11y.player.skipForward', {
+          seconds: seekSeconds,
+        })} // @ai
+        testID="player-skip-forward" // @ai
         style={trackLoading && styles.disabledButton}>
         <View style={styles.seekForwardContainer}>
           <SeekForwardIcon

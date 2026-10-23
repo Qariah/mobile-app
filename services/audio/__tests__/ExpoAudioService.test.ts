@@ -122,6 +122,21 @@ class FakeAudioPlayer {
     this.emitStatus(false);
     this.emitStatus(true);
   }
+
+  // @ai QP-07: iOS (expo-audio AudioPlayer.swift) sends no isLoaded:false
+  // after replace(). It sends one isLoaded:true when the new item is ready.
+  simulateReadyOnly(durationSec: number) {
+    this.isLoaded = true;
+    this.duration = durationSec;
+    this.emitStatus(true);
+  }
+
+  // @ai QP-07: the `error` status that expo-audio sends for a failed source.
+  simulateErrorStatus() {
+    for (const cb of [...this.statusListeners]) {
+      cb({error: 'Source error'} as unknown as FakeStatus);
+    }
+  }
 }
 
 /**
@@ -479,6 +494,129 @@ describe('ExpoAudioService — Group A characterization', () => {
     expect(player.play).not.toHaveBeenCalled();
     expect(service.getPlaybackState()).toBe('ready');
   });
+
+  // @ai-start QP-07 (Sprint 50, the test iPhone). On iOS, expo-audio sends
+  // no isLoaded:false after replace(). It sends one isLoaded:true when the
+  // item is ready, and no other status while the player has never played (the
+  // periodic status starts at the first play). On a cold start, the restore
+  // load is the first source of a new player. waitForLoaded() ignored an
+  // isLoaded:true in its first 500 ms as a possible status of an earlier
+  // source, so a source that was ready in less than 500 ms waited for the 5 s
+  // timeout, and a tap on Play during the restore played about 5 s late.
+  it('L1: the first load of a new player ends at its first isLoaded:true, with no isLoaded:false before it', async () => {
+    jest.useFakeTimers();
+    try {
+      const {service, player} = makeService();
+      const url = 'https://cdn.example.test/first.mp3';
+      player.replace.mockImplementationOnce(async () => {
+        player.isLoaded = false;
+        setTimeout(() => player.simulateReadyOnly(60), 50);
+      });
+
+      const load = service.loadTrack(url);
+      const settled = jest.fn();
+      load.then(settled, settled);
+      await jest.advanceTimersByTimeAsync(60);
+
+      expect(settled).toHaveBeenCalled();
+      expect(service.holdsSource(url)).toBe(true);
+      expect(service.getPlaybackState()).toBe('ready');
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('L2: a later load of the same player still ignores an early isLoaded:true with no isLoaded:false (it can be a status of the earlier source)', async () => {
+    jest.useFakeTimers();
+    try {
+      const {service, player} = makeService();
+      player.replace.mockImplementationOnce(async () => {
+        player.isLoaded = false;
+        setTimeout(() => player.simulateLoaded(60), 0);
+      });
+      const first = service.loadTrack('https://cdn.example.test/a.mp3');
+      await jest.advanceTimersByTimeAsync(1);
+      await first;
+
+      const url = 'https://cdn.example.test/b.mp3';
+      player.replace.mockImplementationOnce(async () => {
+        setTimeout(() => player.simulateReadyOnly(90), 50);
+      });
+      const load = service.loadTrack(url);
+      const settled = jest.fn();
+      load.then(settled, settled);
+
+      await jest.advanceTimersByTimeAsync(60);
+      expect(settled).not.toHaveBeenCalled();
+      expect(service.holdsSource(url)).toBe(false);
+
+      // The 5 s load timeout ends the wait (a timed-out load counts as held).
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(settled).toHaveBeenCalled();
+      expect(service.holdsSource(url)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('L3: the first load of a new player ends at once on an error status, with no isLoaded:false before it', async () => {
+    jest.useFakeTimers();
+    try {
+      const {service, player} = makeService();
+      const url = 'https://cdn.example.test/missing.mp3';
+      player.replace.mockImplementationOnce(async () => {
+        setTimeout(() => player.simulateErrorStatus(), 50);
+      });
+
+      const load = service.loadTrack(url);
+      const settled = jest.fn();
+      load.then(settled, settled);
+      await jest.advanceTimersByTimeAsync(60);
+
+      expect(settled).toHaveBeenCalled();
+      expect(service.holdsSource(url)).toBe(false);
+      expect(service.getPlaybackState()).toBe('error');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('L4: a later load of the same player keeps an early error status with no isLoaded:false pending, and ends as an error at the 5 s timeout', async () => {
+    jest.useFakeTimers();
+    try {
+      const {service, player} = makeService();
+      player.replace.mockImplementationOnce(async () => {
+        player.isLoaded = false;
+        setTimeout(() => player.simulateLoaded(60), 0);
+      });
+      const first = service.loadTrack('https://cdn.example.test/a.mp3');
+      await jest.advanceTimersByTimeAsync(1);
+      await first;
+
+      const url = 'https://cdn.example.test/b.mp3';
+      player.replace.mockImplementationOnce(async () => {
+        setTimeout(() => player.simulateErrorStatus(), 50);
+      });
+      const load = service.loadTrack(url);
+      const settled = jest.fn();
+      load.then(settled, settled);
+
+      // The error can belong to the earlier source: the wait goes on.
+      await jest.advanceTimersByTimeAsync(60);
+      expect(settled).not.toHaveBeenCalled();
+
+      // No isLoaded:false came, so at the timeout the load counts as failed.
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(settled).toHaveBeenCalled();
+      expect(service.holdsSource(url)).toBe(false);
+      expect(service.getPlaybackState()).toBe('error');
+      expect(service.getLastError()?.message).toContain(url);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  // @ai-end
 
   // ---------------------------------------------------------------- A3 ---
   it('A3: loadTrack(url) happy path — state idle → loading → ready', async () => {

@@ -114,7 +114,9 @@ export async function pushLocalNoteToQf(
     if (opts.publish) {
       await verseAnnotationService
         .patchNoteQfIds(localNote.id, {qfPostId: null})
-        .catch(() => {});
+        .catch(() => {
+          // Best effort. The next line throws the original error.
+        });
     }
     throw e;
   }
@@ -134,7 +136,9 @@ export async function pushLocalNoteToQf(
           qfNoteId: qf.id,
           qfPostId: null,
         })
-        .catch(() => {});
+        .catch(() => {
+          // Best effort. The next line throws the original error.
+        });
       throw e;
     }
   }

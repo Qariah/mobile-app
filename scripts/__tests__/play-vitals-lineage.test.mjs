@@ -7,9 +7,9 @@
 // classifyAppLineage() function exported from play-vitals-triage.mjs.
 //
 // Run:  node --test scripts/__tests__/play-vitals-lineage.test.mjs
-// Or:   npx jest (Jest picks up the file if extensionsToTreatAsEsm is set —
-//       but the node:test runner is the primary harness for this .mjs file,
-//       matching the node --check / dry-run verification pattern used elsewhere).
+// Or:   npm run test:scripts (all the *.test.mjs files in this folder).
+//       Jest does not collect .mjs files. CI runs `npm run test:scripts` in
+//       .github/workflows/test.yml (TECH_DEBT #175).
 //
 // These tests guard the core requirement: the v1/v2/unknown lineage classifier
 // must NOT use versionCode as the primary discriminator (v1 reached vc1255,

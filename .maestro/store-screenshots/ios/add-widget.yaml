@@ -1,0 +1,40 @@
+# iOS simulator Home Screen: add one Qariah widget. Env SWIPES = the gallery
+# page of the widget (0 Continue Listening S, 1 M, 2 L, 3 Continue Reading S,
+# 4 M, 5 Quick Surah S, 6 M, 7 Ayah of the Day S, 8 M, 9 L). A new widget goes
+# to the top of the page, so add the lowest widget first.
+# The gallery's Qariah row has no accessibility label: the flow taps its place.
+appId: com.apple.springboard
+---
+- pressKey: home
+- longPressOn:
+    point: 50%,70%
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: 'Edit'
+- tapOn: 'Add Widget'
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: 'Search Widgets'
+- eraseText: 20
+- inputText: 'Qariah'
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    point: 27%,28%
+- waitForAnimationToEnd:
+    timeout: 2000
+- repeat:
+    times: ${SWIPES}
+    commands:
+      - swipe:
+          start: 85%,55%
+          end: 15%,55%
+          duration: 400
+      - waitForAnimationToEnd:
+          timeout: 1500
+- tapOn: '.*Add Widget'
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: 'Done'
+- waitForAnimationToEnd:
+    timeout: 2000

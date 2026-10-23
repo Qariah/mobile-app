@@ -277,8 +277,9 @@ const UploadListItem: React.FC<UploadListItemProps> = React.memo(
 UploadListItem.displayName = 'UploadListItem';
 
 // @ai-start
-export default function UploadsScreen() {
-  if (!isFeatureEnabled('userUploads')) return null;
+// The flag check is in the outer component. The inner component calls its
+// hooks on every render, so the rules of hooks hold (TECH_DEBT #236).
+function UploadsScreenContent() {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -644,6 +645,10 @@ export default function UploadsScreen() {
       )}
     </View>
   );
+}
+
+export default function UploadsScreen() {
+  return isFeatureEnabled('userUploads') ? <UploadsScreenContent /> : null;
 }
 // @ai-end
 

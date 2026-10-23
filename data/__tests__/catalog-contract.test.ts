@@ -157,6 +157,91 @@ describe('catalog data contract (assets/data/catalog.json)', () => {
     expect(offenders).toEqual([]);
   });
 
+  // Sprint 50 (TECH_DEBT #70): `audio_path: 'suffixed'` sends the app to
+  // `{server}/{surah}-{from}-{to}.mp3` (utils/recitationAudioUrl.ts). That URL
+  // needs a partial row with an integer range. A row that breaks this rule
+  // plays the legacy path, which can be silent.
+  function audioPathProblems(reciters: any[]): string[] {
+    const offenders: string[] = [];
+    for (const r of reciters) {
+      for (const rw of r.rewayat ?? []) {
+        for (const m of Array.isArray(rw.surah_metadata)
+          ? rw.surah_metadata
+          : []) {
+          if (!m || m.audio_path === undefined) continue;
+          const where = `${r.slug} / ${rw.name} / surah ${m.surah}`;
+          const range = m.range;
+          if (m.audio_path !== 'suffixed') {
+            offenders.push(
+              `${where}: audio_path ${JSON.stringify(m.audio_path)}`,
+            );
+          } else if (m.is_full !== false) {
+            offenders.push(`${where}: audio_path on a complete surah`);
+          } else if (
+            !range ||
+            !Number.isInteger(range.from) ||
+            !Number.isInteger(range.to) ||
+            range.from < 1 ||
+            range.to < range.from
+          ) {
+            offenders.push(`${where}: range ${JSON.stringify(range)}`);
+          }
+        }
+      }
+    }
+    return offenders;
+  }
+
+  it("audio_path, when present, is 'suffixed' on a partial row with an integer range (S50, TECH_DEBT #70)", () => {
+    expect(audioPathProblems(catalog)).toEqual([]);
+  });
+
+  it('the audio_path check finds each bad row (S50, TECH_DEBT #70)', () => {
+    const rewaya = (surah_metadata: any[]) => ({
+      slug: 'x',
+      rewayat: [{name: 'Hafs', surah_metadata}],
+    });
+    expect(
+      audioPathProblems([
+        rewaya([
+          {
+            surah: 1,
+            is_full: false,
+            range: {from: 1, to: 7},
+            audio_path: 'suffixed',
+          },
+          {surah: 2, is_full: false, range: {from: 1, to: 5}},
+          {
+            surah: 3,
+            is_full: false,
+            range: {from: 1, to: 5},
+            audio_path: 'other',
+          },
+          {surah: 4, is_full: true, audio_path: 'suffixed'},
+          {surah: 5, is_full: false, audio_path: 'suffixed'},
+          {
+            surah: 6,
+            is_full: false,
+            range: {from: 9, to: 2},
+            audio_path: 'suffixed',
+          },
+          {
+            surah: 7,
+            is_full: false,
+            range: {from: '1', to: 5},
+            audio_path: 'suffixed',
+          },
+        ]),
+      ]),
+    ).toEqual([
+      'x / Hafs / surah 3: audio_path "other"',
+      'x / Hafs / surah 4: audio_path on a complete surah',
+      'x / Hafs / surah 5: range undefined',
+      'x / Hafs / surah 6: range {"from":9,"to":2}',
+      'x / Hafs / surah 7: range {"from":"1","to":5}',
+    ]);
+  });
+
   it('a complete surah row has no ayah range (S48)', () => {
     const offenders: string[] = [];
     for (const r of catalog) {

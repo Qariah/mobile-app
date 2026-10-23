@@ -1,0 +1,20 @@
+# Frame 2: browse all reciters.
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- tapOn: ${L_LISTEN}
+- tapOn: ${L_RECITERS}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 5000}
+- takeScreenshot: ${OUT}/02-reciters
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: ${L_BACK}

@@ -151,6 +151,10 @@ const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       handleComponent={CustomHandle}
       enableContentPanningGesture
       onClose={handleSheetClose}
+      // @ai Sprint 50: gorhom makes the whole sheet ONE accessibility element
+      // ("Bottom Sheet") by default. VoiceOver, TalkBack and UI tests then
+      // cannot reach the buttons in it. Expose the content instead.
+      accessible={false}
       // The elevated BottomSheet Body is a SEPARATE sibling from the backdrop
       // above; gorhom drops its touch-interactivity asynchronously too, so on
       // slow CPUs it can still swallow touches while the sheet is logically

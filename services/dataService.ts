@@ -17,6 +17,7 @@ import {isFeatureEnabled} from '@/config/featureFlags';
 // @ai-start
 import {rankSurahs} from '@/utils/search/catalog';
 import i18n from '@/i18n'; // @ai Qariah: formatAyahRange
+import {recitationAudioUrl} from '@/utils/recitationAudioUrl'; // Qariah (TECH_DEBT #70)
 // Qariah (Sprint 48): the network fills, for the notification check.
 import {markLiveCatalogLoaded} from '@/services/liveCatalogSignal';
 // @ai-end
@@ -469,18 +470,10 @@ export async function fetchAudioUrl(
     }
   }
 
-  const surahStr = surahId.toString().padStart(3, '0');
-
-  // NOTE: All 326 of today's partial recordings are stored at the unsuffixed
-  // path `{server}/{surah}.mp3` (legacy v1-migration convention — the v1 audio
-  // migration to R2 didn't preserve the range distinction in the key). The
-  // Sprint-19 ops console added a single-upload mode that *writes* partial
-  // uploads to the new suffixed path `{server}/{surah}-{from}-{to}.mp3`, but
-  // no production rows reference that path yet. When the first ops-console-
-  // uploaded partial lands in the live catalog, add an `audio_path?:
-  // 'suffixed'` flag on `SurahMetadata` and branch here on it — see
-  // TECH_DEBT #70 for the staged migration plan.
-  return rewriteAssetHost(`${rewayat.server}/${surahStr}.mp3`);
+  // Qariah (Sprint 50, TECH_DEBT #70): a partial with `audio_path: 'suffixed'`
+  // is at `{server}/{surah}-{from}-{to}.mp3`. Every other entry keeps
+  // `{server}/{surah}.mp3`.
+  return rewriteAssetHost(recitationAudioUrl(rewayat, surahId));
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

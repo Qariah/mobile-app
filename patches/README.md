@@ -29,3 +29,28 @@ Expo ships expo-audio prebuilt (an xcframework on iOS, an AAR in
 `package.json` sets `expo.autolinking.buildFromSource: ["expo-audio"]`.
 When upgrading expo-audio, regenerate the patch against the new version and
 keep that setting.
+
+# react-native-screens tab selection (QP-08)
+
+`react-native-screens+4.29.0.patch` is the iOS part of
+software-mansion/react-native-screens#4862, which is in 4.30.0. The patched
+`ios/tabs/host/RNSTabBarController.mm` is byte-identical to the upstream
+result.
+
+The defect is on iOS 26.1 and later. A Fabric mount transaction between
+`shouldSelectTab:` and `didSelectTab:` cleared the flag that marks a user
+selection. Then `didSelectTab:` sent no `onTabSelected`, and JS kept the
+previous tab as focused. expo-router gives each tab that JS does not think is
+focused `pointerEvents: 'none'`, so the visible tab took no touches.
+
+In the app, a change of the mini player (the tab-bar bottom accessory) causes
+that mount transaction. "Clear cache" empties the queue, so the accessory goes
+away and the safe area of each hidden tab changes. When the user selects such
+a tab, the iOS 26 `SafeAreaView` around its stack screen sends the new insets
+with an immediate state update. On the test iPhone (iOS 27), the Listen tab
+then ignored every tap until two more tab changes.
+
+`patches/__tests__/react-native-screens-tab-selection.test.ts` reads the
+installed source and fails when the fix is not there. The RNScreens pod builds
+from `node_modules`, so a rebuild compiles the patch. Remove the patch when
+react-native-screens is 4.30.0 or later. The test then still passes.

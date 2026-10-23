@@ -10,6 +10,7 @@ import {ReciterImage} from '@/components/ReciterImage';
 import Color from 'color';
 // @ai-start
 import {getTrackDisplayTitle, getTrackArtistDisplay} from '@/i18n/format';
+import {trackArtworkUrl} from '@/utils/trackArtworkUrl'; // TECH_DEBT #262
 // @ai-end
 
 interface TabletDockedPlayerProps {
@@ -77,6 +78,7 @@ export const TabletDockedPlayer: React.FC<TabletDockedPlayerProps> = React.memo(
           onPress={handlePress}
           style={[styles.compact, {backgroundColor: bg, borderColor: border}]}>
           <ReciterImage
+            imageUrl={trackArtworkUrl(currentTrack)} // @ai TECH_DEBT #262
             reciterName={currentTrack.reciterName}
             style={styles.artworkCompact}
           />
@@ -101,6 +103,7 @@ export const TabletDockedPlayer: React.FC<TabletDockedPlayerProps> = React.memo(
         onPress={handlePress}
         style={[styles.expanded, {backgroundColor: bg, borderColor: border}]}>
         <ReciterImage
+          imageUrl={trackArtworkUrl(currentTrack)} // @ai TECH_DEBT #262
           reciterName={currentTrack.reciterName}
           style={styles.artwork}
         />

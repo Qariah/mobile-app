@@ -1,6 +1,8 @@
 import type {ExpoConfig} from 'expo/config';
 
 import branding from './config/branding';
+// Qariah (TECH_DEBT #289): the one rule for the iOS App Group of a build.
+import {appGroupForBundleId} from './config/iosAppGroup';
 
 // Import version information from Git-based generator
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -38,6 +40,12 @@ const PRIVACY_POLICY_URL =
 // See services/auth/config.ts and planning/adr-qariah-0002-auth-and-user-state.md.
 const OAUTH_CALLBACK_SCHEME = 'com.qariah.app';
 
+// Qariah (TECH_DEBT #289, Sprint 50): the App Group of the app, the share
+// extension and the widget (`group.<bundle id>`, config/iosAppGroup.js). The
+// committed ios/ tree has the production value. scripts/ios-archive.sh --beta
+// rewrites it to the beta group for the archive and restores it on exit.
+const IOS_APP_GROUP = appGroupForBundleId(branding.bundleId.ios);
+
 const config: ExpoConfig = {
   name: branding.appName,
   slug: branding.appSlug,
@@ -69,8 +77,8 @@ const config: ExpoConfig = {
     infoPlist: {
       // Upstream Pass B (fca03eed, RFC-021): the App Group the widgets and the
       // Live Activity share with the app. Upstream reads IOS_BUNDLE_ID; Qariah
-      // derives it from branding (group.com.qariah.app).
-      BayaanAppGroup: `group.${branding.bundleId.ios}`,
+      // derives it from branding (group.com.qariah.app, IOS_APP_GROUP above).
+      BayaanAppGroup: IOS_APP_GROUP,
       NSSupportsLiveActivities: true,
       NSAppleMusicUsageDescription: 'This app uses Apple Music to play audio.',
       UILaunchStoryboardName: 'SplashScreen',
@@ -308,6 +316,12 @@ const config: ExpoConfig = {
     [
       'expo-share-intent',
       {
+        // Qariah (TECH_DEBT #289): the same value as the plugin's default
+        // (`group.<bundle id>`), set from the one rule in config/iosAppGroup.js.
+        // The plugin writes it to the app and share extension entitlements,
+        // to `AppGroupIdentifier` (which react-native-mmkv also reads) and to
+        // ShareViewController.swift.
+        iosAppGroupIdentifier: IOS_APP_GROUP,
         iosActivationRules: {
           NSExtensionActivationSupportsFileWithMaxCount: 10,
         },

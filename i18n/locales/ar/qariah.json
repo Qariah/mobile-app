@@ -38,7 +38,17 @@
     "sharePage": "مشاركة الصفحة",
     "removeFromQueue": "إزالة من قائمة الانتظار",
     "playRecitation": "تشغيل سورة {{surah}} بصوت {{reciter}}",
-    "playRecitationRange": "تشغيل سورة {{surah}}، {{range}}، بصوت {{reciter}}"
+    "playRecitationRange": "تشغيل سورة {{surah}}، {{range}}، بصوت {{reciter}}",
+    "player": {
+      "previous": "السابق",
+      "skipBack": "الرجوع {{seconds}} ثانية",
+      "skipForward": "التقدّم {{seconds}} ثانية",
+      "position": "موضع التشغيل",
+      "repeatOff": "معطّل",
+      "repeatQueue": "قائمة الانتظار",
+      "repeatTrack": "التلاوة الحالية",
+      "positionValue": "{{position}} من {{duration}}"
+    }
   },
   "listenTop": {
     "eyebrow": "ابدأ الاستماع",

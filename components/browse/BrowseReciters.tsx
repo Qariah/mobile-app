@@ -643,7 +643,10 @@ export default function BrowseReciters({
   const topOffset = useNativeHeader ? iosHeaderHeight : 0;
 
   return (
-    <TouchableWithoutFeedback onPress={handleOutsidePress}>
+    // @ai Sprint 50: a TouchableWithoutFeedback is one accessibility element by
+    // default, so VoiceOver read the whole screen as one item and could not reach
+    // a reciter card. Expose the content instead.
+    <TouchableWithoutFeedback onPress={handleOutsidePress} accessible={false}>
       <View style={styles.container}>
         {/* Android: custom Header; iOS: native Stack header handles this */}
         {!useNativeHeader && (

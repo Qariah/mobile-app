@@ -9,6 +9,14 @@ import {useRouter} from 'expo-router';
 import {flipX} from '@/utils/rtl';
 // @ai-end
 
+// @ai-start Qariah (TECH_DEBT #320): the width of the end icons (share and
+// search) from the screen edge: the edge margin 15, two icons of 20 and the
+// gap 16 between them, plus a gap of 8 before the title. The sticky title of
+// the profile pads each side by this value, so a long name does not run under
+// an icon. Keep it equal to the icons below; a test reads them.
+export const NAVIGATION_TITLE_INSET = moderateScale(15 + 20 + 16 + 20 + 8);
+// @ai-end
+
 interface NavigationButtonsProps {
   insets: {
     top: number;

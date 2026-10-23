@@ -1,0 +1,17 @@
+# Android (Pixel launcher): open the widget picker on the Qariah widgets.
+# Then drag a widget with adb (see README.md): the picker has no Add button.
+# Env PRESS: an empty point of the Home Screen for the long-press.
+appId: com.google.android.apps.nexuslauncher
+---
+- pressKey: home
+- longPressOn:
+    point: ${PRESS}
+- tapOn: 'Widgets'
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: 'Search'
+- inputText: 'Qariah'
+- hideKeyboard
+- tapOn: 'Ayah of the Day, Continue Listening.*'
+- waitForAnimationToEnd:
+    timeout: 2000

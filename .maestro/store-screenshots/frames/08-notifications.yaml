@@ -1,0 +1,41 @@
+# Frame 8, second choice: Settings -> Notifications (the five types).
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- runFlow: ../subflows/settings-root.yaml
+- scrollUntilVisible:
+    element: ${L_NOTIF_ROW}
+    direction: DOWN
+    timeout: 10000
+    centerElement: true
+- tapOn: ${L_NOTIF_ROW}
+- extendedWaitUntil:
+    visible:
+      id: 'notification-switch-kahf_friday'
+    timeout: 10000
+# Without the permission the page shows an "off" banner and grey switches:
+# allow notifications first (the system alert is in the device language).
+- runFlow:
+    when:
+      visible:
+        id: 'notifications-permission-button'
+    commands:
+      - tapOn:
+          id: 'notifications-permission-button'
+      - tapOn: 'Allow'
+      - waitForAnimationToEnd:
+          timeout: 2000
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/08-notifications
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: ${L_BACK}

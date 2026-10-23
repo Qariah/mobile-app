@@ -1,0 +1,13 @@
+# The newest upstream/develop commit that qariah-main contains (TECH_DEBT #236).
+#
+# scripts/lint-qariah-owned.mjs reads this SHA. A file that exists in the upstream
+# tree at this commit is an upstream file, and the blocking ESLint step skips
+# it. Every other tracked .js, .ts or .tsx file is Qariah-owned.
+#
+# Each upstream absorption PR updates this line. After the merge, run:
+#   git fetch upstream develop
+#   node scripts/lint-qariah-owned.mjs --update-pin
+# The command writes `git merge-base HEAD upstream/develop` below. Keep the
+# comment lines. The first line that is not a comment is the SHA, in full
+# (40 characters).
+5a813e238fa979e6fa4e0bf95c6300b48040745a

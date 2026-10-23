@@ -31,7 +31,9 @@ export function raceInitTimeout<T>(
       timedOut = true;
       // Detach from the loser: a post-timeout rejection must not surface as
       // an unhandled rejection after the boot has already moved on.
-      promise.catch(() => {});
+      promise.catch(() => {
+        // The race is over. Nothing reads this rejection.
+      });
       resolve(INIT_TIMED_OUT);
     }, ms);
   });

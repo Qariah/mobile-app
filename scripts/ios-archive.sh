@@ -5,8 +5,11 @@
 #
 #   --dry-run      Run the pre-flights and the variant patch, print the
 #                  identity the archive would build (bundle ids, display
-#                  names, App Group), then exit. No pod install, no archive,
-#                  no upload. The EXIT trap restores and verifies the files.
+#                  names, App Group), check the App IDs and App Groups in the
+#                  developer portal (read only), then exit. No pod install, no
+#                  archive, no upload. The EXIT trap restores and verifies the
+#                  files. Exit 1 when the portal does not allow a group (the
+#                  output gives the owner step).
 #
 # Variants:
 #   --beta         Internal beta: bundle id .beta suffix, BETA-banded icon,
@@ -58,6 +61,17 @@
 # identity is left (TECH_DEBT #178). See CONTRIBUTING-QARIAH.md → "Beta
 # TestFlight build" for the one-time App Store Connect + provisioning portal
 # setup.
+#
+# App Group (TECH_DEBT #289, Sprint 50): every archive uses the group of its
+# app bundle id, `group.<app bundle id>` (config/iosAppGroup.js). Production
+# and --public-beta keep `group.com.qariah.app` (the committed files). --beta
+# rewrites the app, share extension and widget files to
+# `group.com.qariah.app.beta` (scripts/ios-app-group.mjs apply), and, for one
+# release, gives the app the production group too, so that the app moves its
+# old data at the first launch (modules/qariah-app-group). The same EXIT trap
+# restores these files. Every run then checks, read only through the App
+# Store Connect API, that the portal allows these groups
+# (SKIP_ASC_GROUP_CHECK=1 skips the check).
 
 set -e
 # Make `set -e` honor pipeline failures. Without `pipefail`, a failing
@@ -239,6 +253,11 @@ PROD_WIDGET_BUNDLE_ID="${PROD_BUNDLE_ID}.widget"
 BETA_WIDGET_BUNDLE_ID="${BETA_BUNDLE_ID}.widget"
 BETA_DISPLAY_NAME="Qariah Beta"
 PUBLIC_BETA_DISPLAY_NAME="Qariah PB"
+# TECH_DEBT #289 (Sprint 50): the App Group tool and the beta's own group,
+# from the one rule in config/iosAppGroup.js (`group.<app bundle id>`).
+APP_GROUP_TOOL="$SCRIPT_DIR/ios-app-group.mjs"
+BETA_APP_GROUP="$(node "$APP_GROUP_TOOL" resolve --bundle-id "$BETA_BUNDLE_ID" --field group)"
+LEGACY_GROUP_KEY="QariahLegacyAppGroup"
 
 # Absolute, because the EXIT trap below restores these files and a trap can fire
 # from a different working directory than the one that set it (a failing
@@ -262,14 +281,23 @@ for file in "$REPO_ROOT"/ios/Qariah/Supporting/*.lproj/InfoPlist.strings; do
         LOCALIZED_NAME_FILES+=("$file")
     fi
 done
-# The files the variant patch rewrites, in restore order.
-VARIANT_FILES=("$INFO_PLIST" "${LOCALIZED_NAME_FILES[@]}" "$ICON_TINTED" "$ICON_DARK" "$ICON_LIGHT" "$PBXPROJ")
-# The App Group files (Sprint 46, B2): see check_app_groups below.
+# The App Group files (Sprint 46 B2; TECH_DEBT #289): the --beta patch
+# rewrites them (scripts/lib/ios-app-group.mjs FILES), with Info.plist and
+# the pbxproj above.
 APP_ENTITLEMENTS="$REPO_ROOT/ios/Qariah/Qariah.entitlements"
+SHARE_INFO_PLIST="$REPO_ROOT/ios/ShareExtension/ShareExtension-Info.plist"
 SHARE_ENTITLEMENTS="$REPO_ROOT/ios/ShareExtension/ShareExtension.entitlements"
+SHARE_SWIFT="$REPO_ROOT/ios/ShareExtension/ShareViewController.swift"
 WIDGET_ENTITLEMENTS="$REPO_ROOT/ios/.targets/BayaanWidgetsExtension/generated.entitlements"
-WIDGET_INFO_PLIST="$REPO_ROOT/targets/widgets/Info.plist"
-RECOVERY_CMD="git -C \"$REPO_ROOT\" checkout -- ios/Qariah.xcodeproj/project.pbxproj ios/Qariah/Info.plist ios/Qariah/Supporting ios/Qariah/Images.xcassets/AppIcon.appiconset"
+GROUP_FILES=()
+for file in "$APP_ENTITLEMENTS" "$SHARE_INFO_PLIST" "$SHARE_ENTITLEMENTS" "$SHARE_SWIFT" "$WIDGET_ENTITLEMENTS"; do
+    if [ -f "$file" ]; then
+        GROUP_FILES+=("$file")
+    fi
+done
+# The files the variant patch rewrites, in restore order.
+VARIANT_FILES=("$INFO_PLIST" "${LOCALIZED_NAME_FILES[@]}" "$ICON_TINTED" "$ICON_DARK" "$ICON_LIGHT" "${GROUP_FILES[@]}" "$PBXPROJ")
+RECOVERY_CMD="git -C \"$REPO_ROOT\" checkout -- ios/Qariah.xcodeproj/project.pbxproj ios/Qariah/Info.plist ios/Qariah/Qariah.entitlements ios/Qariah/Supporting ios/Qariah/Images.xcassets/AppIcon.appiconset ios/ShareExtension ios/.targets/BayaanWidgetsExtension/generated.entitlements"
 
 # TECH_DEBT #178 (a), Sprint 46. Prints one line for each sign of a beta
 # identity in the tree: a leftover backup, a beta bundle id, a beta display
@@ -300,40 +328,27 @@ identity_problems() {
         cmp -s "$ICON_TINTED" "$REPO_ROOT/assets/branding/ios-tinted-$variant.png" &&
             echo "  - the tinted AppIcon is the $variant icon"
     done
+    # TECH_DEBT #289: the beta App Group and the key of the beta data move.
+    for file in "$INFO_PLIST" "${GROUP_FILES[@]}" "$PBXPROJ"; do
+        grep -qF "$BETA_APP_GROUP" "$file" 2>/dev/null &&
+            echo "  - ${file#$REPO_ROOT/} has the beta App Group $BETA_APP_GROUP"
+    done
+    grep -qF "<key>$LEGACY_GROUP_KEY</key>" "$INFO_PLIST" 2>/dev/null &&
+        echo "  - ios/Qariah/Info.plist has the beta key $LEGACY_GROUP_KEY"
     return 0
 }
 
-# Sprint 46 (B2): the app, the share extension and the widget must share one
-# App Group, or the widget reads an empty container (no snapshot, no command
-# queue). The app reads its BayaanAppGroup Info.plist key. The widget reads
-# its own BayaanAppGroup key, which expands the BAYAAN_APP_GROUP build setting
-# (plugins/withBayaanWidgets.js). Without that key the widget derives
-# `group.<its bundle id minus .widget>`, which is `group.com.qariah.app.beta`
-# after the --beta rewrite. Prints one line for each mismatch.
+# Sprint 46 (B2) and TECH_DEBT #289: the app, the share extension and the
+# widget must use the App Group of the archive's app bundle id, or the widget
+# reads an empty container (no snapshot, no command queue) and the share
+# extension writes where the app does not read. The app reads its
+# AppGroupIdentifier (react-native-mmkv, expo-share-intent) and BayaanAppGroup
+# (widgets) Info.plist keys. The widget reads its own BayaanAppGroup key, which
+# expands the BAYAAN_APP_GROUP build setting (plugins/withBayaanWidgets.js).
+# The checks are in scripts/lib/ios-app-group.mjs (checkAppGroup). Prints one
+# line for each mismatch, and returns 1 when there is one.
 check_app_groups() {
-    local group
-    group="$(/usr/libexec/PlistBuddy -c 'Print :BayaanAppGroup' "$INFO_PLIST" 2>/dev/null || true)"
-    if [ -z "$group" ]; then
-        echo "  - ios/Qariah/Info.plist has no BayaanAppGroup key"
-        return 0
-    fi
-    grep -qF "<string>$group</string>" "$APP_ENTITLEMENTS" 2>/dev/null ||
-        echo "  - ios/Qariah/Qariah.entitlements does not allow $group"
-    if [ -f "$SHARE_ENTITLEMENTS" ]; then
-        grep -qF "<string>$group</string>" "$SHARE_ENTITLEMENTS" ||
-            echo "  - ios/ShareExtension/ShareExtension.entitlements does not allow $group"
-    fi
-    if grep -qF 'INFOPLIST_FILE = ../targets/widgets/Info.plist;' "$PBXPROJ"; then
-        grep -qF "<string>$group</string>" "$WIDGET_ENTITLEMENTS" 2>/dev/null ||
-            echo "  - the widget entitlements do not allow $group"
-        grep -qF '<string>$(BAYAAN_APP_GROUP)</string>' "$WIDGET_INFO_PLIST" 2>/dev/null ||
-            echo "  - targets/widgets/Info.plist has no BayaanAppGroup = \$(BAYAAN_APP_GROUP) key"
-        local settings
-        settings="$(grep -E '^[[:space:]]*BAYAAN_APP_GROUP = ' "$PBXPROJ" | sed -E 's/^[[:space:]]*BAYAAN_APP_GROUP = "?([^";]*)"?;/\1/' | sort -u)"
-        [ "$settings" = "$group" ] ||
-            echo "  - the widget BAYAAN_APP_GROUP build setting is \"${settings:-<missing>}\", not $group (run prebuild)"
-    fi
-    return 0
+    node "$APP_GROUP_TOOL" check --root "$REPO_ROOT" --bundle-id "$1"
 }
 VARIANT_SUFFIX=""
 if [ "$BETA" = true ]; then
@@ -602,7 +617,7 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
             echo "   (then re-run VERIFY_FIX=1 if the archive needs the version sync again)"
             exit 1
         fi
-        echo -e "${YELLOW}🔁 Restored and verified the prod identity (pbxproj + Info.plist + icons).${NC}"
+        echo -e "${YELLOW}🔁 Restored and verified the prod identity (pbxproj + Info.plist + icons + App Group files).${NC}"
         exit "$status"
     }
     trap restore_variant_identity EXIT
@@ -637,6 +652,13 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
             exit 1
         fi
         echo -e "${YELLOW}🧬 Patched $PBXPROJ:${NC} ${PROD_BUNDLE_ID} → ${BETA_BUNDLE_ID} (+ share and widget extensions)"
+
+        # TECH_DEBT #289 (Sprint 50): the beta's own App Group for the app,
+        # the share extension and the widget. For one release the app also
+        # gets the production group (read only) and the QariahLegacyAppGroup
+        # key, so it moves its old data at the first launch.
+        echo -e "${YELLOW}🧬 App Group → ${BETA_APP_GROUP}:${NC}"
+        node "$APP_GROUP_TOOL" apply --root "$REPO_ROOT" --bundle-id "$BETA_BUNDLE_ID"
     fi
 
     cp "$REPO_ROOT/assets/branding/ios-light-${ICON_VARIANT_SUFFIX}.png" "$ICON_LIGHT"
@@ -659,16 +681,46 @@ if [ "$BETA" = true ] || [ "$PUBLIC_BETA" = true ]; then
     echo -e "${YELLOW}🏷️  Patched CFBundleDisplayName -> ${DISPLAY_NAME} (app + widget + ${#LOCALIZED_NAME_FILES[@]} localized)${NC}"
 fi
 
-# Sprint 46 (B2): one App Group for the app and its extensions, for every
-# variant (see check_app_groups above).
-GROUP_PROBLEMS="$(check_app_groups)"
-if [ -n "$GROUP_PROBLEMS" ]; then
-    echo -e "${RED}❌ The app and its extensions do not share one App Group:${NC}"
+# Sprint 46 (B2) and TECH_DEBT #289: one App Group for the app and its
+# extensions, the group of the archive's app bundle id, for every variant (see
+# check_app_groups above).
+ARCHIVE_BUNDLE_ID="$PROD_BUNDLE_ID"
+VARIANT_FLAG="--prod"
+if [ "$BETA" = true ]; then
+    ARCHIVE_BUNDLE_ID="$BETA_BUNDLE_ID"
+    VARIANT_FLAG="--beta"
+elif [ "$PUBLIC_BETA" = true ]; then
+    VARIANT_FLAG="--public-beta"
+fi
+if ! GROUP_PROBLEMS="$(check_app_groups "$ARCHIVE_BUNDLE_ID")"; then
+    echo -e "${RED}❌ The app and its extensions do not use the App Group of ${ARCHIVE_BUNDLE_ID}:${NC}"
     echo "$GROUP_PROBLEMS"
     exit 1
 fi
-APP_GROUP="$(/usr/libexec/PlistBuddy -c 'Print :BayaanAppGroup' "$INFO_PLIST")"
+APP_GROUP="$(node "$APP_GROUP_TOOL" resolve --bundle-id "$ARCHIVE_BUNDLE_ID" --field group)"
+LEGACY_APP_GROUP="$(node "$APP_GROUP_TOOL" resolve --bundle-id "$ARCHIVE_BUNDLE_ID" --field legacy)"
 echo -e "  App Group: ${GREEN}$APP_GROUP${NC} (app, share extension and widget)"
+if [ -n "$LEGACY_APP_GROUP" ]; then
+    echo -e "             ${YELLOW}+ $LEGACY_APP_GROUP for the app only (read only: the first launch moves the old data)${NC}"
+fi
+
+# TECH_DEBT #289: the developer portal must allow every group that the
+# entitlements ask for, or the signing step fails after a long build. Read
+# only (App Store Connect API GET calls). Exit status of the tool: 0 OK,
+# 1 MISSING (it prints the owner step), 2 UNCONFIRMED (no active profile yet;
+# the archive makes one), 3 not checked (no API key or no network).
+PORTAL_STATUS=0
+if [ "${SKIP_ASC_GROUP_CHECK:-}" = "1" ]; then
+    echo -e "  Portal:    ${YELLOW}not checked (SKIP_ASC_GROUP_CHECK=1)${NC}"
+else
+    node --dns-result-order=ipv4first "$APP_GROUP_TOOL" portal --root "$REPO_ROOT" \
+        --rerun "./scripts/ios-archive.sh --dry-run $VARIANT_FLAG" || PORTAL_STATUS=$?
+fi
+if [ "$PORTAL_STATUS" = 1 ] && [ "$DRY_RUN" = false ]; then
+    echo -e "${RED}❌ The developer portal does not allow the App Groups of this archive. Do the owner step above.${NC}"
+    echo -e "${RED}   Not archiving: the signing step would fail. To archive anyway: SKIP_ASC_GROUP_CHECK=1${NC}"
+    exit 1
+fi
 
 if [ "$DRY_RUN" = true ]; then
     echo -e "\n${YELLOW}🧪 Dry run: the identity this archive would build:${NC}"
@@ -678,7 +730,13 @@ if [ "$DRY_RUN" = true ]; then
     for file in "${LOCALIZED_NAME_FILES[@]}"; do
         echo "      ${file#$REPO_ROOT/ios/Qariah/Supporting/}: $(cat "$file")"
     done
+    echo "    App Group entitlements:"
+    node "$APP_GROUP_TOOL" show --root "$REPO_ROOT"
     echo -e "${YELLOW}   No pod install, no archive, no upload.${NC}"
+    if [ "$PORTAL_STATUS" = 1 ]; then
+        echo -e "${RED}❌ The real archive stops here until the owner step above is done.${NC}"
+        exit 1
+    fi
     exit 0
 fi
 

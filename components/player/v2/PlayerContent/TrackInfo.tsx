@@ -35,11 +35,13 @@ import {
   getTrackArtistDisplay,
   localizeDigits,
 } from '@/i18n/format';
+import {useTranslation} from 'react-i18next'; // Qariah: the love label
 // @ai-end
 
 // @ai-start
 export const TrackInfo = () => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['sheets']); // @ai Qariah: the love label
   const glassColorScheme = useGlassColorScheme();
   const queue = usePlayerStore(s => s.queue);
   const {navigateToReciterProfile} = useReciterNavigation();
@@ -105,6 +107,12 @@ export const TrackInfo = () => {
   }, [currentTrack, loveScale, toggleTrackLoved]);
 
   const isLoved = currentTrack ? isTrackLoved(currentTrack) : false;
+  // @ai-start
+  // Qariah: the label says what a tap does.
+  const loveLabel = isLoved
+    ? t('homeCardOptions.removeFromLoved')
+    : t('homeCardOptions.addToLoved');
+  // @ai-end
 
   const recitersInitialized = useReciterStore(s => s.isInitialized);
   const ayahRangeLabel = React.useMemo(() => {
@@ -200,6 +208,9 @@ export const TrackInfo = () => {
                 styles.loveButtonInner,
                 {opacity: pressed ? 0.7 : 1},
               ]}
+              accessibilityRole="button" // @ai
+              accessibilityLabel={loveLabel} // @ai
+              testID="player-love" // @ai
               onPress={handleToggleLoved}>
               <SymbolView
                 name={isLoved ? 'heart.fill' : 'heart'}
@@ -216,6 +227,9 @@ export const TrackInfo = () => {
                 styles.loveButtonInner,
                 {opacity: pressed ? 0.7 : 1},
               ]}
+              accessibilityRole="button" // @ai
+              accessibilityLabel={loveLabel} // @ai
+              testID="player-love" // @ai
               onPress={handleToggleLoved}>
               <Animated.View style={loveAnimatedStyle}>
                 <HeartIcon

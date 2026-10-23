@@ -172,8 +172,16 @@ function getSemanticVersion() {
  * shipped versionCode) − 1409 (count after this offset-bump commit) + 1 = 359.
  * 1409 + 359 = 1768, clearing 1767 on both platforms, symmetric. Recorded in
  * planning/ACTIVE_SPRINTS.md (auto/2026-09-07 row).
+ *
+ * 2026-10-21 (Sprint 50, TECH_DEBT #336): the beta-only Sprint 49 branch
+ * uploaded TestFlight `com.qariah.app.beta` 3.2.2 (3402); its count ran about
+ * 32 commits ahead of qariah-main, which derived 3375. App Store Connect
+ * refuses a later 3.2.2 build with a lower number on that app. New value =
+ * 3402 (highest shipped build) − 3018 (count after this offset-bump commit)
+ * + 1 = 385. 3018 + 385 = 3403, above the TestFlight floor 3402 and the Play
+ * floor 3369. Recorded in planning/ACTIVE_SPRINTS.md (Sprint 50 row).
  */
-const VERSION_CODE_OFFSET = 359;
+const VERSION_CODE_OFFSET = 385;
 
 /**
  * Get build number from total commit count + VERSION_CODE_OFFSET.

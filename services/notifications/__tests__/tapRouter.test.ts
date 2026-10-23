@@ -171,6 +171,7 @@ describe('openNotificationTap', () => {
     resumeLastSession: jest.Mock;
     waitForSession: jest.Mock;
     closePlayer: jest.Mock;
+    closeSheets: jest.Mock;
   } {
     return {
       router: {push: jest.fn(), navigate: jest.fn()},
@@ -181,6 +182,7 @@ describe('openNotificationTap', () => {
       playRecitation: jest.fn(async () => undefined),
       resumeLastSession: jest.fn(async () => true),
       closePlayer: jest.fn(),
+      closeSheets: jest.fn(async () => undefined),
       waitForMushafRestore: jest.fn(async () => true),
       ...overrides,
     } as never;
@@ -286,6 +288,54 @@ describe('openNotificationTap', () => {
     release();
     await expect(opened).resolves.toBe('browse_surah');
     expect(d.router.push).toHaveBeenCalledTimes(1);
+  });
+
+  // TECH_DEBT #261: a tap does not go through the link handler, so it
+  // closes the open sheets itself before its screen or the player opens.
+  it.each([
+    ['a screen', 'browse_surah', {kind: 'surah', surah: 18}],
+    [
+      'the player',
+      'play',
+      {
+        kind: 'recitation',
+        reciterId: 'r-z',
+        reciterSlug: 'zaynab',
+        rewayahId: 'w-z',
+        surah: 18,
+      },
+    ],
+  ] as const)(
+    'closes the open sheets before it opens %s',
+    async (_name, kind, target) => {
+      let release: () => void = () => undefined;
+      const closed = new Promise<void>(resolve => {
+        release = resolve;
+      });
+      const d = deps({closeSheets: jest.fn(() => closed)});
+      const opened = openNotificationTap(
+        tapFor('kahf_friday', target as NotificationTarget),
+        d,
+      );
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+      expect(d.closeSheets).toHaveBeenCalledTimes(1);
+      expect(d.router.push).not.toHaveBeenCalled();
+      expect(d.playRecitation).not.toHaveBeenCalled();
+      release();
+      await expect(opened).resolves.toBe(kind);
+      expect(
+        d.router.push.mock.calls.length + d.playRecitation.mock.calls.length,
+      ).toBe(1);
+    },
+  );
+
+  it('does not close a sheet when the navigator never gets ready', async () => {
+    const d = deps({waitForNavigation: async () => false});
+    await openNotificationTap(
+      tapFor('kahf_friday', {kind: 'surah', surah: 18}),
+      d,
+    );
+    expect(d.closeSheets).not.toHaveBeenCalled();
   });
 
   it('does nothing when the navigator never gets ready', async () => {

@@ -21,7 +21,9 @@ describe('raceInitTimeout (#53 boot-hang guard)', () => {
   });
 
   it('resolves with INIT_TIMED_OUT when the promise never settles', async () => {
-    const never = new Promise<never>(() => {});
+    const never = new Promise<never>(() => {
+      // The promise never settles.
+    });
     await expect(raceInitTimeout(never, 50)).resolves.toBe(INIT_TIMED_OUT);
   });
 
@@ -60,7 +62,13 @@ describe('raceInitTimeout (#53 boot-hang guard)', () => {
         name: 'db',
         init: () => Promise.resolve().then(() => void order.push('db')),
       },
-      {name: 'wedged', init: () => new Promise<void>(() => {})},
+      {
+        name: 'wedged',
+        init: () =>
+          new Promise<void>(() => {
+            // The promise never settles.
+          }),
+      },
       {
         name: 'playlist',
         init: () => Promise.resolve().then(() => void order.push('playlist')),

@@ -1,0 +1,62 @@
+# Get to a tab root with the full tab bar: close the player, close the reader's
+# settings sheet, leave the Mushaf reader. The Collection tab label marks a
+# full tab bar. Two traps:
+#   - iOS 26 shrinks the tab bar after a scroll to the current tab's icon and
+#     Search ("Tab Bar" is still in the hierarchy); a tap on that icon shows
+#     the full bar again.
+#   - The reader hides its header after a while; a tap on the page shows it.
+appId: com.qariah.app
+---
+# Bring the app to the front without a restart.
+- launchApp:
+    stopApp: false
+- runFlow: close-player.yaml
+- runFlow:
+    when:
+      visible: ${L_SHEET_OPEN}
+    commands:
+      - tapOn:
+          point: 50%,15%
+      - waitForAnimationToEnd:
+          timeout: 2000
+- repeat:
+    while:
+      notVisible: ${L_COLLECTION}
+    times: 4
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: 'mushaf-settings-button'
+          commands:
+            - runFlow: reader-back.yaml
+      - runFlow:
+          when:
+            visible: ${L_TABBAR}
+          commands:
+            - runFlow:
+                when:
+                  notVisible: ${L_COLLECTION}
+                commands:
+                  - tapOn:
+                      text: ${L_TABS_MIN}
+                      index: 0
+                  - waitForAnimationToEnd:
+                      timeout: 1500
+      - runFlow:
+          when:
+            notVisible: ${L_COLLECTION}
+          commands:
+            - runFlow:
+                when:
+                  notVisible: ${L_TABBAR}
+                commands:
+                  - runFlow:
+                      when:
+                        notVisible:
+                          id: 'mushaf-settings-button'
+                      commands:
+                        - tapOn:
+                            point: 50%,50%
+                        - waitForAnimationToEnd:
+                            timeout: 1500

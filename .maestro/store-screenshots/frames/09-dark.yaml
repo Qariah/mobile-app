@@ -1,0 +1,30 @@
+# Frame 9: dark mode (the Mushaf page and Listen), then back to light.
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- runFlow: ../subflows/settings-root.yaml
+- scrollUntilVisible:
+    element: ${L_DARK}
+    direction: UP
+    timeout: 10000
+- tapOn: ${L_DARK}
+- runFlow:
+    file: ../subflows/open-surah-page.yaml
+    env: {SURAH: '${G_KAHF}'}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 3000}
+- takeScreenshot: ${OUT}/09-dark-mushaf
+- runFlow: ../subflows/home.yaml
+- tapOn: ${L_LISTEN}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 3000}
+- takeScreenshot: ${OUT}/09-dark-listen
+- runFlow: ../subflows/home.yaml
+- runFlow: ../subflows/settings-root.yaml
+- scrollUntilVisible:
+    element: ${L_LIGHT}
+    direction: UP
+    timeout: 10000
+- tapOn: ${L_LIGHT}

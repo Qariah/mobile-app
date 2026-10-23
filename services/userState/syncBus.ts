@@ -96,7 +96,9 @@ export function enqueueFavoritesSync(reciterIds: string[]): void {
   // Update local cache mirror eagerly so on-mount reads after sign-out/in see
   // the right value. This is a fire-and-forget — the DB call is fast.
   if (dbReady) {
-    upsertCachedPreference(key, value).catch(() => {});
+    upsertCachedPreference(key, value).catch(() => {
+      // Best effort. The cache is a mirror of the queued write.
+    });
     coalescePreferenceWrite(key)
       .then(() => enqueueWrite(op))
       .then(() => flushScheduler?.('favorites-changed'))
@@ -133,7 +135,9 @@ export function enqueueReadingSessionSync(payload: {
       surahNumber: payload.surahNumber,
       ayahNumber: payload.ayahNumber ?? 1,
       updatedAt: Date.now(),
-    }).catch(() => {});
+    }).catch(() => {
+      // Best effort. The cache is a mirror of the queued write.
+    });
     enqueueWrite(op)
       .then(() => flushScheduler?.('reading-session-changed'))
       .catch(e => {
@@ -162,7 +166,9 @@ export function enqueuePreferenceSync(key: string, value: unknown): void {
     payload: {key, value: stringValue},
   };
   if (dbReady) {
-    upsertCachedPreference(key, stringValue).catch(() => {});
+    upsertCachedPreference(key, stringValue).catch(() => {
+      // Best effort. The cache is a mirror of the queued write.
+    });
     coalescePreferenceWrite(key)
       .then(() => enqueueWrite(op))
       .then(() => flushScheduler?.('preference-changed'))
