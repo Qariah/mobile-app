@@ -31,9 +31,10 @@ let bootPromise: Promise<void> | null = null;
  * Android Auto root both await it, so whichever mounts first boots and the
  * other reuses the result. A failed boot can be retried.
  */
-export function bootApp(): Promise<void> {
+// @ai Qariah: `source` tells the boot sentinel about a car boot (qariahBoot.ts).
+export function bootApp(source: 'phone' | 'car' = 'phone'): Promise<void> {
   if (!bootPromise) {
-    bootPromise = runBoot().catch((error: unknown) => {
+    bootPromise = runBoot(source).catch((error: unknown) => {
       bootPromise = null;
       throw error;
     });
@@ -41,9 +42,9 @@ export function bootApp(): Promise<void> {
   return bootPromise;
 }
 
-async function runBoot(): Promise<void> {
+async function runBoot(source: 'phone' | 'car'): Promise<void> {
   // @ai Qariah: the boot-not-completed sentinel, before any await.
-  qariahBootStarted();
+  qariahBootStarted(source);
   // Cold-start observability. Breadcrumb each boot phase so any later
   // crash/ANR carries the boot trail, and fire a one-shot 'slow-cold-start'
   // Sentry message if we blow past the budget, turning the otherwise
@@ -55,8 +56,7 @@ async function runBoot(): Promise<void> {
     qariahBootStep(step); // @ai Qariah: the furthest-step record.
     Sentry.addBreadcrumb({category: 'boot', message: step, level: 'info'});
   };
-  // @ai Qariah: the event names the slow init service; diagnostic builds use
-  // a 5 s budget and flush at once (services/qariahBoot.ts).
+  // @ai Qariah: the event names the slow init service (services/qariahBoot.ts).
   const slowBootWatchdog = setTimeout(
     () => qariahReportSlowColdStart(lastBootStep),
     qariahSlowBootThresholdMs(SLOW_BOOT_THRESHOLD_MS),
@@ -71,7 +71,7 @@ async function runBoot(): Promise<void> {
     markBoot('expo-audio-ready');
     if (__DEV__) console.log('[App] expo-audio service initialized');
 
-    // @ai Qariah: the deferred Mushaf preload (Sprint 30).
+    // @ai Qariah: the deferred Mushaf preload.
     qariahAfterAudioReady();
 
     // Fetch reciter data from backend API (or fallback if killswitch active)
@@ -80,7 +80,7 @@ async function runBoot(): Promise<void> {
     markBoot('catalog-ready');
     if (__DEV__) console.log('[App] Reciter data loaded');
 
-    // @ai Qariah: RFC-010 catalog-version polling (Sprint 17).
+    // @ai Qariah: RFC-010 catalog-version polling.
     qariahAfterCatalogReady();
 
     // Initialize all SQLite services, adhkar, playlists, mushaf, fonts, stores, etc.

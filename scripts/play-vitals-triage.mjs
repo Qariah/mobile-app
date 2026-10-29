@@ -380,7 +380,7 @@ const KNOWLEDGE = [
       'app, most impactful during background audio. Correlates with **Sprint-24 FB-1** (Samsung One UI ' +
       '/ OnePlus / Xiaomi aggressively kill the audio foreground service) and the tester "recitation ' +
       'stops mid-ayah" reports. Check the POST_NOTIFICATIONS runtime grant + the ' +
-      '`withAndroidNotificationPermission` plugin in the affected build, and the device battery-' +
+      'POST_NOTIFICATIONS line in the merged manifest of the affected build, and the device battery-' +
       'optimization setting.',
   },
   {

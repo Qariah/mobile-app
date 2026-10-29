@@ -3,7 +3,7 @@
 import React from 'react';
 import {fireEvent, render} from '@testing-library/react-native';
 import {RecitationCard} from '../RecitationCard';
-import type {NewlyAddedRecitation} from '@/data/reciterCollections';
+import type {NewlyAddedRecitation} from '@/data/qariahReciterCollections';
 import type {Reciter, Rewayat} from '@/data/reciterData';
 
 // services/dataService (formatAyahRange) imports the player store, which

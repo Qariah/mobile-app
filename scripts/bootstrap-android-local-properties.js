@@ -14,29 +14,10 @@
  *   - Else, on linux: write `sdk.dir=$HOME/Android/Sdk` if it exists.
  *   - Else: print a friendly diagnostic and exit 0 (don't break npm install).
  *
- * Sprint 17 (S17.10 / TECH_DEBT #46): also handles a missing .env.local in
- * worktrees — `npm install`'s `postinstall` runs reliably, but contributors
- * sometimes copy a worktree by other means or skip `npm install` after
- * `git worktree add`. Running `npm run bootstrap` directly is the explicit
- * recovery path. If `.env.local` is missing AND a sibling worktree has one,
- * we surface the path so the contributor can copy it manually (we do NOT
- * copy automatically — secrets in `.env.local` could be stale).
+ * Qariah: also warns when .env.local is missing, and when no JDK 17 toolchain exists (Gradle then
+ * fails with a JvmVendorSpec IBM_SEMERU error, TECH_DEBT #206). `npm run bootstrap` runs it again.
  *
- * 2026-08-30 (TECH_DEBT #206): also checks for a Java 17 TOOLCHAIN. React
- * Native and expo-modules-core declare `jvmToolchain(17)`, which is a separate
- * requirement from the JDK that launches Gradle (21). With no 17 installed,
- * Gradle tries to auto-provision one through the foojay resolver pinned at
- * 0.5.0 by @react-native/gradle-plugin, which is incompatible with this repo's
- * Gradle 9 and dies with:
- *
- *   Class org.gradle.jvm.toolchain.JvmVendorSpec does not have member field
- *   'org.gradle.jvm.toolchain.JvmVendorSpec IBM_SEMERU'
- *
- * That message names neither Java nor the missing toolchain, so it costs real
- * time to diagnose. Having 21 and 25 installed is NOT enough. Warn early.
- *
- * Run by package.json `postinstall` after patch-package, and exposed as
- * `npm run bootstrap` for explicit re-run.
+ * Run by package.json `postinstall` after patch-package.
  */
 
 const fs = require('fs');
@@ -82,8 +63,7 @@ sdk.dir=${sdkDir}
   console.log(`[bootstrap-android] Wrote ${target}`);
 }
 
-// Sprint 17 (S17.10): surface a missing .env.local on worktrees without
-// silently copying — a sibling worktree's value might be stale or env-specific.
+// Report a missing .env.local. Never copy one: a sibling worktree's value can be stale.
 function checkEnvLocal() {
   const root = path.join(__dirname, '..');
   const target = path.join(root, '.env.local');
@@ -121,12 +101,7 @@ function checkEnvLocal() {
   }
 }
 
-/**
- * Where Gradle looks for JDKs on its own, plus anything the user registered
- * explicitly. A JDK in a non-standard directory (~/jdks, say) is invisible to
- * Gradle unless `org.gradle.java.installations.paths` names it, so a machine
- * can have Java 17 on disk and still fail.
- */
+/** Where Gradle finds JDKs: its default roots plus `org.gradle.java.installations.paths`. */
 function javaInstallationDirs() {
   const dirs = [];
   const home = os.homedir();

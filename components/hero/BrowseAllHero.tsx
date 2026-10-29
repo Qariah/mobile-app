@@ -6,7 +6,6 @@ import {
   Pressable,
   InteractionManager,
 } from 'react-native';
-import {Image} from 'expo-image';
 import {Link} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
 import {moderateScale} from 'react-native-size-matters';
@@ -23,7 +22,6 @@ import Svg, {Path} from 'react-native-svg';
 import {SESSION_SEED, pickHeroTheme} from '@/components/hero/heroThemes';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
-import {RECITERS} from '@/data/reciterData';
 // @ai-start
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
@@ -66,8 +64,8 @@ const LABEL_VARIANTS = [
 ] as const;
 // @ai-end
 
-// Sprint 13 — height matched to the compact RandomRecitationHero (75pt)
-const CARD_HEIGHT = moderateScale(75);
+// Match SurahsHero height
+const CARD_HEIGHT = moderateScale(150);
 const TILE_SIZE = moderateScale(16);
 const TILE_RADIUS = moderateScale(3);
 const TILE_GAP = moderateScale(3);
@@ -100,7 +98,6 @@ const COLUMN_CONFIGS = [
 interface TileData {
   fill: string;
   opacity: number;
-  imageUrl?: string;
 }
 
 // Generate tile colors/opacities for a single column
@@ -108,24 +105,17 @@ function generateColumnTiles(
   seed: number,
   colIndex: number,
   count: number,
-  imageUrls?: string[],
 ): TileData[] {
   let s = seed + colIndex * 7919; // different seed per column
   function nextRand() {
     s = (s * 16807 + 11) % 2147483647;
     return (s & 0x7fffffff) / 2147483647;
   }
-  const hasImages = imageUrls && imageUrls.length > 0;
   const tiles: TileData[] = [];
   for (let i = 0; i < count; i++) {
-    // Deterministic image-index pattern: varies by row+col but reproducible
-    const imageUrl = hasImages
-      ? imageUrls![(i * 7 + colIndex * 3) % imageUrls!.length]
-      : undefined;
     tiles.push({
       fill: TILE_COLORS[Math.floor(nextRand() * TILE_COLORS.length)],
       opacity: 0.15 + nextRand() * 0.25,
-      imageUrl,
     });
   }
   return tiles;
@@ -139,23 +129,20 @@ const TileColumn = React.memo(
     tilesPerColumn,
     speed,
     startOffset,
-    imageUrls,
   }: {
     colIndex: number;
     tileOpacity: number;
     tilesPerColumn: number;
     speed: number;
     startOffset: number;
-    imageUrls?: string[];
   }) => {
     const scrollY = useSharedValue(startOffset);
     const mountedRef = useRef(true);
 
     // Generate tiles for this column (doubled for seamless loop)
     const tiles = useMemo(
-      () =>
-        generateColumnTiles(SESSION_SEED, colIndex, tilesPerColumn, imageUrls),
-      [colIndex, tilesPerColumn, imageUrls],
+      () => generateColumnTiles(SESSION_SEED, colIndex, tilesPerColumn),
+      [colIndex, tilesPerColumn],
     );
 
     const singleSetHeight = tilesPerColumn * TILE_STEP;
@@ -191,36 +178,19 @@ const TileColumn = React.memo(
     return (
       <View style={columnStyles.wrapper}>
         <Animated.View style={animatedStyle}>
-          {allTiles.map((tile, i) =>
-            tile.imageUrl ? (
-              <View
-                key={i}
-                style={[
-                  columnStyles.tile,
-                  {opacity: tile.opacity + tileOpacity},
-                ]}>
-                <Image
-                  source={{uri: tile.imageUrl}}
-                  style={columnStyles.tileImage}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                  transition={0}
-                />
-              </View>
-            ) : (
-              <View
-                key={i}
-                style={[
-                  columnStyles.tile,
-                  {
-                    backgroundColor: Color(tile.fill)
-                      .alpha(tile.opacity * tileOpacity)
-                      .toString(),
-                  },
-                ]}
-              />
-            ),
-          )}
+          {allTiles.map((tile, i) => (
+            <View
+              key={i}
+              style={[
+                columnStyles.tile,
+                {
+                  backgroundColor: Color(tile.fill)
+                    .alpha(tile.opacity * tileOpacity)
+                    .toString(),
+                },
+              ]}
+            />
+          ))}
         </Animated.View>
       </View>
     );
@@ -239,11 +209,6 @@ const columnStyles = StyleSheet.create({
     height: TILE_SIZE,
     borderRadius: TILE_RADIUS,
     marginBottom: TILE_GAP,
-    overflow: 'hidden',
-  },
-  tileImage: {
-    width: '100%',
-    height: '100%',
   },
 });
 
@@ -280,17 +245,6 @@ export function BrowseAllHero({style}: BrowseAllHeroProps) {
   // and let flexbox + overflow handle the rest
   const columnCount = COLUMN_CONFIGS.length;
 
-  // Sprint 13 — pull reciter image URLs from RECITERS for the face
-  // collage. RECITERS is populated in-place by dataService on app
-  // boot; if it's still empty (cold start before fetch), fall back to the
-  // colored-tile mosaic for this render.
-  const imageUrls = useMemo(() => {
-    const urls = RECITERS.map(r => r.image_url).filter(
-      (u): u is string => typeof u === 'string' && u.length > 0,
-    );
-    return urls.length > 0 ? urls : undefined;
-  }, []);
-
   const scale = useSharedValue(1);
   const pressAnimStyle = useAnimatedStyle(() => ({
     transform: [{scale: scale.value}],
@@ -324,35 +278,9 @@ export function BrowseAllHero({style}: BrowseAllHeroProps) {
                 tilesPerColumn={tilesPerColumn}
                 speed={config.speed}
                 startOffset={config.startOffset}
-                imageUrls={imageUrls}
               />
             ))}
           </View>
-
-          {/* Sprint 13 follow-up — readability scrim. The face-collage mosaic
-              has uneven brightness across ~63 reciter photos, so the title
-              text loses contrast over light-toned tiles. A flat semi-opaque
-              scrim between the mosaic and the content layer darkens the
-              entire background uniformly when collage is on; the colored-
-              tile fallback (already low-contrast by design) skips it. */}
-          {imageUrls && (
-            <View
-              pointerEvents="none"
-              style={[
-                StyleSheet.absoluteFill,
-                {
-                  // Dark mode: title is light text → dark scrim.
-                  // Light mode: title is dark text → light scrim. Tuned high
-                  // enough that the title clearly reads on every reciter
-                  // face tile (each photo has different luminance) while
-                  // leaving enough of the mosaic visible for the brand feel.
-                  backgroundColor: isDark
-                    ? 'rgba(0,0,0,0.60)'
-                    : 'rgba(255,255,255,0.65)',
-                },
-              ]}
-            />
-          )}
 
           {/* Content */}
           <View style={styles.content}>
@@ -403,28 +331,29 @@ const createStyles = (theme: Theme) =>
     content: {
       flex: 1,
       flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: moderateScale(14),
-      paddingVertical: moderateScale(8),
+      alignItems: 'flex-end',
+      paddingHorizontal: moderateScale(16),
+      paddingBottom: moderateScale(14),
     },
     textContainer: {
       flex: 1,
-      justifyContent: 'center',
+      justifyContent: 'flex-end',
     },
     label: {
       textAlign: 'left',
       fontFamily: 'Manrope-Bold',
       fontSize: moderateScale(9),
-      letterSpacing: latinLetterSpacing(0.5),
+      letterSpacing: latinLetterSpacing(1.2),
       marginBottom: moderateScale(2),
     },
     title: {
       textAlign: 'left',
       fontFamily: 'Manrope-SemiBold',
-      fontSize: moderateScale(13),
+      fontSize: moderateScale(14),
     },
     chevron: {
       marginLeft: moderateScale(8),
+      marginBottom: moderateScale(2),
     },
   });
 // @ai-end

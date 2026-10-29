@@ -17,10 +17,7 @@ const {
 
 const ROOT = path.join(__dirname, '..', '..');
 // The committed native trees must match what app.config.js would generate.
-// @ai Qariah: Qariah's config is app.config.ts (upstream's app.config.js is
-// deleted in the fork), and its app project is ios/Qariah.xcodeproj.
-const APP_CONFIG_MODULE = require('../../app.config.ts');
-const APP_CONFIG = (APP_CONFIG_MODULE.default ?? APP_CONFIG_MODULE).expo;
+const APP_CONFIG = require('../../app.config.js').expo;
 // @ai Qariah (Sprint 46): `ios` carries the App Group (BAYAAN_APP_GROUP).
 const COMMITTED = {
   name: APP_CONFIG.name,
@@ -28,6 +25,7 @@ const COMMITTED = {
   ios: APP_CONFIG.ios,
 };
 
+// @ai Qariah: the fork's app project is ios/Qariah.xcodeproj.
 const PBXPROJ = fs.readFileSync(
   path.join(ROOT, 'ios', 'Qariah.xcodeproj', 'project.pbxproj'),
   'utf8',
@@ -93,9 +91,7 @@ describe('applyWidgetBuildSettings', () => {
     expect(out).toBe(PBXPROJ);
   });
 
-  // @ai Qariah (Sprint 46): the widget reads the app's App Group, so a
-  // `.beta` extension bundle id (scripts/ios-archive.sh --beta) does not
-  // derive a group that its entitlement does not allow.
+  // @ai Qariah: the widget reads the app's App Group, so a `.beta` extension id derives no other group.
   it("writes the app's App Group into both widget configurations", () => {
     const out = applyWidgetBuildSettings(
       PBXPROJ,
@@ -151,8 +147,7 @@ describe('applyWidgetBuildSettings', () => {
   });
 });
 
-// Qariah's flag values with upstream's widget list (every widget). Qariah's
-// own list is config/nativeWidgets.config.js (loadForkSources above).
+// Qariah's flag values with upstream's widget list (every widget).
 const QARIAH_FLAGS = {
   widgets: undefined,
   flags: {adhkar: false, ambientAudioOverlay: false, sleepTimer: true},
@@ -167,8 +162,7 @@ function swiftSources(dir) {
 }
 
 describe('enabled widgets', () => {
-  // @ai Qariah: the fork's seam values, not Bayaan's defaults (adhkar and the
-  // ambient overlay are off in config/featureFlags.ts).
+  // @ai Qariah: the fork's seam values (adhkar and ambient are off in config/featureFlags.ts).
   it('reads nativeWidgets.config.js and featureFlags.ts', () => {
     const sources = loadForkSources(ROOT);
     const {featureFlags} = require('../../config/featureFlags');

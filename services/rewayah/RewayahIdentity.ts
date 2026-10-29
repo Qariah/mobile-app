@@ -209,8 +209,7 @@ export function getDisplayLabelFromName(
 ): string {
   if (!dbName) return '';
   const canonical = resolveRewayahFromName(dbName);
-  // @ai Qariah (TECH_DEBT #304): in Arabic, catalog spellings and rewayat that
-  // the registry does not list get their Arabic label; English is unchanged.
+  // @ai Qariah (TECH_DEBT #304): an Arabic label for names the registry does not list.
   if (!canonical) return getQariahRewayahLabel(dbName, 'short') ?? dbName;
   return getShortLabel(canonical);
 }

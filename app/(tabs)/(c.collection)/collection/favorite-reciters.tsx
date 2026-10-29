@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   Animated as RNAnimated,
-  type ListRenderItemInfo,
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -271,7 +270,7 @@ export default function FavoriteRecitersScreen() {
   );
 
   const renderItem = useCallback(
-    ({item}: ListRenderItemInfo<Reciter>) => (
+    ({item}: {item: Reciter}) => (
       <ReciterItem
         item={item}
         onPress={reciter => handleReciterPress(reciter.id)}

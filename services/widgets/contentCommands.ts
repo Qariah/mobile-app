@@ -14,6 +14,7 @@ import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useReciterStore} from '@/store/reciterStore';
 import {useAmbientStore} from '@/store/ambientStore';
 import {widgetFeatures} from './enabledWidgets';
+import {markPlaylistTracks} from '@/services/player/utils/queueSource'; // @ai Qariah (PLY-13)
 
 export type PlayPlaylistCommand = Extract<
   WidgetCommand,
@@ -66,7 +67,8 @@ export async function playPlaylist(
     if (track) built.push({itemId: item.id, value: track});
   }
   if (built.length === 0) return;
-  await deps.playTracks(rotateToItem(built, cmd.itemId), 0);
+  // @ai Qariah (PLY-13): a user playlist marks its tracks, so its end stops.
+  await deps.playTracks(markPlaylistTracks(rotateToItem(built, cmd.itemId)), 0);
 }
 
 export async function startBedtime(

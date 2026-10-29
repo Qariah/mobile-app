@@ -3,21 +3,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
-  <!-- Sprint 24 S24.1 — Android 13+ (API 33+) requires runtime POST_NOTIFICATIONS
-       grant for the media-player notification posted by the AudioControlsService
-       foreground service. Without it, Samsung/OnePlus/Xiaomi OEMs treat the
-       service as effectively background within seconds of the app going to the
-       home screen → kill it → audio stops. Symptom: user taps home, returns to
-       app, mini-player shows play (not pause); foreground service is gone.
-       expo-audio's plugin only adds this perm when enableBackgroundRecording=true;
-       it should also add it for enableBackgroundPlayback=true. Goodwill upstream
-       PR candidate (TECH_DEBT row tracked in Sprint 24). FB-1. -->
-  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
-  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
-  <!-- RECORD_AUDIO intentionally NOT declared: Qariah is playback-only. expo-audio
-       is configured with recordAudioAndroid:false (app.config.ts) so prebuild
-       won't re-add it. (Sprint 32 — privacy hygiene.) -->
+  <!-- RECORD_AUDIO not declared: playback only (recordAudioAndroid:false in app.config.js). -->
 
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
@@ -41,14 +28,6 @@
     <meta-data android:name="expo.modules.updates.ENABLE_BSDIFF_PATCH_SUPPORT" android:value="true"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <!-- REPORT-ONLY Sentry native release/dist fallback. Tags native-layer events
-         (captured before JS Sentry.init runs — the earliest boot frames where the
-         worst hangs live) so they tie to a build instead of `release: None`. The
-         JS-side Sentry.init value wins once JS runs. Placeholders are populated by
-         the `manifestPlaceholders` block in android/app/build.gradle; mirror any
-         change there. See planning/observability-gap-samsung-hang-2026-06-08.md §0. -->
-    <meta-data android:name="io.sentry.release" android:value="${sentryRelease}"/>
-    <meta-data android:name="io.sentry.dist" android:value="${sentryDist}"/>
     <service android:name="expo.modules.audio.service.AudioControlsService" android:exported="false" android:foregroundServiceType="mediaPlayback">
       <intent-filter>
         <action android:name="androidx.media3.session.MediaSessionService"/>
@@ -76,14 +55,8 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
-      <!-- Audio share-intent target (expo-share-intent: androidIntentFilters +
-           androidMultiIntentFilters = ['audio/*'], one pair each). Older non-clean
-           prebuilds appended a copy of the pair on each run (TECH_DEBT #169).
-           patches/expo-share-intent+8.0.1.patch now drops an identical existing
-           filter before it adds the pair (TECH_DEBT #291), and the SDK 57 prebuild
-           recreates the native folders unless it gets the no-clean flag. So a
-           prebuild writes exactly one pair. A clean prebuild regenerates the whole
-           file: re-apply the Qariah annotations in this file after it. -->
+      <!-- Audio share target: exactly one SEND pair (patches/expo-share-intent+8.0.1.patch, TECH_DEBT #291).
+           A clean prebuild regenerates this file: re-apply the Qariah comments after it. -->
       <intent-filter>
         <action android:name="android.intent.action.SEND"/>
         <data android:mimeType="audio/*"/>

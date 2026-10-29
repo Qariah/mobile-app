@@ -4,7 +4,7 @@
 // -----------------------------
 // One Sentry REST client for the scripts. Five scripts each carried their own
 // `sentry()` function (debug-id-lookup, prod-close, release-health,
-// sentry-triage, sentry-hygiene) — TECH_DEBT #246.
+// sentry-triage and the one-shot sentry-hygiene, since deleted) — TECH_DEBT #246.
 //
 //   const S = sentryConfig();                    // reads SENTRY_* from the env
 //   const sentry = createSentryClient(S);
@@ -34,7 +34,7 @@ export const SENTRY_EU_HOST = 'https://de.sentry.io';
  * Read the Sentry settings from the environment.
  * @param {{env?:object, tokenVars?:string[], defaultHost?:string}} [o]
  *   tokenVars   — names to try in order; the first one that is set gives the
- *                 token. sentry-hygiene uses ['SENTRY_WRITE_TOKEN', 'SENTRY_READ_TOKEN'].
+ *                 token, for example ['SENTRY_WRITE_TOKEN', 'SENTRY_READ_TOKEN'].
  *   defaultHost — the host when SENTRY_REGION_HOST is unset
  * @returns {{token:string|undefined, org:string, project:string, host:string}}
  */

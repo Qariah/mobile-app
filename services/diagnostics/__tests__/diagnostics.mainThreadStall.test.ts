@@ -7,8 +7,8 @@
  */
 
 let mockFlagOn = true;
-jest.mock('@/config/featureFlags', () => ({
-  isFeatureEnabled: () => mockFlagOn,
+jest.mock('@/config/qariahFeatureFlags', () => ({
+  isQariahFeatureEnabled: () => mockFlagOn,
 }));
 
 const mockCaptureMessage = jest.fn();

@@ -8,6 +8,9 @@ import {
   WidgetTasbeehEntry,
 } from 'bayaan-widgets';
 import {artworkFileName} from './buildSnapshot';
+// @ai Qariah (TECH_DEBT #357): reciter names follow the app language.
+import {currentLanguage, type AppLanguage} from '@/i18n/language';
+import {getReciterDisplayName} from '@/i18n/format';
 import {tasbeehDisplayText, tasbeehTranslation} from './dhikrText';
 
 export {tasbeehDisplayText, tasbeehTranslation} from './dhikrText';
@@ -77,13 +80,18 @@ export const TASBEEH_ADHKAR: WidgetCatalogDhikr[] = tasbeehAdhkar(
 export function buildCatalog(
   reciters: Reciter[],
   adhkar: WidgetCatalogDhikr[],
+  language: AppLanguage = currentLanguage,
 ): WidgetCatalog {
   return {
     version: WIDGET_CATALOG_VERSION,
     reciters: reciters
       .filter(r => r.id !== '')
-      .map(r => ({id: r.id, name: r.name, artworkFile: artworkFileName(r.id)}))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .map(r => ({
+        id: r.id,
+        name: getReciterDisplayName(r, language),
+        artworkFile: artworkFileName(r.id),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, language)),
     adhkar,
   };
 }

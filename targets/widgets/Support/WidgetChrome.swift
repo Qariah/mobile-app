@@ -34,6 +34,10 @@ struct CachedImage: View {
 struct SurahCard: View {
   let surah: StaticSurah?
   let size: CGFloat
+  // @ai Qariah (TECH_DEBT #357): the name in the app language.
+  var language: String? = nil
+
+  private var name: String { surah.map { WidgetLanguage.surahName($0, language) } ?? "" }
 
   var body: some View {
     Group {
@@ -45,8 +49,8 @@ struct SurahCard: View {
           VStack(spacing: 1) {
             Text(surah.map { String($0.id) } ?? "")
               .font(.system(size: size * 0.32, weight: .bold, design: .rounded))
-            if size >= 44, let surah {
-              Text(surah.name).font(.system(size: 9, weight: .semibold))
+            if size >= 44, surah != nil {
+              Text(name).font(.system(size: 9, weight: .semibold))
                 .lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 3)
             }
           }
@@ -56,7 +60,7 @@ struct SurahCard: View {
     }
     .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: size * 0.16, style: .continuous))
-    .accessibilityLabel(surah?.name ?? "")
+    .accessibilityLabel(name)
   }
 }
 

@@ -1,21 +1,10 @@
 // @ai-start
 import {createMMKV, type MMKV} from 'react-native-mmkv';
 
-// @ai Pass C: 3. Upstream's v2 keyed a cached `fontSize` by content width;
-// Qariah's v2 cached `widestRef` keyed by (font, page). The merge keeps
-// Qariah's shape under upstream's key, so neither v2 store may be reused.
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 2;
 
 export interface QCFPageLayoutMetrics {
-  /**
-   * Width (at `REF_FONT_SIZE`) of the line the page font is calibrated
-   * against. Deliberately orientation-independent: the render font size is
-   * derived from this and the LIVE content width at render time. Caching a
-   * concrete `fontSize` keyed by `(fontFamily, pageNumber)` would hand a
-   * portrait font size back to a landscape render. (Upstream now also keys
-   * by content width; the derived size stays correct either way.)
-   */
-  widestRef: number;
+  fontSize: number;
   lineWidthsAtRef: Array<{
     lineIndex: number;
     width: number;
@@ -60,7 +49,7 @@ class QCFLayoutCacheService {
       const parsed = JSON.parse(json) as QCFPageLayoutMetrics;
       if (
         !parsed ||
-        !(parsed.widestRef > 0) || // a 0/NaN/non-number ref is a failed measurement, not a layout
+        typeof parsed.fontSize !== 'number' ||
         !Array.isArray(parsed.lineWidthsAtRef) ||
         parsed.lineWidthsAtRef.length === 0
       ) {

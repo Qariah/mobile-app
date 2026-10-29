@@ -107,14 +107,10 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
       {...(USE_GLASS
         ? {glassEffectStyle: 'regular' as const, colorScheme: glassColorScheme}
         : {})}>
-      {/* #179 / #401 a11y -- the row is a plain View, not a grouping
-       * Pressable, so the play/pause control is INDIVIDUALLY focusable by
-       * TalkBack / VoiceOver (a wrapping `accessible` Pressable collapses the
-       * whole row into one node). This pill is the mini player
-       * on Android AND on iOS below 26 (USE_GLASS is false there), so it
-       * carries the same fix as MiniPlayer. The expand action -- and with it
-       * the Android ripple -- lives on the inner body only.
-       */}
+      {/* a11y — the row is a plain View, not a grouping Pressable, so the
+          play/pause control is INDIVIDUALLY focusable by TalkBack / VoiceOver
+          (a wrapping `accessible` Pressable would collapse the whole row into
+          one node). The expand action lives on the inner body only. */}
       <View style={styles.content} testID="mini-player-bar">
         <Pressable
           onPress={handlePress}
@@ -172,23 +168,17 @@ export const FloatingPlayer: React.FC = React.memo(function FloatingPlayer() {
 // @ai-start
 const styles = StyleSheet.create({
   content: {
-    // #270 — symmetric horizontal insets (was 14) + even 12px rhythm so the
-    // play control isn't cramped against the right edge. Vertical padding is
-    // already symmetric here (the Android pill is a normal component; its
-    // bottom clearance is handled by the container's safe-area inset).
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: moderateScale(16, 0.2),
     paddingVertical: moderateScale(7, 0.2),
     gap: moderateScale(12, 0.2),
   },
-  // #401 — the expand target. Reproduces exactly the spacing the artwork and
-  // the text block had as direct children of `content` (same 12px rhythm,
-  // same flex:1 growth), so the pill is visually unchanged.
   body: {
-    // #179 / #401 a11y -- the expand-to-full-player hit target (artwork +
-    // track info). A row inside `content`; keeps the artwork|trackInfo rhythm
-    // the old grouping `content` row had, so the layout is visually unchanged.
+    // a11y — the expand-to-full-player hit target (artwork + track info). A row
+    // inside `content` carrying the SAME `gap` it was split out of, so the
+    // artwork|trackInfo rhythm is unchanged: this refactor is a11y-only, with
+    // no visual delta.
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',

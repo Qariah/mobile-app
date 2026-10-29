@@ -15,7 +15,7 @@ import {
   setNonBlockingSplashForNextLaunch,
   setNonBlockingSplashOffKeepGuard,
 } from '@/modules/qariah-boot-splash';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import {
   createBootSplashExperiment,
@@ -37,7 +37,7 @@ export const bootSplashExperiment = createBootSplashExperiment({
     getPreviousProcessInfo,
   },
   isAndroid: Platform.OS === 'android',
-  buildFlagEnabled: isFeatureEnabled('nonBlockingSplash'),
+  buildFlagEnabled: isQariahFeatureEnabled('nonBlockingSplash'),
 });
 
 /** The cold_start_began props when the previous process is not known. */

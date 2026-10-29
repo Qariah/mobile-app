@@ -122,12 +122,10 @@ it('lists the same languages in resources.ts as in the registry', () => {
   );
 });
 
-// @ai Qariah: the Expo config is app.config.ts (app.config.js is deleted in
-// the fork; DIVERGENCE_LEDGER, Pass B and Pass C).
-it('declares every shipped language to iOS in app.config.ts', () => {
-  // Read as text: evaluating the Expo config runs the version script.
+it('declares every shipped language to iOS in app.config.js', () => {
+  // Read as text: evaluating app.config.js runs the version script.
   const appConfig = readFileSync(
-    join(__dirname, '../../app.config.ts'),
+    join(__dirname, '../../app.config.js'),
     'utf8',
   );
   const match = /supportedLocales:\s*{\s*ios:\s*\[([^\]]*)\]/.exec(appConfig);

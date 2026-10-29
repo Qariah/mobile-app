@@ -41,12 +41,8 @@ class TafseerDbService {
         await this.createTables();
         this.ready = true;
         console.log('[TafseerDbService] Initialized');
-        // Sprint 35 (S35.1) — fold the bundled Ibn Kathir import into init so
-        // lazy-open (`lazyOpenFeatureDbs`) keeps the default `selectedTafseerId`
-        // ('169') readable on first access without a boot registration.
-        // First-install-only (guarded by isDownloaded) + non-fatal: a bad
-        // bundle must not break DB reads. ready is already true, so the import's
-        // internal ensureReady() calls return immediately (no re-entrancy).
+        // Lazy-open: import the bundled Ibn Kathir here, so the default tafseer reads on first access.
+        // Non-fatal. `ready` is already true, so its ensureReady() calls do not re-enter initialize().
         try {
           await this.importBundledIbnKathir();
         } catch (importErr) {
@@ -139,10 +135,7 @@ class TafseerDbService {
   }
 
   private async ensureReady(): Promise<SQLite.SQLiteDatabase> {
-    // Sprint 35 (S35.1) — lazy-open: self-initialize on first access instead of
-    // throwing. Safe no-op when already booted (this.ready true → initialize()
-    // returns immediately), so it's correct whether or not AppInitializer
-    // registered this service at boot (`lazyOpenFeatureDbs`).
+    // Lazy-open (`lazyOpenFeatureDbs`): initialize on first access instead of throwing.
     if (!this.ready) await this.initialize();
     if (!this.db || !this.ready) {
       throw new Error('TafseerDbService not initialized');

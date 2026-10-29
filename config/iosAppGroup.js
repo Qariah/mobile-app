@@ -4,7 +4,7 @@
 // ---------------------
 // Qariah (TECH_DEBT #289, Sprint 50): the iOS App Group of a build. This file
 // is the one source of the rule. It is CommonJS with no React Native import,
-// so app.config.ts (Expo CLI), the scripts (plain Node) and Jest can load it.
+// so app.config.js (Expo CLI), the scripts (plain Node) and Jest can load it.
 //
 // The rule: the App Group of an app is `group.<app bundle id>`.
 //   - Production `com.qariah.app`         -> `group.com.qariah.app`
@@ -14,7 +14,7 @@
 // extension bundle id has a suffix, so it does not derive the group itself).
 //
 // Users of the rule:
-//   - app.config.ts gives the production value to the prebuild plugins
+//   - app.config.js gives the production value to the prebuild plugins
 //     (`BayaanAppGroup`, and expo-share-intent `iosAppGroupIdentifier`, which
 //     writes the app and share extension entitlements, `AppGroupIdentifier`
 //     and the share extension source).

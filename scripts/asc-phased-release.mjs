@@ -17,44 +17,99 @@
 //   node scripts/asc-phased-release.mjs pause
 //   node scripts/asc-phased-release.mjs resume
 //   node scripts/asc-phased-release.mjs complete   # jump to 100% immediately
+//   node scripts/asc-phased-release.mjs status --require
+//                                          # the gate BEFORE a submit (TECH_DEBT #188)
+//
+// `status --require` exits 1 when an App Store version that is not released yet
+// has no phased release (it would go to 100% at once on approval). Add
+// --allow-no-phased-release to pass on purpose, and to pass with a WARNING when
+// no version is waiting (a TestFlight public beta). Exit 2 = the check could not
+// run (any error, or a page that may hide a waiting version); it is never a pass
+// and never a refusal. The rules are in scripts/lib/asc-phased-gate.mjs.
 //
 // Env (from .env.local): APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_ISSUER_ID,
 //   and ~/.appstoreconnect/private_keys/AuthKey_<KID>.p8
 //   Optional for the Play half: GOOGLE_PLAY_SA_JSON (JSON text) or
 //   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (path); scripts/lib/google-play-auth.mjs reads both.
 
+import {Buffer} from 'node:buffer';
 import {readFileSync} from 'node:fs';
 import {createSign} from 'node:crypto';
 import {ANDROID_PACKAGE_NAME, APP_STORE_ID} from './lib/app-ids.mjs';
 import {loadServiceAccount, mintPlayToken} from './lib/google-play-auth.mjs';
+import {
+  didNotRun,
+  errorText,
+  parseArgs,
+  runRequire,
+} from './lib/asc-phased-gate.mjs';
 
 const APP_ID = APP_STORE_ID;
 const PKG = ANDROID_PACKAGE_NAME;
 
-const cmd = process.argv[2] || 'status';
-if (!['status', 'pause', 'resume', 'complete'].includes(cmd)) {
-  console.error('usage: asc-phased-release.mjs <status|pause|resume|complete>');
+const cli = parseArgs(process.argv.slice(2));
+if (cli.error) {
+  console.error(cli.error);
   process.exit(2);
 }
+const cmd = cli.cmd;
 
 // ── App Store Connect ────────────────────────────────────────────────────
 const KID = process.env.APP_STORE_CONNECT_API_KEY_ID;
 const ISS = process.env.APP_STORE_CONNECT_ISSUER_ID;
 if (!KID || !ISS) {
-  console.error('❌ APP_STORE_CONNECT_API_KEY_ID / _ISSUER_ID not set (source .env.local)');
+  const why =
+    'APP_STORE_CONNECT_API_KEY_ID / _ISSUER_ID not set (source .env.local)';
+  console.error(cli.require ? `the check did not run: ${why}` : `❌ ${why}`);
   process.exit(2);
 }
-const key = readFileSync(`${process.env.HOME}/.appstoreconnect/private_keys/AuthKey_${KID}.p8`, 'utf8');
-const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
-const now = Math.floor(Date.now() / 1000);
-const unsigned = `${b64({alg: 'ES256', kid: KID, typ: 'JWT'})}.${b64({iss: ISS, iat: now, exp: now + 1200, aud: 'appstoreconnect-v1'})}`;
-const sig = createSign('SHA256').update(unsigned).sign({key, dsaEncoding: 'ieee-p1363'});
-const H = {authorization: `Bearer ${unsigned}.${Buffer.from(sig).toString('base64url')}`, 'content-type': 'application/json'};
+// The key is read and the token signed at the first request, not at import.
+// `status --require` then catches a missing key like any other error (exit 2).
+let authHeaders = null;
+function headers() {
+  if (authHeaders) return authHeaders;
+  const key = readFileSync(
+    `${process.env.HOME}/.appstoreconnect/private_keys/AuthKey_${KID}.p8`,
+    'utf8',
+  );
+  const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${b64({alg: 'ES256', kid: KID, typ: 'JWT'})}.${b64({iss: ISS, iat: now, exp: now + 1200, aud: 'appstoreconnect-v1'})}`;
+  const sig = createSign('SHA256')
+    .update(unsigned)
+    .sign({key, dsaEncoding: 'ieee-p1363'});
+  authHeaders = {
+    authorization: `Bearer ${unsigned}.${Buffer.from(sig).toString('base64url')}`,
+    'content-type': 'application/json',
+  };
+  return authHeaders;
+}
 const asc = async (p, opts = {}) => {
-  const r = await fetch(`https://api.appstoreconnect.apple.com/v1/${p}`, {headers: H, ...opts});
+  const r = await fetch(`https://api.appstoreconnect.apple.com/v1/${p}`, {
+    headers: headers(),
+    ...opts,
+  });
   const t = await r.text();
   return {status: r.status, body: t ? JSON.parse(t) : null};
 };
+
+// status --require: the gate before a submit (TECH_DEBT #188). Read the recent
+// versions; each one that is not released yet needs a phased-release record.
+// Exit 0 = pass, 1 = refused, 2 = the check did not run. Any thrown error (no
+// key file, a network error, a body that is not JSON) is exit 2: it must never
+// look like a refusal. The rules and the error handling are in the lib.
+if (cli.require) {
+  let verdict;
+  try {
+    verdict = await runRequire(asc, {appId: APP_ID, allowNone: cli.allowNone});
+  } catch (e) {
+    verdict = didNotRun(errorText(e));
+  }
+  (verdict.exitCode === 0 ? console.log : console.error)(
+    verdict.lines.join('\n'),
+  );
+  process.exit(verdict.exitCode);
+}
 
 // Newest version record = the one being released.
 const vs = await asc(`apps/${APP_ID}/appStoreVersions?limit=1`);
@@ -63,8 +118,11 @@ if (!version) {
   console.error('❌ no App Store version found');
   process.exit(1);
 }
-const vState = version.attributes.appStoreState ?? version.attributes.appVersionState;
-const pr = await asc(`appStoreVersions/${version.id}/appStoreVersionPhasedRelease`);
+const vState =
+  version.attributes.appStoreState ?? version.attributes.appVersionState;
+const pr = await asc(
+  `appStoreVersions/${version.id}/appStoreVersionPhasedRelease`,
+);
 const phased = pr.body?.data;
 
 // Apple's fixed ladder, by day index.
@@ -134,9 +192,13 @@ function describeReach(st, day) {
 }
 
 function reportIOS() {
-  console.log(`iOS  version ${version.attributes.versionString}  state=${vState}`);
+  console.log(
+    `iOS  version ${version.attributes.versionString}  state=${vState}`,
+  );
   if (!phased) {
-    console.log('     phased release: NOT CONFIGURED (version will go to 100% at once on release)');
+    console.log(
+      '     phased release: NOT CONFIGURED (version will go to 100% at once on release)',
+    );
     return;
   }
   const st = phased.attributes.phasedReleaseState;
@@ -146,20 +208,30 @@ function reportIOS() {
   // Only an ACTIVE ramp can overshoot: PAUSED holds, COMPLETE has nowhere
   // left to go, INACTIVE has not started.
   if (st === 'ACTIVE' && pct != null && pct >= 20) {
-    console.log('     ⛔ AT/PAST 20% AND STILL ADVANCING — pause now if you meant to stop here.');
+    console.log(
+      '     ⛔ AT/PAST 20% AND STILL ADVANCING — pause now if you meant to stop here.',
+    );
   }
 }
 
 async function setState(next) {
   if (!phased) {
-    console.error('❌ no phased release exists on this version — nothing to change.');
-    console.error('   (Enable "Phased Release for Automatic Updates" on the version first.)');
+    console.error(
+      '❌ no phased release exists on this version — nothing to change.',
+    );
+    console.error(
+      '   (Enable "Phased Release for Automatic Updates" on the version first.)',
+    );
     process.exit(1);
   }
   const r = await asc(`appStoreVersionPhasedReleases/${phased.id}`, {
     method: 'PATCH',
     body: JSON.stringify({
-      data: {type: 'appStoreVersionPhasedReleases', id: phased.id, attributes: {phasedReleaseState: next}},
+      data: {
+        type: 'appStoreVersionPhasedReleases',
+        id: phased.id,
+        attributes: {phasedReleaseState: next},
+      },
     }),
   });
   if (r.status >= 200 && r.status < 300) {
@@ -227,12 +299,23 @@ async function reportPlay() {
     return;
   }
   const edit = await editRes.json();
-  const tr = await (await fetch(`${API}/edits/${edit.id}/tracks/production`, {headers: A})).json();
+  const tr = await (
+    await fetch(`${API}/edits/${edit.id}/tracks/production`, {headers: A})
+  ).json();
   for (const rel of tr.releases ?? []) {
-    const frac = rel.userFraction != null ? `${(rel.userFraction * 100).toFixed(0)}%` : rel.status === 'completed' ? '100%' : '—';
-    console.log(`Play  production: vc ${(rel.versionCodes || []).join(',')}  status=${rel.status}  rollout=${frac}`);
+    const frac =
+      rel.userFraction != null
+        ? `${(rel.userFraction * 100).toFixed(0)}%`
+        : rel.status === 'completed'
+          ? '100%'
+          : '—';
+    console.log(
+      `Play  production: vc ${(rel.versionCodes || []).join(',')}  status=${rel.status}  rollout=${frac}`,
+    );
     if (rel.status === 'inProgress' && rel.userFraction >= 0.2) {
-      console.log('     ⛔ at/past 20% — holds here until you advance it (Android does NOT auto-advance).');
+      console.log(
+        '     ⛔ at/past 20% — holds here until you advance it (Android does NOT auto-advance).',
+      );
     }
   }
   await fetch(`${API}/edits/${edit.id}`, {method: 'DELETE', headers: A}); // discard; read-only
@@ -242,5 +325,7 @@ if (cmd === 'status') {
   reportIOS();
   await reportPlay();
 } else {
-  await setState({pause: 'PAUSED', resume: 'ACTIVE', complete: 'COMPLETE'}[cmd]);
+  await setState(
+    {pause: 'PAUSED', resume: 'ACTIVE', complete: 'COMPLETE'}[cmd],
+  );
 }

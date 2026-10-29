@@ -55,7 +55,7 @@ tags:
     when:
       visible: '.*Notifications from Qariah.*'
     commands:
-      - assertVisible: '.*New from reciters you follow.*'
+      - assertVisible: '.*New from (qariahs|reciters) you follow.*'
       - assertVisible: '.*New recitations.*'
       - assertVisible: '.*Friday Al-Kahf reminder.*'
       - assertVisible: '.*Continue listening.*'

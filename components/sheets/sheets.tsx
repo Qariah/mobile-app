@@ -36,7 +36,6 @@ import {WordDetailSheet} from './WordDetailSheet';
 import {HomeCardOptionsSheet} from './HomeCardOptionsSheet';
 import {AdhkarSessionOptionsSheet} from './AdhkarSessionOptionsSheet';
 import {installRewayahFallbackNotice} from './rewayahFallbackNotice'; // @ai
-import {isFeatureEnabled} from '@/config/featureFlags';
 
 // Register all sheets
 registerSheet('surah-options', SurahOptionsSheet);
@@ -50,17 +49,13 @@ registerSheet('player-options', PlayerOptionsSheet);
 registerSheet('playback-speed', PlaybackSpeedSheet);
 registerSheet('sleep-timer', SleepTimerSheet);
 registerSheet('mushaf-layout', MushafLayoutSheet);
-if (isFeatureEnabled('adhkar'))
-  registerSheet('adhkar-layout', AdhkarLayoutSheet);
-if (isFeatureEnabled('adhkar'))
-  registerSheet('adhkar-copy-options', AdhkarCopyOptionsSheet);
+registerSheet('adhkar-layout', AdhkarLayoutSheet);
+registerSheet('adhkar-copy-options', AdhkarCopyOptionsSheet);
 registerSheet('organize-recitation', OrganizeRecitationSheet);
 registerSheet('download-options', DownloadOptionsSheet);
-if (isFeatureEnabled('userUploads'))
-  registerSheet('upload-options', UploadOptionsSheet);
+registerSheet('upload-options', UploadOptionsSheet);
 registerSheet('add-to-collection', AddToCollectionSheet);
-if (isFeatureEnabled('ambientAudioOverlay'))
-  registerSheet('ambient-sounds', AmbientSoundsSheet);
+registerSheet('ambient-sounds', AmbientSoundsSheet);
 registerSheet('collection-options', CollectionOptionsSheet);
 registerSheet('verse-actions', VerseActionsSheet);
 // @ai-start

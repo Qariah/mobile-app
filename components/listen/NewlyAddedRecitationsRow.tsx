@@ -8,7 +8,7 @@ import {moderateScale} from 'react-native-size-matters';
 import {useTranslation} from 'react-i18next';
 import {useTheme} from '@/hooks/useTheme';
 import {useRecitersVersion} from '@/hooks/useRecitersVersion';
-import type {NewlyAddedRecitation} from '@/data/reciterCollections';
+import type {NewlyAddedRecitation} from '@/data/qariahReciterCollections';
 import {RecitationCard} from '@/components/cards/RecitationCard';
 import {playRecitation} from '@/services/player/utils/playRecitation';
 import {getNewlyAddedRow, newlyAddedRecitationKey} from './newlyAddedRow';

@@ -227,6 +227,32 @@ describe('LockScreenService: the main queue has no current track (#235)', () => 
     expect(activatedTitles()).toEqual(['Track a']);
   });
 
+  // @ai TECH_DEBT #350: Settings -> Clear cache calls clearMainPlayer() after cleanup().
+  it('clearMainPlayer() clears the main controls, also when the subscription skipped them (Mushaf flag)', async () => {
+    await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
+    await flush();
+    setMushaf({playbackState: 'playing'});
+    await usePlayerStore.getState().cleanup();
+    expect(mockMainPlayer.clearLockScreenControls).not.toHaveBeenCalled();
+
+    lockScreenService.clearMainPlayer();
+
+    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
+    expect(mockMushafPlayer.clearLockScreenControls).not.toHaveBeenCalled();
+  });
+
+  it('clearMainPlayer() after the queue-empty clear: the next track shows its controls again', async () => {
+    await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
+    await flush();
+    await usePlayerStore.getState().cleanup();
+    lockScreenService.clearMainPlayer();
+    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(2);
+
+    await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
+    await flush();
+    expect(activatedTitles()).toEqual(['Track a', 'Track a']);
+  });
+
   it('(safety) the Mushaf goes idle with a main track in the queue: the main controls come back, nothing clears them', async () => {
     await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
     await flush();

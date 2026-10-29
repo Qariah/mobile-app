@@ -46,7 +46,7 @@ const tabletSidebarComponent = (props: BottomTabBarProps) => (
 // @ai-start
 function IOSTabs() {
   const {theme} = useTheme();
-  const {t} = useTranslation(['common', 'qariah']);
+  const {t} = useTranslation();
   const hasTrack = usePlayerStore(state => {
     const tracks = state.queue.tracks;
     const index = state.queue.currentIndex;
@@ -68,7 +68,7 @@ function IOSTabs() {
             <MiniPlayer />
           </NativeTabs.BottomAccessory>
         )}
-        {/* @ai Qariah tab names (Listen, Mushaf) and the headphones icon. */}
+        {/* @ai Qariah: the headphones icon. */}
         <NativeTabs.Trigger
           name="(a.home)"
           contentStyle={{
@@ -78,9 +78,7 @@ function IOSTabs() {
           <NativeTabs.Trigger.Icon
             sf={{default: 'headphones', selected: 'headphones'}}
           />
-          <NativeTabs.Trigger.Label>
-            {t('qariah:tabs.listen')}
-          </NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>{t('tabs.home')}</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger
@@ -94,7 +92,7 @@ function IOSTabs() {
             renderingMode="template"
           />
           <NativeTabs.Trigger.Label>
-            {t('qariah:tabs.mushaf')}
+            {t('tabs.surahs')}
           </NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
 
@@ -169,7 +167,7 @@ function IOSTabs() {
 
 // @ai-start
 function AndroidTabs() {
-  const {t} = useTranslation(['common', 'qariah']);
+  const {t} = useTranslation();
   return (
     <View style={{flex: 1}}>
       <Tabs
@@ -185,15 +183,8 @@ function AndroidTabs() {
           },
         }}
         tabBar={tabBarComponent}>
-        {/* @ai Qariah tab names (Listen, Mushaf). */}
-        <Tabs.Screen
-          name="(a.home)"
-          options={{title: t('qariah:tabs.listen')}}
-        />
-        <Tabs.Screen
-          name="(b.surahs)"
-          options={{title: t('qariah:tabs.mushaf')}}
-        />
+        <Tabs.Screen name="(a.home)" options={{title: t('tabs.home')}} />
+        <Tabs.Screen name="(b.surahs)" options={{title: t('tabs.surahs')}} />
         <Tabs.Screen name="(b.search)" options={{title: t('tabs.search')}} />
         <Tabs.Screen
           name="(c.collection)"
@@ -217,7 +208,7 @@ function AndroidTabs() {
  */
 // @ai-start
 function TabletTabs() {
-  const {t} = useTranslation(['common', 'qariah']);
+  const {t} = useTranslation();
   return (
     <View style={[{flex: 1}, forceLTR]}>
       <Tabs
@@ -235,15 +226,8 @@ function TabletTabs() {
           },
         }}
         tabBar={tabletSidebarComponent}>
-        {/* @ai Qariah tab names (Listen, Mushaf). */}
-        <Tabs.Screen
-          name="(a.home)"
-          options={{title: t('qariah:tabs.listen')}}
-        />
-        <Tabs.Screen
-          name="(b.surahs)"
-          options={{title: t('qariah:tabs.mushaf')}}
-        />
+        <Tabs.Screen name="(a.home)" options={{title: t('tabs.home')}} />
+        <Tabs.Screen name="(b.surahs)" options={{title: t('tabs.surahs')}} />
         <Tabs.Screen name="(b.search)" options={{title: t('tabs.search')}} />
         <Tabs.Screen
           name="(c.collection)"

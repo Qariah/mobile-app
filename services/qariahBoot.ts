@@ -6,7 +6,9 @@
 // `_layout.tsx` `prepare()`. They now live here, and `appBoot.ts` calls them
 // with one line each, so the upstream file stays close to upstream:
 //
-//   qariahBootStarted()          first thing, before any await
+//   qariahBootStarted(source)    first thing, before any await (also
+//                                applies services/qariahInitConfig.ts; a
+//                                car boot first inits Sentry, #287)
 //   qariahBootStep(step)         in markBoot(), for every boot step
 //   qariahSlowBootThresholdMs()  the slow-cold-start budget
 //   qariahReportSlowColdStart()  the slow-cold-start watchdog body
@@ -25,13 +27,15 @@ import * as Sentry from '@sentry/react-native';
 import * as Font from 'expo-font';
 import Constants from 'expo-constants';
 import {appInitializer} from '@/services/AppInitializer';
+import {applyQariahInitConfig} from '@/services/qariahInitConfig';
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {refetchCatalogToVersion} from '@/services/dataService';
 import {initCatalogVersionPolling} from '@/services/catalogVersionPoll';
 // Qariah (Sprint 48, S48.6): the boot hook of the local notifications.
 import {startQariahNotifications} from '@/services/notifications/backgroundTask';
 import {DIAGNOSTIC_BUILD_FLAG} from '@/services/diagnostics/diagnostics';
+import {initSentryForCarRoot} from '@/services/diagnostics/sentryInit'; // @ai TECH_DEBT #287
 import {
   markBootStarted,
   markBootStep,
@@ -83,9 +87,22 @@ function readBootVersion(): {version: string; build: string} {
  * before any await: a synchronous MMKV write that survives even a hard native
  * freeze of everything after it. qariahBootCompleted() clears it. On the NEXT
  * launch, an uncleared sentinel means THIS launch hung. Observe only.
+ *
+ * `source` is the root that started the boot: CarRoot passes 'car' to
+ * bootApp(). When the phone boot has not set the sentinel, a car boot marks
+ * the runtime as car-first, and no later boot in it sets the sentinel.
  */
-export function qariahBootStarted(): void {
+export function qariahBootStarted(source: 'phone' | 'car' = 'phone'): void {
+  // @ai TECH_DEBT #287: a car-first process never loads app/_layout.tsx, where Sentry.init runs.
+  // First, so the boot's breadcrumbs and reports reach Sentry. Once per process (getClient).
+  if (source === 'car') guardHook('carRootSentry', initSentryForCarRoot);
+  // Qariah's skips and overrides of the AppInitializer services (TECH_DEBT
+  // #243), for every boot (a car boot too), before runBoot() can call
+  // initialize(). Idempotent, so a retried boot can apply it again. A throw
+  // leaves upstream's full service list: a slower boot, not a broken one.
+  guardHook('qariahInitConfig', () => applyQariahInitConfig(appInitializer));
   guardHook('qariahBootStarted', () => {
+    if (source === 'car' && !sentinelActive) carRootBootsFirst = true;
     if (carRootBootsFirst) return;
     sentinelActive = true;
     const {version, build} = readBootVersion();
@@ -95,15 +112,11 @@ export function qariahBootStarted(): void {
 
 // @ai Qariah (Sprint 46, Pass B review): the boot-not-completed sentinel is
 // for the phone boot only. The headless Android Auto root (CarRoot) can boot
-// first, has no Sentry, and Android can stop a car service process during the
-// boot: its sentinel would read as a phone hang on the next launch (#187).
+// first, and Android can stop a car service process during the boot: its
+// sentinel would read as a phone hang on the next launch (#187). (A car boot
+// has its own Sentry since TECH_DEBT #287: initSentryForCarRoot above.)
 let carRootBootsFirst = false;
 let sentinelActive = false;
-
-/** CarRoot calls this right before bootApp(). A no-op when the phone booted. */
-export function markCarRootBoot(): void {
-  if (!sentinelActive) carRootBootsFirst = true;
-}
 
 /**
  * Persist the furthest boot step synchronously, so a hard wedge at this step
@@ -164,7 +177,7 @@ export function qariahReportSlowColdStart(lastBootStep: string): void {
  */
 export function qariahAfterAudioReady(): void {
   guardHook('qariahAfterAudioReady', () => {
-    if (!isFeatureEnabled('deferMushafPreload')) return;
+    if (!isQariahFeatureEnabled('deferMushafPreload')) return;
     void (async () => {
       try {
         await Promise.all([

@@ -7,8 +7,8 @@
 // (a people count of 1 to 4 is "<5"; the card prints "4 Android · never got
 // in", the snapshot prints "<5").
 //
-//   header    the date of the run, measuredAt (when the card script ran: its
-//             trailing windows end then), the card window, the production builds
+//   header    the date of the run, measuredAt (the end of the card's windows:
+//             ctx.asOf, 11:00 LA on the run date, since 2026-10-25), the card window, the production builds
 //   people    distinct installs on the production builds in the window
 //   journey   Opened, Past loading, Logged in, Started, Really used
 //   active    DAU / WAU / MAU in trailing windows at run time (all versions)
@@ -20,9 +20,10 @@
 //             FREEZES (ANR) block; planning/signals-anr-listens-design.md)
 //   ab        the staged build's A/B arms (active-rollout.json abTest)
 //
-// The section uses the card's trailing windows: they end at run time
-// (header.measuredAt), not at dataThrough, and the card applies no ingestion
-// cut-off (ctx.asOf). Lab devices are excluded inside daily-card.mjs
+// The section runs the card with --at=ctx.asOf (since 2026-10-25): the card's
+// windows end at asOf (header.measuredAt), not at dataThrough, and count the
+// events received by asOf. The posted Daily card uses the same instant, so the
+// two give the same numbers whenever each runs (scripts/signals/check.mjs). Lab devices are excluded inside daily-card.mjs
 // (scripts/lib/lab-exclusion.mjs). The card's ops sections and NEEDS YOU are
 // not in the JSON, so the section never reads GitHub issues.
 
@@ -64,18 +65,18 @@ export const PLATFORMS = ['iOS', 'Android'];
 
 export const DEFINITIONS = {
   people:
-    'distinct installs (PostHog person_id) with any event on a production build of active-rollout.json card.builds, from the window start (startedAt) to run time; lab excluded; iPadOS = iOS; an install with no $os_name counts as Android, as the card does. installed = those of them with Application Installed or Application Updated in the window (not store downloads)',
+    'distinct installs (PostHog person_id) with any event on a production build of active-rollout.json card.builds, from the window start (startedAt) to header.measuredAt (11:00 LA on the run date, since 2026-10-25; before, the run time), events received by then; lab excluded; iPadOS = iOS; an install with no $os_name counts as Android, as the card does. installed = those of them with Application Installed or Application Updated in the window (not store downloads)',
   journey:
     'installs on the production builds that reached each step in the window (the union of the step events): Opened = cold_start_began; Past loading = splash_hidden or screen_content_rendered; Logged in = sign_in_succeeded, or onboarding_completed with signed_in = true (a floor: PostHog does not know who is already signed in); Started = playback_started or mushaf_page_opened; Really used = meaningful_listen, mushaf_page_read or playback_completed',
   active:
-    'distinct installs with any event, all versions, lab excluded, in the trailing 24 hours (dau), 7 days (wau) and 30 days (mau) that end at run time (Today), 1 day before (Yesterday) and 2 days before (Day before)',
+    'distinct installs with any event, all versions, lab excluded, events received by header.measuredAt, in the trailing 24 hours (dau), 7 days (wau) and 30 days (mau) that end at header.measuredAt (Today), 1 day before (Yesterday) and 2 days before (Day before)',
   usage:
-    'event totals, all versions, lab excluded, in the trailing day, week and month at run time: plays = playback_started, heard = meaningful_listen, finished = playback_completed, pages = mushaf_page_opened. Plain integers, not eventCell: each total sums the events of thousands of installs, and the card does not report the installs behind a total',
+    'event totals, all versions, lab excluded, events received by header.measuredAt, in the trailing day, week and month that end at header.measuredAt: plays = playback_started, heard = meaningful_listen, finished = playback_completed, pages = mushaf_page_opened. Plain integers, not eventCell: each total sums the events of thousands of installs, and the card does not report the installs behind a total',
   failures:
-    'installs on the production builds with an install or update event, a session of 2 s or more and no screen_content_rendered: "never got in" = no cold_start_began; "stuck on loading" = no splash_hidden',
+    'installs on the production builds in the last 7 days (since 2026-10-24; before, since the launch) with an install or update event, a session of 2 s or more and no screen_content_rendered, and a session of 12 s or more or a splash_stalled event: "never got in" = no cold_start_began; "stuck on loading" = no splash_hidden. A shorter session with no splash_stalled is "left during the splash": leftDuringSplash, not a failure',
   crashes:
     'the 5 unresolved Sentry issues of level error or fatal with the most users on the production releases (14 days), less active-rollout.json card.suppressIssues. users = the Sentry userCount of the whole issue, all releases: an upper bound for these builds',
-  anr: 'play: Google Play user-perceived ANR rate for the production versionCodes of active-rollout.json card.builds pooled by Play (codes; day, user-weighted 7d and 28d; before 2026-10-20 every v2 versionCode), as Play publishes it; the card prints d7 with two decimals as "Google\'s score" against the 0.47% limit (OVER when d7 rounded to 4 decimals is above 0.0047, else UNDER); dailyUsers = Play distinct users on that day (Play rounds it). sentry: for Android (ApplicationNotResponding), iOS hangs (App Hanging) and iOS killed (WatchdogTermination), on the last complete UTC day: activeUsers = session users, affectedUsers = users with the error, day = their rate (7d and 28d shares have no numerator in the card JSON, so they stay out). sentry.week: the FREEZES (ANR) block of the card. For each platform, users = distinct session users of the production releases (active-rollout.json card.builds) in the 7 complete UTC days from..to, frozeUsers = distinct users with a freeze in them (Android: ApplicationNotResponding; iOS: App Hanging or WatchdogTermination), prevUsers and prevFrozeUsers = the same for prevFrom..prevTo; byBuild = this week for each production build, newest first; verdict = with a of b this week and c of d the week before, BETTER when 5ad <= 4cb, WORSE when 5ad >= 6cb, else SAME, TOO FEW when a < 5 and c < 5 (computed from the exact counts); a platform is {unavailable: true, reason} when a Sentry request failed, Sentry missed a day of the two weeks, or a week had no session users. appStore: the App Store hang rate of the newest v2 version (s/h). A source that the card prints as "unavailable" (no key) is null; a source that failed is {available: false}; the error text stays out of the data',
+  anr: 'play: Google Play user-perceived ANR rate for the production versionCodes of active-rollout.json card.builds (less the builds with anrScore false; since 2026-10-25) pooled by Play (codes; day, user-weighted 7d and 28d; before 2026-10-20 every v2 versionCode), as Play publishes it; the card prints d7 with two decimals as "Google\'s score" against the 0.47% limit (OVER when d7 rounded to 4 decimals is above 0.0047, else UNDER); dailyUsers = Play distinct users on that day (Play rounds it). sentry: for Android (ApplicationNotResponding), iOS hangs (App Hanging) and iOS killed (WatchdogTermination), on the last complete UTC day: activeUsers = session users, affectedUsers = users with the error, day = their rate (7d and 28d shares have no numerator in the card JSON, so they stay out). sentry.week: the FREEZES (ANR) block of the card. For each platform, users = distinct session users of the production releases (active-rollout.json card.builds, and since 2026-10-24 the older builds of the platform that still have session users) in the 7 complete UTC days from..to, frozeUsers = distinct users with a freeze in them (Android: ApplicationNotResponding that the user saw, not "Background ANR"; iOS: App Hanging or WatchdogTermination; no emulator or simulator), backgroundUsers (Android, this week) = distinct users with a "Background ANR", not in the share or the verdict, prevUsers and prevFrozeUsers = the same for prevFrom..prevTo; byBuild = this week for each production build, newest first; verdict = with a of b this week and c of d the week before, BETTER when 5ad <= 4cb, WORSE when 5ad >= 6cb, else SAME, TOO FEW when a < 5 and c < 5 (computed from the exact counts); a platform is {unavailable: true, reason} when a Sentry request failed, Sentry missed a day of the two weeks, or a week had no session users. appStore: the App Store hang rate of the newest v2 version (s/h). A source that the card prints as "unavailable" (no key) is null; a source that failed is {available: false}; the error text stays out of the data',
   ab: 'the staged build (active-rollout.json build) and its A/B flag, organic devices since startedAt: users = all devices on the build; enrolled = devices with boot_risk_enrolled; the arms count enrolled devices only. byProcessArm counts devices by the arm of the process that died (a device can count under both arms)',
 };
 
@@ -110,17 +111,29 @@ const weekPlatform = {
       unavailable: {const: true},
       reason: {enum: Object.values(UNAVAILABLE)},
     }),
-    obj({
-      users: C,
-      frozeUsers: C,
-      prevUsers: C,
-      prevFrozeUsers: C,
-      verdict: {enum: VERDICTS},
-      byBuild: {
-        type: 'array',
-        items: obj({build: {type: 'string'}, users: C, frozeUsers: C}),
+    // backgroundUsers: Android only, since 2026-10-24 (not in the share).
+    obj(
+      {
+        users: C,
+        frozeUsers: C,
+        prevUsers: C,
+        prevFrozeUsers: C,
+        backgroundUsers: C,
+        verdict: {enum: VERDICTS},
+        byBuild: {
+          type: 'array',
+          items: obj({build: {type: 'string'}, users: C, frozeUsers: C}),
+        },
       },
-    }),
+      [
+        'users',
+        'frozeUsers',
+        'prevUsers',
+        'prevFrozeUsers',
+        'verdict',
+        'byBuild',
+      ],
+    ),
   ],
 };
 const laDate = {$ref: '#/$defs/laDate'};
@@ -153,7 +166,7 @@ const abProcess = obj({
   anrAfterSplashDevices: C,
 });
 
-export const schema = obj({
+const schemaProps = {
   definitions: obj(
     Object.fromEntries(
       Object.keys(DEFINITIONS).map(k => [k, {type: 'string'}]),
@@ -212,6 +225,16 @@ export const schema = obj({
       platform: {type: 'string'},
       build: {type: 'string'},
       what: {type: 'string'},
+    }),
+  },
+  // The people who left before the 12 s stall timer could fire (since
+  // 2026-10-24): not failures, so not in `failures`.
+  leftDuringSplash: {
+    type: 'array',
+    items: obj({
+      installs: C,
+      platform: {type: 'string'},
+      build: {type: 'string'},
     }),
   },
   crashes: {
@@ -303,7 +326,12 @@ export const schema = obj({
       }),
     ],
   },
-});
+};
+// leftDuringSplash is optional: a snapshot from before 2026-10-24 has no such key.
+export const schema = obj(
+  schemaProps,
+  Object.keys(schemaProps).filter(k => k !== 'leftDuringSplash'),
+);
 
 // ---------------------------------------------------------------------------
 // Shape
@@ -382,6 +410,9 @@ export function shapeWeek(w) {
       frozeUsers: count(p.frozeUsers),
       prevUsers: count(p.prevUsers),
       prevFrozeUsers: count(p.prevFrozeUsers),
+      ...(p.backgroundUsers === undefined
+        ? {}
+        : {backgroundUsers: count(p.backgroundUsers)}),
       verdict: freezeVerdict(p),
       byBuild: (p.byBuild || []).map(b => ({
         build: String(b.build),
@@ -490,7 +521,7 @@ export function shapeAb(ab) {
  * The daily-card JSON → the section data.
  * @param {object} card the parsed stdout of daily-card.mjs --json
  * @param {{date:string, measuredAt:string}} o date = the LA date of the run;
- *   measuredAt = when the card script ran (its trailing windows end then)
+ *   measuredAt = the end of the card's windows (the card's `at`, ctx.asOf)
  */
 export function shape(card, {date, measuredAt}) {
   const win = card.win || {};
@@ -534,6 +565,11 @@ export function shape(card, {date, measuredAt}) {
       platform: String(f.platform),
       build: String(f.build ?? ''),
       what: String(f.what),
+    })),
+    leftDuringSplash: (card.leftDuringSplash || []).map(f => ({
+      installs: cell(Number(f.n) || 0),
+      platform: String(f.platform),
+      build: String(f.build ?? ''),
     })),
     // Not an array (null or absent): the card checked no crash.
     crashes: Array.isArray(card.crashes)
@@ -592,8 +628,9 @@ export function gaps(data) {
 }
 
 export async function collect(ctx) {
-  const measuredAt = new Date().toISOString();
-  const card = await ctx.runScript(SCRIPT);
+  const card = await ctx.runScript([...SCRIPT, `--at=${ctx.asOf}`]);
+  // The card names the end of its windows (`at`); an older card does not.
+  const measuredAt = card?.at || ctx.asOf;
   const data = shape(card, {date: ctx.date, measuredAt});
   const notes = [...gaps(data), ...requestGaps(card)];
   return {

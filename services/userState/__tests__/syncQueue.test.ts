@@ -36,14 +36,6 @@ jest.mock('../preferences', () => {
 
 // The other resources pull in the QF SDK; the tests do not use them.
 jest.mock('../readingSessions', () => ({upsertReadingSession: jest.fn()}));
-jest.mock('../bookmarks', () => ({
-  addBookmark: jest.fn(),
-  deleteBookmark: jest.fn(),
-}));
-jest.mock('../collections', () => ({
-  createCollection: jest.fn(),
-  deleteCollection: jest.fn(),
-}));
 
 const mockRefreshAfterUnauthorized = jest.fn<Promise<string | null>, []>();
 

@@ -24,4 +24,18 @@
   <string name="bayaan_widget_adhkar_desc">Go through the adhkar for this time of day.</string>
   <string name="bayaan_widget_now_label">Bayaan Now</string>
   <string name="bayaan_widget_now_desc">What fits this moment: listening, adhkar or bedtime.</string>
+  <!-- @ai Qariah (TECH_DEBT #357): text inside the widgets, read in the app language (WidgetLanguage.kt). -->
+  <string name="bayaan_widget_text_start_listening">Start listening</string>
+  <string name="bayaan_widget_text_up_next">Up next</string>
+  <string name="bayaan_widget_text_recent">Recent</string>
+  <string name="bayaan_widget_text_play">Play</string>
+  <string name="bayaan_widget_text_pause">Pause</string>
+  <string name="bayaan_widget_text_listen">Listen</string>
+  <string name="bayaan_widget_text_play_item">Play %1$s</string>
+  <string name="bayaan_widget_text_start_reading">Start reading</string>
+  <string name="bayaan_widget_text_continue_reading">Continue reading</string>
+  <string name="bayaan_widget_text_juz">Juz %1$d</string>
+  <string name="bayaan_widget_text_default_reciter">Default reciter</string>
+  <string name="bayaan_widget_text_open_app">Open %1$s</string>
+  <string name="bayaan_widget_text_open_app_to_set_up">Open %1$s to set up</string>
 </resources>

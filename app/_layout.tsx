@@ -8,8 +8,7 @@ import React, {useEffect, useState, useRef, useCallback, useMemo} from 'react';
 import {Stack, useRouter} from 'expo-router';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {useFonts} from 'expo-font';
-// Qariah (ANR WS-C): same API as expo-splash-screen; hideAsync() also removes
-// the Android non-blocking boot overlay. See utils/bootSplash.ts.
+// Qariah (ANR WS-C): hideAsync() also removes the Android boot overlay (utils/bootSplash.ts).
 import * as SplashScreen from '@/utils/bootSplash';
 import * as SystemUI from 'expo-system-ui';
 import {usePlayerStore} from '@/services/player/store/playerStore';
@@ -91,10 +90,8 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 // Set native root view background immediately (before any component renders)
-// This prevents the white flash between splash screen and first frame.
-// QARIAHV2-C — guard the rejection: on OEM-killed Activities (Samsung/OnePlus/
-// Xiaomi) ExpoSystemUI.setBackgroundColorAsync rejects with "current activity
-// is no longer available"; it's benign cosmetic cleanup, not a real failure.
+// This prevents the white flash between splash screen and first frame
+// QARIAHV2-C: the call rejects when the OS killed the Activity; that is benign.
 void SystemUI.setBackgroundColorAsync(
   Appearance.getColorScheme() === 'dark' ? '#07121a' : '#f4f3ec',
 ).catch(() => {
@@ -115,7 +112,7 @@ function isVersionInfo(
   );
 }
 
-if (analyticsEnabled) {
+if (analyticsEnabled && !Sentry.getClient()) {
   // Explicit release + dist tagging. Android events were landing with no
   // release (`release: None`), so crashes/ANRs couldn't be tied to a build.
   // Derive both from the build-time version injected into
@@ -149,12 +146,10 @@ if (analyticsEnabled) {
     // Qariah: the Qariah options win (services/diagnostics/qariahSentryOptions.ts).
     ...qariahSentryOptions(),
   });
-  // Qariah: debug_id tag, diagnostics build flag, memory watch.
   initQariahSentryScope();
 }
 
-// Qariah (ANR hotfix v2): the PostHog client is created at module scope, before
-// React mounts (services/analytics/qariahPostHogClient.ts).
+// Qariah (ANR hotfix v2): create the PostHog client at module scope, before React mounts.
 const posthogClient = createQariahPostHogClient(analyticsEnabled);
 
 /** Connects PostHog SDK to our analytics service and tracks app lifecycle. */
@@ -239,11 +234,7 @@ function RootLayout() {
   });
 
   // Lock to portrait by default; mushaf.tsx unlocks when that screen is active.
-  // QARIAHV2-C (#54) — guard the rejection: when the OEM kills the Activity
-  // (Samsung/OnePlus/Xiaomi during playback), in-flight ExpoScreenOrientation
-  // calls reject with "current activity is no longer available". Same benign
-  // class as the existing SystemUI/KeepAwake guards; orientation is
-  // meaningless on a dead Activity.
+  // QARIAHV2-C (#54): the call rejects when the OS killed the Activity; that is benign.
   useEffect(() => {
     ScreenOrientation.lockAsync(
       ScreenOrientation.OrientationLock.PORTRAIT_UP,
@@ -319,10 +310,7 @@ function RootLayout() {
     }
 
     async function prepare() {
-      // @ai Qariah (Pass B): the Qariah boot steps and boot instrumentation
-      // (sentinel, furthest step, slow-cold-start, deferred Mushaf preload,
-      // catalog-version polling) run inside bootApp() through
-      // services/qariahBoot.ts.
+      // @ai Qariah (Pass B): bootApp() runs the Qariah boot steps through services/qariahBoot.ts.
       try {
         await bootApp();
 
@@ -355,8 +343,7 @@ function RootLayout() {
 
   // Set native root view background + configure Android navigation bar to match theme
   useEffect(() => {
-    // QARIAHV2-C — guard against the "current activity is no longer available"
-    // rejection when the OS has killed the Activity (see module-scope call above).
+    // QARIAHV2-C: benign rejection when the OS killed the Activity (see the module-scope call).
     void SystemUI.setBackgroundColorAsync(theme.colors.background).catch(() => {
       /* Activity may be gone (OEM-killed); benign cleanup, swallow it. */
     });
@@ -454,25 +441,13 @@ function RootLayout() {
     resetShareIntent,
   ]);
 
-  // First-launch onboarding redirect, OR mushaf-screen restore if last open.
-  // Onboarding wins over mushaf restore: a fresh-install user shouldn't be
-  // dropped into a restored mushaf state. AsyncStorage read is async; gate
-  // mushafRestoreHandled until both checks complete.
-  // Qariah-only: upstream has no first-launch flow.
+  // Restore mushaf screen if it was open when the app was killed.
+  // Qariah: the first-launch onboarding redirect wins over the restore.
   useEffect(() => {
     if (!appIsReady || !isPlayerReady || hasShareIntent) return;
 
     let cancelled = false;
-    // Qariah (#53/#71): this flag gates the splash, so flipping it must NEVER
-    // depend solely on unbounded steps. Two such steps live in this effect:
-    // the AsyncStorage `isOnboarded()` read, and the
-    // `InteractionManager.runAfterInteractions` defer — the latter is starved
-    // for as long as any interaction handle is held (nav transitions,
-    // JS-driven animations), which a Sentry `splash-hide-timeout` event from a
-    // Samsung A35 caught doing exactly that (gate still false at 17s with
-    // every other gate true). The deadline bounds the WHOLE effect: the
-    // redirect logic still completes whenever its async steps land, but the
-    // splash gate flips by the deadline no matter what.
+    // Qariah (#53/#71): the flag gates the splash; the deadline flips it if a step below stalls.
     const gateDeadline = setTimeout(() => {
       if (!cancelled) setMushafRestoreHandled(true);
     }, 4000);
@@ -487,14 +462,7 @@ function RootLayout() {
         return;
       }
 
-      // #105: a cold-start deep link wins over last-session mushaf restore. If
-      // the app was launched from a share link or a widget tap, the user wants
-      // the link target, not their previous mushaf page — pushing /mushaf here
-      // would land on top of the replayed route and eject them from it. Skip
-      // the restore push and let the deep-link replay own navigation; still
-      // settle the splash gate. Upstream (fca03eed) waits for the launch URL
-      // here; Qariah waits for it too, classified, so an OAuth or share-intent
-      // launch still restores. The gate deadline above bounds the wait.
+      // #105: skip the restore after a cold-start deep link (an OAuth or share launch still restores).
       const hasColdStartDeepLink = await whenColdStartDeepLinkKnown();
       if (cancelled) return;
 
@@ -504,12 +472,12 @@ function RootLayout() {
       if (lastScreenWasMushaf && !hasColdStartDeepLink) {
         router.push({
           pathname: '/mushaf',
-          // restored:'1' marks this as the cold-start restore destination so the
-          // content-stall watchdog tags a hang here as the "won't open" variant.
+          // restored:'1' tags a hang here as the "won't open" variant for the content-stall watchdog.
           params: lastReadPage
             ? {page: String(lastReadPage), restored: '1'}
             : {restored: '1'},
         });
+        // Let the navigation animation finish behind the splash before revealing
         InteractionManager.runAfterInteractions(() => {
           if (!cancelled) setMushafRestoreHandled(true);
         });
@@ -537,9 +505,7 @@ function RootLayout() {
       forceReveal
     ) {
       SplashScreen.hideAsync().catch(() => {});
-      // @ai REPORT-ONLY — splash hidden via the late-settle path; record TTI
-      // success once (guarded by splashHiddenRef) so the watchdog's denominator
-      // is correct regardless of which gate completed last (§3).
+      // @ai REPORT-ONLY — splash hidden via the late-settle path; recordSplashHidden() counts once (§3).
       recordSplashHidden();
     }
   }, [
@@ -552,7 +518,7 @@ function RootLayout() {
     recordSplashHidden,
   ]);
 
-  // Qariah (Sprint 48): a cold-start notification tap waits for the restore.
+  // Qariah: a cold-start notification tap waits for the restore.
   useEffect(() => {
     if (mushafRestoreHandled) markMushafRestoreHandled();
   }, [mushafRestoreHandled]);
@@ -575,13 +541,7 @@ function RootLayout() {
     );
   }
 
-  // Qariah (#53): forceReveal must bypass this guard too — hiding the splash
-  // while still returning null would swap an infinite splash for an infinite
-  // blank window (caught in PR review). Revealing with these flags false is
-  // the intended degraded state: system fonts fall back, screens render empty
-  // states, and services that finish late still hydrate their stores (SQLite
-  // calls against an uninitialized service throw catchable JS errors, not
-  // native crashes — the accepted #53 tradeoff).
+  // Qariah (#53): forceReveal bypasses this guard too, or the splash hides onto a blank window.
   if (!forceReveal && (!fontsLoaded || !isPlayerReady || !appIsReady)) {
     return null;
   }
@@ -593,14 +553,11 @@ function RootLayout() {
         autocapture={{
           captureScreens: true,
         }}>
-        {/* Qariah: the Qariah root effects run around AnalyticsConnector. */}
         <QariahRootEffects>
           <AnalyticsConnector />
         </QariahRootEffects>
         <AuthProvider>
-          {/* Observes AuthContext state to emit the sign-in funnel. Renders
-              null and swallows its own errors — see AuthTelemetry's header for
-              why this is an observer rather than a call inside signIn(). */}
+          {/* Observes AuthContext to emit the sign-in funnel; renders null. */}
           <AuthTelemetry />
           <LocaleDirContext.Provider value={appDirection}>
             <ThemeProvider value={navigationTheme}>
@@ -614,11 +571,7 @@ function RootLayout() {
                     // @ts-ignore - RN supports this on iOS to override system theme for native UI (keyboard, menus, alerts)
                     overrideUserInterfaceStyle={isDarkMode ? 'dark' : 'light'}
                     onLayout={onLayoutRootView}>
-                    {/* UserStateProvider must live inside GestureHandlerRootView */}
-                    {/* because the V1RestoreModal it renders post-sign-in uses */}
-                    {/* gorhom BottomSheet's GestureDetector internally. Pre-S17 */}
-                    {/* this provider was a sibling of GHR; the bug only surfaced */}
-                    {/* when a fresh QF sign-in produced a v1 candidate match.    */}
+                    {/* Keep UserStateProvider inside GestureHandlerRootView: V1RestoreModal uses gorhom. */}
                     <UserStateProvider>
                       <NetworkStatusMonitor />
                       <SheetProvider>
@@ -635,10 +588,6 @@ function RootLayout() {
                           <Stack.Screen
                             name="(tabs)"
                             options={{headerShown: false}}
-                          />
-                          <Stack.Screen
-                            name="onboarding"
-                            options={{headerShown: false, animation: 'fade'}}
                           />
                           <Stack.Screen
                             name="adhkar-playing"

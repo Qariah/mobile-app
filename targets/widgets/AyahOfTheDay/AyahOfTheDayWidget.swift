@@ -6,11 +6,13 @@ import WidgetKit
 struct AyahOfTheDayEntry: TimelineEntry {
   let date: Date
   let ayah: StaticAyah?
+  // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage).
+  var language: String? = nil
 }
 
 struct AyahOfTheDayProvider: TimelineProvider {
   func placeholder(in context: Context) -> AyahOfTheDayEntry {
-    AyahOfTheDayEntry(date: .now, ayah: StaticData.ayahOfTheDay(.now))
+    AyahOfTheDayEntry(date: .now, ayah: StaticData.ayahOfTheDay(.now), language: WidgetLanguage.current())
   }
 
   func getSnapshot(in context: Context, completion: @escaping (AyahOfTheDayEntry) -> Void) {
@@ -21,9 +23,10 @@ struct AyahOfTheDayProvider: TimelineProvider {
   func getTimeline(in context: Context, completion: @escaping (Timeline<AyahOfTheDayEntry>) -> Void) {
     let now = Date.now
     let midnight = WidgetLogic.nextMidnight(after: now)
+    let language = WidgetLanguage.current()
     completion(Timeline(entries: [
-      AyahOfTheDayEntry(date: now, ayah: StaticData.ayahOfTheDay(now)),
-      AyahOfTheDayEntry(date: midnight, ayah: StaticData.ayahOfTheDay(midnight)),
+      AyahOfTheDayEntry(date: now, ayah: StaticData.ayahOfTheDay(now), language: language),
+      AyahOfTheDayEntry(date: midnight, ayah: StaticData.ayahOfTheDay(midnight), language: language),
     ], policy: .atEnd))
   }
 }
@@ -57,6 +60,17 @@ struct AyahOfTheDayView: View {
     .foregroundStyle(.white)
     .containerBackground(for: .widget) { WidgetPalette.background }
     .widgetURL(entry.ayah.flatMap { AppLinks.url("quran/\($0.surahId)?ayah=\($0.ayah)") })
+    .widgetLanguage(entry.language)
+  }
+
+  // @ai Qariah (TECH_DEBT #357): readers of Arabic see no English translation, as in the app.
+  private var showsTranslation: Bool { !WidgetLanguage.arabicContent(entry.language) }
+
+  /// "Hud 11:6": the surah name and the verse key, in the app language and its digits.
+  private func reference(_ ayah: StaticAyah) -> String {
+    let name = StaticData.surah(ayah.surahId).map { WidgetLanguage.surahName($0, entry.language) } ?? ayah.surahName
+    let key = "\(WidgetLanguage.number(ayah.surahId, entry.language)):\(WidgetLanguage.number(ayah.ayah, entry.language))"
+    return WidgetLogic.reference(surahName: name, key: key)
   }
 
   @ViewBuilder private func content(_ ayah: StaticAyah) -> some View {
@@ -72,8 +86,10 @@ struct AyahOfTheDayView: View {
     case .systemMedium:
       VStack(alignment: .leading, spacing: 6) {
         header(ayah)
-        arabic(ayah, size: 24, lines: 2)
-        Text(ayah.translation).font(.caption).opacity(0.8).lineLimit(2).minimumScaleFactor(0.85)
+        arabic(ayah, size: 24, lines: showsTranslation ? 2 : 3)
+        if showsTranslation {
+          Text(ayah.translation).font(.caption).opacity(0.8).lineLimit(2).minimumScaleFactor(0.85)
+        }
       }
       .padding(14)
     default:
@@ -81,7 +97,9 @@ struct AyahOfTheDayView: View {
         header(ayah)
         Spacer(minLength: 0)
         arabic(ayah, size: 32, lines: 6)
-        Text(ayah.translation).font(.subheadline).opacity(0.85).lineLimit(5)
+        if showsTranslation {
+          Text(ayah.translation).font(.subheadline).opacity(0.85).lineLimit(5)
+        }
         Spacer(minLength: 0)
       }
       .padding(16)
@@ -92,7 +110,7 @@ struct AyahOfTheDayView: View {
     HStack(spacing: 8) {
       RoundIntentButton(intent: PlayTrackIntent(surahId: ayah.surahId, reciterId: nil, rewayatId: nil, ayah: ayah.ayah),
                         systemName: "play.fill", label: "Listen")
-      Text(WidgetLogic.reference(surahName: ayah.surahName, key: ayah.key))
+      Text(reference(ayah))
         .font(.caption.weight(.semibold)).opacity(0.75).lineLimit(1)
       Spacer(minLength: 0)
       BayaanLogo(size: 14)

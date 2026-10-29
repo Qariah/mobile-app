@@ -131,9 +131,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
           onPress={onShufflePress}
           accessibilityRole="button">
           <ShuffleIcon color={theme.colors.text} size={moderateScale(15)} />
-          {/* Qariah: "تشغيل عشوائي" is wider than a third of the row, so it
-           * shrinks to fit instead of "تشغيل عش..". "Shuffle" fits, so
-           * English keeps its size. */}
+          {/* Qariah: shrink to fit; the Arabic label is wider than a third of the row. */}
           <Text
             style={styles.secondaryText}
             numberOfLines={1}

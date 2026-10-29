@@ -45,7 +45,7 @@ export const NOTIFICATION_CHANNELS: Record<
       'qariah:notifications.channels.followedRecitation',
       'qariah:settings.notifications.followedRecitation',
     ],
-    defaultName: 'New from reciters you follow',
+    defaultName: 'New from qariahs you follow', // #535
   },
   new_recitation: {
     id: 'qariah-new-recitation',

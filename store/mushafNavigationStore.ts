@@ -3,13 +3,11 @@ import {create} from 'zustand';
 interface MushafNavigationState {
   targetPage: number | null;
   targetVerseKey: string | null;
-  // @ai Qariah (Sprint 47 Task 10): the surah a link asked for, when the
-  // page was resolved from it (the header names it on a shared page).
+  // @ai Qariah: the surah a link asked for (the header names it on a shared page).
   targetSurahId: number | null;
   requestId: number;
   navigateToVerse: (verseKey: string, page: number) => void;
-  // @ai Qariah (Sprint 47 Task 10, TECH_DEBT #281): a page with no verse to
-  // select — a link to the open reader (hooks/useReaderLinkPage.ts).
+  // @ai Qariah (TECH_DEBT #281): a page with no verse to select (a link to the open reader).
   navigateToPage: (page: number, surahId?: number) => void;
   clear: () => void;
 }

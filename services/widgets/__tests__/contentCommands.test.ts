@@ -9,6 +9,7 @@ import {
   runContentCommand,
   startBedtime,
 } from '../contentCommands';
+import {isFromPlaylist} from '@/services/player/utils/queueSource';
 
 jest.mock('@/services/playlist/PlaylistService', () => ({playlistService: {}}));
 jest.mock('@/store/uploadsStore', () => ({
@@ -145,6 +146,23 @@ describe('playPlaylist', () => {
       expect.objectContaining({userRecitationId: 'up1'}),
     );
     expect(d.log).toEqual(['play:u']);
+  });
+
+  // @ai Qariah (PLY-13): the end of a playlist from a widget stops, as in the app.
+  it('marks the queued tracks as playlist tracks', async () => {
+    let queued: Track[] = [];
+    const d = deps({
+      playlistItems: jest.fn(async () => [item('a', 0)]),
+      playTracks: jest.fn(async (tracks: Track[]) => {
+        queued = tracks;
+      }),
+    });
+    await playPlaylist(
+      {type: 'playPlaylist', playlistId: 'p', itemId: null},
+      d,
+    );
+    expect(queued).toHaveLength(1);
+    expect(queued.every(isFromPlaylist)).toBe(true);
   });
 
   it('does nothing for an empty or missing playlist', async () => {

@@ -18,10 +18,7 @@ import {useLeaveHiddenRoute} from '@/hooks/useLeaveHiddenRoute';
 export const unstable_settings = {initialRouteName: 'index'};
 
 // @ai-start
-// Qariah (Sprint 47 Task 10): with the adhkar feature off, a link
-// (qariah://adhkar/..., the /adhkar App Link) still reaches this stack. Leave
-// it for the Home screen and render nothing, so no adhkar screen (and no
-// adhkar Play) opens. The upstream layout is AdhkarStack below, unchanged.
+// Qariah: with adhkar off, a deep link still reaches this stack: leave it. AdhkarStack is upstream's layout.
 export default function AdhkarLayout() {
   return isFeatureEnabled('adhkar') ? <AdhkarStack /> : <HiddenAdhkar />;
 }

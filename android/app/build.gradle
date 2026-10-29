@@ -101,23 +101,6 @@ android {
         // @generated begin qariah-lab-buildconfig - expo prebuild (DO NOT MODIFY) sync-2229dd32c259bc5d51e1bd6f1f4d2fe97d4962f7
         buildConfigField "boolean", "QARIAH_LAB", "${(findProperty('qariahLab') ?: 'false').toBoolean()}"
         // @generated end qariah-lab-buildconfig
-
-        // Native Sentry release/dist fallback (REPORT-ONLY telemetry attribution).
-        // Android production events were landing with `release: None` because
-        // Sentry's native auto-detect returned nothing — so a captured ANR
-        // (QARIAHV2-F) couldn't be tied to a build. The JS-side Sentry.init in
-        // app/_layout.tsx now sets release+dist explicitly, but that only covers
-        // events captured AFTER JS init runs; the earliest boot frames (where the
-        // worst hangs live) are captured by the native layer BEFORE JS. These
-        // manifestPlaceholders feed the `io.sentry.release` / `io.sentry.dist`
-        // <meta-data> in AndroidManifest.xml so native-layer events are tagged
-        // too. The JS-side value wins once JS runs; the manifest value covers the
-        // pre-JS window. See planning/observability-gap-samsung-hang-2026-06-08.md
-        // §0. Attribution only — no app behavior change.
-        manifestPlaceholders = [
-            sentryRelease: "com.qariah.app@${versionName}+${versionCode}".toString(),
-            sentryDist: "${versionCode}".toString(),
-        ]
     }
     
     signingConfigs {
@@ -145,10 +128,7 @@ android {
     }
     buildTypes {
         debug {
-            // Qariah: use the embedded debug.keystore for dev builds. Original
-            // template pointed at signingConfigs.release, which only works
-            // when QARIAH_UPLOAD_STORE_FILE is set — fine for CI release builds,
-            // breaks local emu/sim boot-gate on a clean checkout.
+            // Qariah: the debug keystore, so a clean checkout builds without QARIAH_UPLOAD_STORE_FILE.
             signingConfig signingConfigs.debug
         }
         release {

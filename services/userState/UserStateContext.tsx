@@ -1,18 +1,20 @@
 /**
- * UserStateProvider — boots the user-state DB, runs the api-v2 → QF migration
- * shim on first authenticated mount, pulls QF state into the local cache, and
- * wires the sync queue's flush scheduler into syncBus.
+ * UserStateProvider — boots the user-state DB, runs the account check and the
+ * restores on first authenticated mount, and wires the sync queue's flush
+ * scheduler into syncBus.
  *
  * Renders without errors regardless of auth status. Unauthenticated:
- *   - DB still opens (cache is read-only)
+ *   - DB still opens
  *   - syncBus.setAuthSnapshot('unauthenticated') → side-effect helpers no-op
  *   - No QF network requests
  *
  * Authenticated:
- *   - Pull preferences (`qariah:favoriteReciterIds`, `qariah:defaultReciter`,
- *     `qariah:theme`) and the latest reading session into the local cache.
- *   - Run the migration shim if `@qariah:v2migrationDone` is unset.
+ *   - Run the account check (TECH_DEBT #244), the v1 restore check, the notes
+ *     restore and the posts pull.
  *   - Schedule a sync flush.
+ *
+ * Divergence batch C3 (SEM-S1, 2026-10-24) removed the QF → cache pull: it
+ * made 5 QF calls on each sign-in to fill cache tables that nothing read.
  *
  * Sprint 4 (S4.3).
  */
@@ -28,19 +30,13 @@ import React, {
 } from 'react';
 import {AppState, Platform, type AppStateStatus} from 'react-native';
 import {useAuth} from '@/services/auth';
-import {
-  initUserStateDb,
-  upsertCachedPreference,
-  upsertCachedReadingSession,
-} from './db';
+import {initUserStateDb} from './db';
 import {
   registerFlushScheduler,
   setAuthSnapshot,
   notifyDbReady,
 } from './syncBus';
 import {scheduleSyncFlush, flushSyncQueue} from './syncQueue';
-import {getPreference, QARIAH_PREF_KEYS} from './preferences';
-import {getLatestReadingSession} from './readingSessions';
 // Sprint 14 — `services/userState/migrationShim.ts` fully deleted
 // (TECH_DEBT #55). The Sprint 4 seed-to-QF shim was tombstoned in Sprint 13
 // (TECH_DEBT #50) after the Sprint 11 R2 v1-restore path superseded it; no
@@ -49,9 +45,15 @@ import {checkForV1Restore, type RestoreCandidate} from './v1Restore';
 import {restoreQfNotesOnce} from './notesRestore';
 import {syncQfPostsToLocal} from './postsRestore';
 import {ensureAccountVerified} from './accountCleanup'; // @ai
+import {installPlayerStoreSync} from './playerStoreSync'; // @ai
 import {V1RestoreModal} from '@/components/auth/V1RestoreModal';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import * as Sentry from '@sentry/react-native';
+
+// @ai PLY-S8 — the favourites and reading-session pushes wrap the player
+// store actions (`playerStoreSync.ts`). This runs before the provider can set
+// the auth snapshot, so no push is lost.
+installPlayerStoreSync();
 
 interface UserStateContextValue {
   isReady: boolean;
@@ -160,7 +162,7 @@ export function UserStateProvider({children}: {children: React.ReactNode}) {
     })();
   }, []);
 
-  // On first transition into 'authenticated': pull QF → cache, then migrate.
+  // On first transition into 'authenticated': account check, then restores.
   // Re-runs whenever a different user signs in (we key by access-token-derived
   // marker; in practice we just re-run on every auth state change).
   useEffect(() => {
@@ -171,22 +173,15 @@ export function UserStateProvider({children}: {children: React.ReactNode}) {
     initialPullDoneForUserRef.current = userMarker;
     (async () => {
       // @ai-start
-      // M4 (TECH_DEBT #244) — before any pull or restore for this account,
-      // make sure that the local QF-linked data is this account's. On a
-      // different account this removes the previous account's data. If the
-      // check fails (for example offline), skip the cache pull. The restores
-      // and the queue flush below run the check again themselves and do
-      // nothing until it succeeds, so their telemetry stays as before.
+      // M4 (TECH_DEBT #244) — before any restore for this account, make
+      // sure that the local QF-linked data is this account's. On a different
+      // account this removes the previous account's data. If the check fails
+      // (for example offline), the restores and the queue flush below run the
+      // check again themselves and do nothing until it succeeds, so their
+      // telemetry stays as before.
       const account = await ensureAccountVerified();
       if (cancelled) return;
-      if (account.kind === 'ok') {
-        try {
-          await pullQfStateIntoCache();
-          if (cancelled) return;
-        } catch (e) {
-          if (__DEV__) console.warn('[userState] initial QF pull failed:', e);
-        }
-      } else if (__DEV__) {
+      if (account.kind !== 'ok' && __DEV__) {
         console.warn('[userState] account check did not pass:', account.kind);
       }
       // @ai-end
@@ -299,43 +294,4 @@ export function useUserState(): UserStateContextValue {
   if (!ctx)
     throw new Error('useUserState() must be used inside <UserStateProvider>');
   return ctx;
-}
-
-// ────────────────────── Initial QF → cache pull ──────────────────────
-
-async function pullQfStateIntoCache(): Promise<void> {
-  // Preferences we care about for this sprint.
-  const prefKeys = [
-    QARIAH_PREF_KEYS.favoriteReciterIds,
-    QARIAH_PREF_KEYS.defaultReciter,
-    QARIAH_PREF_KEYS.theme,
-    QARIAH_PREF_KEYS.defaultRewayah,
-  ];
-  await Promise.all(
-    prefKeys.map(async key => {
-      try {
-        const value = await getPreference<string>(key);
-        if (value !== null) {
-          await upsertCachedPreference(key, value);
-        }
-      } catch (e) {
-        if (__DEV__) console.warn(`[userState] pull ${key} failed:`, e);
-      }
-    }),
-  );
-
-  try {
-    const rs = await getLatestReadingSession();
-    if (rs) {
-      await upsertCachedReadingSession({
-        id: rs.id,
-        reciterId: rs.reciterId,
-        surahNumber: rs.surahNumber,
-        ayahNumber: rs.ayahNumber,
-        updatedAt: Date.parse(rs.timestamp) || Date.now(),
-      });
-    }
-  } catch (e) {
-    if (__DEV__) console.warn('[userState] pull reading_session failed:', e);
-  }
 }

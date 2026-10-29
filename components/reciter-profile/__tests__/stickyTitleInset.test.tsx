@@ -133,4 +133,12 @@ describe('ReciterProfile.tsx sticky title (TECH_DEBT #320)', () => {
     expect(text).toMatch(/numberOfLines=\{1\}/);
     expect(text).toMatch(/ellipsizeMode="tail"/);
   });
+
+  // TECH_DEBT #351: in a centered row, Android drew an ellipsized Arabic name
+  // wider than its box, and the box clipped the first letter.
+  it('stretches the title over the row and centers the text in it', () => {
+    const text = block.slice(block.indexOf('<Text'));
+    expect(text).toMatch(/alignSelf: 'stretch',/);
+    expect(text).toMatch(/textAlign: 'center',/);
+  });
 });

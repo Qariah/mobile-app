@@ -87,14 +87,6 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-// The favourites store fires an auth-gated QF sync side-effect; irrelevant here
-// and it would drag the user-state SQLite layer into the test.
-jest.mock('@/services/userState', () => ({
-  enqueueFavoritesSync: jest.fn(),
-  enqueueReadingSessionSync: jest.fn(),
-  enqueuePreferenceSync: jest.fn(),
-}));
-
 jest.mock('@sentry/react-native', () => ({
   captureMessage: jest.fn(),
   addBreadcrumb: jest.fn(),

@@ -7,8 +7,10 @@
 // next pull. An edit pushed the row as a new note and post, so QF showed two
 // public posts. The Stage-2 review reordered the edit: the new post comes
 // first, and the old post is deleted only after it exists. A failed delete
-// goes to a pending-delete list that the posts pull retries. The QF calls,
-// the local DB and Sentry are mocks; AsyncStorage is the package's jest mock.
+// goes to a pending-delete list that the posts pull retries. TECH_DEBT #256:
+// an edit now goes to QF's edit endpoint first, and the create-then-delete
+// flow runs only when that edit is not available. The QF calls, the local DB
+// and Sentry are mocks; AsyncStorage is the package's jest mock.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {VerseNote} from '@/types/verse-annotations';
@@ -48,6 +50,15 @@ const mockPublishNote = jest.fn((noteId: string) => {
   mockCalls.push(`publish ${noteId}`);
   return Promise.resolve('new-post');
 });
+// TECH_DEBT #256: true = QF edited the post in place; false = the edit is not
+// available, so the caller falls back to create-then-delete.
+const mockEditPost = jest.fn<Promise<boolean>, [string, string]>();
+function editPostAnswers(edited: boolean): void {
+  mockEditPost.mockImplementation((postId: string, body: string) => {
+    mockCalls.push(`editPost ${postId} ${body}`);
+    return Promise.resolve(edited);
+  });
+}
 
 jest.mock('../notes', () => ({
   verseKeyToRange: (k: string) => `${k}-${k}`,
@@ -56,6 +67,7 @@ jest.mock('../notes', () => ({
   deleteNote: (noteId: string) => mockDeleteNote(noteId),
   createNote: (input: {body: string}) => mockCreateNote(input),
   publishNote: (noteId: string) => mockPublishNote(noteId),
+  editPost: (postId: string, body: string) => mockEditPost(postId, body),
 }));
 
 jest.mock('@/services/auth/qfOAuth', () => ({
@@ -95,6 +107,7 @@ const pulledReflection = note({qfPostId: 'post-42'});
 beforeEach(async () => {
   mockCalls.length = 0;
   jest.clearAllMocks();
+  editPostAnswers(true);
   await AsyncStorage.clear();
   await AsyncStorage.setItem('@qariah:qfAccountHash', 'hash-a');
 });
@@ -135,7 +148,47 @@ describe('H3 — delete of a pulled reflection that fails', () => {
   });
 });
 
-describe('H3 — edit of a pulled reflection', () => {
+describe('TECH_DEBT #256 — edit of a pulled reflection in place', () => {
+  it('edits the post in place and keeps the row linked to it', async () => {
+    const edited = {...pulledReflection, content: 'Edited reflection'};
+
+    await pushEditOfUnlinkedNoteToQf(pulledReflection, edited, {
+      publish: true,
+    });
+
+    expect(mockCalls).toEqual(['editPost post-42 Edited reflection']);
+    expect(mockCreateNote).not.toHaveBeenCalled();
+    expect(mockUnpublishNote).not.toHaveBeenCalled();
+    expect(mockPatchNoteQfIds).not.toHaveBeenCalled();
+  });
+
+  it('changes nothing when the edit fails with another error', async () => {
+    mockEditPost.mockRejectedValueOnce(networkError());
+    const edited = {...pulledReflection, content: 'Edited reflection'};
+
+    await expect(
+      pushEditOfUnlinkedNoteToQf(pulledReflection, edited, {publish: true}),
+    ).rejects.toThrow('network');
+
+    expect(mockCreateNote).not.toHaveBeenCalled();
+    expect(mockUnpublishNote).not.toHaveBeenCalled();
+    expect(mockPatchNoteQfIds).not.toHaveBeenCalled();
+  });
+
+  it('does not edit when the user unpublishes', async () => {
+    await pushEditOfUnlinkedNoteToQf(pulledReflection, pulledReflection, {
+      publish: false,
+    });
+
+    expect(mockEditPost).not.toHaveBeenCalled();
+  });
+});
+
+describe('H3 — edit of a pulled reflection (fallback: no edit in place)', () => {
+  beforeEach(() => {
+    editPostAnswers(false);
+  });
+
   it('makes the new post first, then deletes the old post', async () => {
     const edited = {...pulledReflection, content: 'Edited reflection'};
 
@@ -144,6 +197,7 @@ describe('H3 — edit of a pulled reflection', () => {
     });
 
     expect(mockCalls).toEqual([
+      'editPost post-42 Edited reflection',
       'createNote Edited reflection',
       'publish new-note',
       'patch local-1 {"qfNoteId":"new-note","qfPostId":"new-post"}',

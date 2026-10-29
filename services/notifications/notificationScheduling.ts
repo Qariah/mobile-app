@@ -44,6 +44,12 @@
 // notice, but no alarm fires it. The same id replaces a pending notice, so
 // iOS (which keeps the notice across a force-quit) gets no second notice.
 // A play start before the boot step wins over the record.
+//
+// One notice a day (Sprint 51, TECH_DEBT #328): the notice moves one day
+// later, at the same local time, when its day is a Friday with the Al-Kahf
+// reminder on, or the day of the app's last notice (`continueNoticeTime`).
+// The record keeps the moved time. The Al-Kahf switch ON moves a pending
+// notice off a Friday.
 import {AppState, type AppStateStatus} from 'react-native';
 import {SURAHS} from '@/data/surahData';
 import {getReciterByIdSync} from '@/services/dataService';
@@ -66,7 +72,10 @@ import {
 import {
   continueListeningCandidate,
   continueListeningTrigger,
+  continueNoticeTime,
+  isKahfDay,
   type ContinueListeningText,
+  type ContinueNoticeDayRules,
 } from './scheduler';
 import type {
   KeyValueStorage,
@@ -222,6 +231,19 @@ export interface NotificationSchedulingDeps {
   onContinueScheduled?: (result: ContinueScheduleResult) => void;
   /** The store of the last play. Default: `notificationsStorage` (MMKV `qariah-notifications`). */
   storage?: KeyValueStorage;
+  /**
+   * The taken days of `continueNoticeTime` (TECH_DEBT #328). Default: the
+   * prefs store now (before a read, its defaults: Al-Kahf on).
+   */
+  dayRules?: () => ContinueNoticeDayRules;
+}
+
+function defaultDayRules(): ContinueNoticeDayRules {
+  const prefs = useNotificationPrefsStore.getState();
+  return {
+    kahfFridayOn: prefs.kahf_friday !== false,
+    lastNotifiedDay: prefs.lastNotifiedDay,
+  };
 }
 
 /** Play starts from the player store: the state becomes `playing`. */
@@ -344,7 +366,7 @@ type ContinueSource = 'play' | 'restore';
 function scheduleContinueFor(
   track: PlayedTrack,
   at: number,
-  fireAt: number,
+  dueAt: number,
   source: ContinueSource,
 ): void {
   const key = trackKey(track);
@@ -356,6 +378,13 @@ function scheduleContinueFor(
   state.lastScheduled = attempt;
   const grantedSyncsAtStart = state.grantedSyncs;
   const deps = state.deps;
+  // TECH_DEBT #328: off a taken day. The record keeps this time.
+  let fireAt = dueAt;
+  try {
+    fireAt = continueNoticeTime(dueAt, (deps.dayRules ?? defaultDayRules)());
+  } catch {
+    fireAt = dueAt;
+  }
   void scheduleContinueListening(
     track,
     new Date(at),
@@ -381,7 +410,11 @@ function scheduleContinueFor(
       (result === 'scheduled' || result === 'rescheduled') &&
       state.lastScheduled === attempt
     ) {
-      writeContinuePlay({track, playedAt: at, fireAt}, storageOf(deps));
+      writeContinuePlay(
+        {track, playedAt: at, fireAt},
+        storageOf(deps),
+        (deps.now ?? Date.now)(),
+      );
     }
     if (result === 'failed' || result === 'skipped') {
       // Nothing is pending for this play: the next play start, or a sync
@@ -426,8 +459,10 @@ function restoreContinueListening(): void {
   const storage = storageOf(deps);
   const saved = readContinuePlay(storage);
   if (!saved) return;
-  if (saved.fireAt <= (deps.now ?? Date.now)()) {
-    clearContinuePlay(storage);
+  const now = (deps.now ?? Date.now)();
+  if (saved.fireAt <= now) {
+    // The notice fired: the record goes, and its day stays taken (#328).
+    clearContinuePlay(storage, now);
     return;
   }
   if ((deps.isHoldout ?? isNotificationsHoldout)()) return;
@@ -462,10 +497,23 @@ function handlePrefsChange(
   if (next.kahf_friday !== previous.kahf_friday) {
     void (deps.sync ?? defaultSync)('toggle').catch(() => undefined);
   }
+  // TECH_DEBT #328: Al-Kahf ON moves a pending "continue listening" notice
+  // off a Friday (the same id replaces it).
+  if (!previous.kahf_friday && next.kahf_friday && next.continue_listening) {
+    const saved = readContinuePlay(storageOf(deps));
+    if (
+      saved &&
+      saved.fireAt > (deps.now ?? Date.now)() &&
+      isKahfDay(saved.fireAt)
+    ) {
+      state.lastScheduled = null;
+      scheduleContinueFor(saved.track, saved.playedAt, saved.fireAt, 'restore');
+    }
+  }
   if (previous.continue_listening && !next.continue_listening) {
     state.lastScheduled = null;
     // The next process must not schedule the notice again.
-    clearContinuePlay(storageOf(deps));
+    clearContinuePlay(storageOf(deps), (deps.now ?? Date.now)());
     try {
       void (deps.notifier ?? defaultNotifier)()
         .cancelByType('continue_listening')

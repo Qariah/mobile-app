@@ -31,7 +31,7 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
 
 import {NowPlayingIndicator} from '@/components/NowPlayingIndicator';
 import {GradientText} from '@/components/GradientText';
-import {formatAyahRange, getSurahMetadataSync} from '@/services/dataService';
+import {formatAyahRange, getSurahMetadataSync} from '@/utils/surahMetadata';
 import {useReciterStore} from '@/store/reciterStore';
 import {
   useIsDownloaded,
@@ -213,8 +213,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
     const md = getSurahMetadataSync(reciterId, rewayatId, id);
     return md ? formatAyahRange(md) : undefined;
   }, [reciterId, rewayatId, id, recitersInitialized]);
-  // @ai Qariah ayah range (Sprint 20) after upstream's meaning line.
-  // formatAyahRange returns the translated label.
+  // @ai Qariah: the translated ayah range after the meaning line.
   const baseSecondary =
     meaning ?? t('common:counts.ayahs', {count: versesCount});
   const secondaryText = ayahRangeLabel

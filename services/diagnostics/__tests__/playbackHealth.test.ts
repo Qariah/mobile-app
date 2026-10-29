@@ -33,8 +33,8 @@ jest.mock('@/services/analytics/AnalyticsService', () => ({
 }));
 
 let mockBuildFlag = true;
-jest.mock('@/config/featureFlags', () => ({
-  isFeatureEnabled: () => mockBuildFlag,
+jest.mock('@/config/qariahFeatureFlags', () => ({
+  isQariahFeatureEnabled: () => mockBuildFlag,
 }));
 
 import {AppState} from 'react-native';
@@ -82,6 +82,9 @@ function newProcess(): void {
 describe('playbackHealth', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    // @ai The caps are per UTC day. A run near midnight UTC crossed the day
+    // while the timers advanced, so the cap reset and the count was wrong.
+    jest.setSystemTime(new Date('2026-01-15T12:00:00Z'));
     jest.clearAllMocks();
     mockStorage.clear();
     mockBudgetThrows = false;

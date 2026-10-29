@@ -29,18 +29,21 @@
 //   idle           only skipped/cancelled runs (event-gated, e.g. @claude)  → info
 //   no-signal      no runs at all yet                                       → info
 //   gate-disabled  a required gate workflow is not active, or not found     → ALERT
-//   gate-silent    a required gate does not fire on qariah-main pushes      → ALERT
+//   gate-silent    the trunk gate does not check qariah-main                → ALERT
 //   unchecked      a required gate could not be read                        → NOT CHECKED
 //
-// The script judges REQUIRED gates (`adopt.requiredWorkflows` in
-// docs/operations/auto-sprint-policy.json) on push runs only: one query for
-// qariah-main and one for each release/* and hotfix/* branch (the gates
-// trigger on no other branch). A gate fails when its newest push run on qariah-main failed, or
-// when its newest run on a release branch used in the last 14 days failed. It
-// is silent when it has no push run on qariah-main, or when its newest trunk
-// run is more than 24 h older than the newest qariah-main commit. It is "not
-// checked" when a read fails or its first trunk run is still in progress.
-// Draft-PR runs never count: a draft's failure belongs to that PR.
+// The script judges two kinds of gate (docs/operations/auto-sprint-policy.json).
+// The REQUIRED gates (`adopt.requiredWorkflows`) run on pull requests and on
+// pushes to release/* and hotfix/*: one query of push runs for each release
+// branch. A required gate fails when its newest run on a release branch used
+// in the last 14 days failed. Since 2026-10-25 a merge to qariah-main does not
+// run them again. The TRUNK gate (`adopt.trunkWorkflow`, main-check.yml) runs
+// them on the qariah-main head, and its newest run is the state of qariah-main.
+// It fails when that run failed. It is silent when it has no completed run on
+// qariah-main, or when its newest run is more than 24 h older than the newest
+// qariah-main commit. A gate is "not checked" when a read fails or its first
+// run is still in progress. Draft-PR runs never count: a draft's failure
+// belongs to that PR.
 //
 // ADVISORY workflows (a failure is a WARN, not an ALERT): the review agent and
 // the OTA preview are best-effort, non-blocking, and can error transiently
@@ -77,16 +80,15 @@ const ADVISORY = new Set(
   ADOPT.advisoryWorkflows || ['Claude Code Review', 'EAS Update Preview'],
 );
 
-// Gate workflows that must stay active and must run on qariah-main. On
-// 2026-10-03 `Test` had been `disabled_manually` with zero runs, and this
-// script listed it as "disabled (expected)".
+// Gate workflows that must stay active. On 2026-10-03 `Test` had been
+// `disabled_manually` with zero runs, and this script listed it as
+// "disabled (expected)".
 const REQUIRED_GATES = new Set(
-  ADOPT.requiredWorkflows || [
-    'Branding Conformance',
-    'Lint & Typecheck',
-    'Test',
-  ],
+  ADOPT.requiredWorkflows || ['Lint & Typecheck', 'Test'],
 );
+// The workflow that runs the required gates on the qariah-main head.
+const TRUNK_GATE = ADOPT.trunkWorkflow || 'Main check';
+const ALL_GATES = new Set([...REQUIRED_GATES, TRUNK_GATE]);
 
 // Conclusions that carry no health signal (the workflow chose not to run).
 const NON_SIGNAL = new Set([
@@ -202,18 +204,21 @@ function classify(wf, runs, {staleDays}) {
   };
 }
 
-// The gate workflows trigger on pushes to qariah-main, release/** and
-// hotfix/** only, so those are the lines a gate can report on. A branch cut
-// before the trigger existed has no gate runs; it then adds nothing.
-// A failed run on a release line counts only while the line is in use.
+// The required gates run on pull requests and on pushes to release/** and
+// hotfix/**; the trunk gate runs on qariah-main. A branch cut before a trigger
+// existed has no gate runs; it then adds nothing. A failed run on a release
+// line counts only while the line is in use.
 const RELEASE_LINE_WINDOW_DAYS = 14;
 // The trunk gate is stale when its newest run is this much older than the
-// newest commit on qariah-main: the gate stopped firing on new pushes.
+// newest commit on qariah-main: the gate stopped checking new commits.
 const TRUNK_STALE_HOURS = 24;
 
-function gateRuns(wf, query) {
+// Push runs of a required gate. The trunk gate reads the runs of every event:
+// they are scheduled or started by hand.
+function gateRuns(wf, query, {pushOnly = true} = {}) {
+  const event = pushOnly ? 'event=push&' : '';
   return (
-    ghJson(`repos/${REPO}/actions/workflows/${wf.id}/runs?event=push&${query}`)
+    ghJson(`repos/${REPO}/actions/workflows/${wf.id}/runs?${event}${query}`)
       .workflow_runs || []
   );
 }
@@ -257,37 +262,49 @@ const notChecked = note => ({
 });
 
 /**
- * Classify a required gate from push runs only: one query for qariah-main and
- * one for each release branch. A window of the newest runs of all events or
- * branches is not enough: draft-PR runs and trunk runs push a red run out.
- * A read that fails makes the gate "not checked", never "ok" or "silent".
+ * Classify a gate. A required gate (`lines`) reads one query of push runs for
+ * each release branch. The trunk gate (`trunk`) reads its runs on
+ * qariah-main. A window of the newest runs of all events or branches is not
+ * enough: draft-PR runs push a red run out. A read that fails makes the gate
+ * "not checked", never "ok" or "silent". `read` is gateRuns; a test passes
+ * its own.
  */
-function classifyGate(wf, trunkHeadDate, releases) {
-  const readTrunk = () => gateRuns(wf, 'branch=qariah-main&per_page=10');
-  let trunkRuns;
-  try {
-    trunkRuns = readTrunk();
-  } catch (e) {
-    return notChecked(`read failed: ${String(e.message || e).split('\n')[0]}`);
-  }
-  if (releases === null)
-    return notChecked('the release and hotfix branch list could not be read');
-  const releaseLatest = [];
-  for (const b of releases) {
-    let r;
+export function classifyGate(
+  wf,
+  trunkHeadDate,
+  releases,
+  {trunk = false, lines = true, read = gateRuns} = {},
+) {
+  const readTrunk = () =>
+    read(wf, 'branch=qariah-main&per_page=10', {pushOnly: false});
+  let trunkRuns = [];
+  if (trunk) {
     try {
-      r = meaningful(
-        gateRuns(wf, `branch=${encodeURIComponent(b)}&per_page=5`),
+      trunkRuns = readTrunk();
+    } catch (e) {
+      return notChecked(
+        `read failed: ${String(e.message || e).split('\n')[0]}`,
       );
-    } catch {
-      return notChecked(`the runs on ${b} could not be read`);
     }
-    if (r && daysAgo(r.created_at) <= RELEASE_LINE_WINDOW_DAYS)
-      releaseLatest.push(r);
+  }
+  const releaseLatest = [];
+  if (lines) {
+    if (releases === null)
+      return notChecked('the release and hotfix branch list could not be read');
+    for (const b of releases) {
+      let r;
+      try {
+        r = meaningful(read(wf, `branch=${encodeURIComponent(b)}&per_page=5`));
+      } catch {
+        return notChecked(`the runs on ${b} could not be read`);
+      }
+      if (r && daysAgo(r.created_at) <= RELEASE_LINE_WINDOW_DAYS)
+        releaseLatest.push(r);
+    }
   }
 
-  const trunk = meaningful(trunkRuns);
-  const failed = [trunk, ...releaseLatest].filter(
+  const trunkRun = trunk ? meaningful(trunkRuns) : undefined;
+  const failed = [trunkRun, ...releaseLatest].filter(
     x => x && x.conclusion !== 'success',
   );
   if (failed.length) {
@@ -299,6 +316,15 @@ function classifyGate(wf, trunkHeadDate, releases) {
     };
   }
   if (!trunk) {
+    return releaseLatest.length
+      ? {status: 'ok', advisory: false, latest: summarize(releaseLatest[0])}
+      : {
+          status: 'idle',
+          advisory: false,
+          note: `no release-line run in ${RELEASE_LINE_WINDOW_DAYS} days; ${TRUNK_GATE} checks qariah-main`,
+        };
+  }
+  if (!trunkRun) {
     // The first trunk run can still be queued or running (for example just
     // after the merge that adds the gate). That is not silence.
     if (trunkRuns.some(x => x.status !== 'completed'))
@@ -306,7 +332,7 @@ function classifyGate(wf, trunkHeadDate, releases) {
     return {
       status: 'gate-silent',
       advisory: false,
-      note: 'no completed push run on qariah-main — the gate does not fire on the trunk',
+      note: 'no completed run on qariah-main — nothing checks the trunk',
     };
   }
   if (!trunkHeadDate)
@@ -331,12 +357,12 @@ function classifyGate(wf, trunkHeadDate, releases) {
       return {
         status: 'gate-silent',
         advisory: false,
-        latest: summarize(trunk),
-        note: `the newest qariah-main run is older than the newest qariah-main commit by more than ${TRUNK_STALE_HOURS} h — the gate stopped firing`,
+        latest: summarize(trunkRun),
+        note: `the newest qariah-main run is older than the newest qariah-main commit by more than ${TRUNK_STALE_HOURS} h — the gate stopped checking new commits`,
       };
     }
   }
-  return {status: 'ok', advisory: false, latest: summarize(trunk)};
+  return {status: 'ok', advisory: false, latest: summarize(trunkRun)};
 }
 
 function main() {
@@ -376,7 +402,7 @@ function main() {
 
   // A required gate that is not active, or not found. A deleted entry does not
   // count when an active workflow with the same name exists (a renamed file).
-  const gateProblems = [...REQUIRED_GATES]
+  const gateProblems = [...ALL_GATES]
     .filter(n => !active.some(w => w.name === n))
     .map(n => {
       const entry = workflows.find(w => w.name === n);
@@ -385,7 +411,7 @@ function main() {
         status: 'gate-disabled',
         advisory: false,
         note: entry
-          ? `required gate is ${entry.state} — no PR or push runs it`
+          ? `required gate is ${entry.state} — nothing runs it`
           : 'required gate workflow not found',
       };
     });
@@ -400,11 +426,12 @@ function main() {
   const releases = releaseBranches();
   const results = [];
   for (const wf of active) {
-    if (REQUIRED_GATES.has(wf.name)) {
+    if (ALL_GATES.has(wf.name)) {
+      const trunk = wf.name === TRUNK_GATE;
       results.push({
         name: wf.name,
         state: wf.state,
-        ...classifyGate(wf, trunkHeadDate, releases),
+        ...classifyGate(wf, trunkHeadDate, releases, {trunk, lines: !trunk}),
       });
       continue;
     }
@@ -487,7 +514,7 @@ function main() {
   for (const u of unchecked) {
     console.log(`  ❔ ${u.name}: ${u.note}`);
   }
-  const otherDisabled = disabled.filter(d => !REQUIRED_GATES.has(d.name));
+  const otherDisabled = disabled.filter(d => !ALL_GATES.has(d.name));
   if (otherDisabled.length) {
     console.log(
       `  ⏸️  disabled (not a gate): ${otherDisabled.map(d => d.name).join(', ')}`,

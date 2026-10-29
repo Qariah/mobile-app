@@ -69,12 +69,9 @@ export const HighlightContent: React.FC<HighlightContentProps> = ({
     [selection, onDone],
   );
 
-  // A tap on the colour that is already set changes nothing: no write, and
-  // no verse_highlight_set event (Sprint 47 review). // @ai
   const handleSelectColor = useCallback(
-    (color: HighlightColor) =>
-      color === currentColor ? onDone() : writeHighlight(color),
-    [currentColor, onDone, writeHighlight],
+    (color: HighlightColor) => writeHighlight(color),
+    [writeHighlight],
   );
 
   const handleRemove = useCallback(

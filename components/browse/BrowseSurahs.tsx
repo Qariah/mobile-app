@@ -163,14 +163,7 @@ const useStyles = () => {
 interface BrowseSurahsProps {
   theme: Theme;
   onBack: () => void;
-  /**
-   * Sprint 14 — when true, tapping a surah card routes directly to the
-   * filtered reciter list (`reciter/browse?view=all&surahId=N`) without
-   * showing the "Select Reciter" sheet, regardless of the user's
-   * `askEveryTime` preference. Used by the Listen-tab Surah pill entry
-   * point where the user has already declared "I want to browse reciters
-   * for this surah."
-   */
+  /** Open the filtered reciter list directly, with no "Select Reciter" sheet (Listen-tab Surah entry). */
   forceBrowseAll?: boolean;
 }
 
@@ -291,10 +284,6 @@ export default function BrowseSurahs({
 
   const handleSurahPress = useCallback(
     (surah: Surah) => {
-      // Sprint 14 — `forceBrowseAll` short-circuits the askEveryTime sheet
-      // so the Listen-tab Surah pill flow goes straight to the filtered
-      // reciter list (the user already declared "browse all" intent at
-      // the pill tap, so the sheet is just friction).
       if (forceBrowseAll) {
         router.push({
           pathname: './reciter/browse',

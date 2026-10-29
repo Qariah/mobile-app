@@ -12,7 +12,7 @@ tags:
     clearState: true
 - runFlow: ../../../subflows/skip-onboarding.yaml
 - tapOn: 'Search'
-- tapOn: 'Search surahs or reciters'
+- tapOn: 'Search surahs or (qariahs|reciters)'  # "reciters" before #535
 - inputText: 'baqara'
 # surah result (Maestro text = full-match regex → wildcard the "2. " prefix + "The Cow" subtitle)
 - extendedWaitUntil:

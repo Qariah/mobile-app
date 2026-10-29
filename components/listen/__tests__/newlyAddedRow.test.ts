@@ -12,7 +12,7 @@ import {
   newlyAddedRecitationKey,
   selectNewlyAddedRow,
 } from '../newlyAddedRow';
-import type {NewlyAddedRecitation} from '@/data/reciterCollections';
+import type {NewlyAddedRecitation} from '@/data/qariahReciterCollections';
 import type {Reciter, Rewayat} from '@/data/reciterData';
 
 // A fixed "today": 2026-10-20 (UTC). The 30-day cutoff is 2026-09-20.

@@ -10,7 +10,7 @@
 // rely on it elsewhere.
 //
 // Sprint 23 S23.4 (TECH_DEBT #72) — viewBox cropped to the path data's true
-// curve-aware bounding box (+3% padding) via `scripts/crop-xj-silhouette.ts`.
+// curve-aware bounding box (+3% padding) by a one-off script (git history).
 // The source map's viewBox `0 0 2220.489 1938.905` left the silhouette
 // sitting slightly high (bottom margin ~131 vs top ~29); the crop reframes
 // it so the shape is centred in the country-card canvas. Paths unchanged —

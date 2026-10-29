@@ -4,12 +4,14 @@ import {
   StyleSheet,
   useWindowDimensions,
   ActivityIndicator,
+  LayoutChangeEvent,
 } from 'react-native';
 import {moderateScale} from 'react-native-size-matters';
 import {moderateScale as moderateScaleCapped} from '@/utils/scale';
 import {LegendList} from '@legendapp/list';
 import {Reciter} from '@/data/reciterData';
 import {Theme} from '@/utils/themeUtils';
+import {useResponsive} from '@/hooks/useResponsive';
 import {BrowseReciterCard} from './BrowseReciterCard';
 
 interface BrowseGridProps {
@@ -73,17 +75,35 @@ const BrowseGrid = React.memo(
   }: BrowseGridProps) => {
     const {width: windowWidth} = useWindowDimensions();
     const [isLoading] = useState(false);
+    // @ai Qariah (TECH_DEBT #384): on a tablet the grid is narrower than the window (the sidebar,
+    // the 720 pt MaxWidthContainer column), so the last column was cut off. Measure it, as ExploreView does.
+    const {isTablet} = useResponsive();
+    const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+    const onContainerLayout = useCallback(
+      (e: LayoutChangeEvent) => {
+        if (!isTablet) return;
+        const w = e.nativeEvent.layout.width;
+        if (w > 0) {
+          setMeasuredWidth(prev => (prev === w ? prev : w));
+        }
+      },
+      [isTablet],
+    );
+    const gridWidth =
+      isTablet && measuredWidth != null ? measuredWidth : windowWidth;
 
     // Calculate number of columns based on screen width
     const numColumns = useMemo(() => {
       const minCardWidth = moderateScale(120);
-      return Math.max(3, Math.floor(windowWidth / minCardWidth));
-    }, [windowWidth]);
+      return Math.max(3, Math.floor(gridWidth / minCardWidth));
+    }, [gridWidth]);
 
     // Convert flat list to rows for grid layout
     const itemRows = useMemo(() => {
+      // @ai Qariah (TECH_DEBT #384): on a tablet, no rows before the first measurement (no wrong-size flash).
+      if (isTablet && measuredWidth == null) return [];
       return createItemRows(reciters, numColumns);
-    }, [reciters, numColumns]);
+    }, [reciters, numColumns, isTablet, measuredWidth]);
 
     const styles = useMemo(
       () => createStyles(theme, bottomInset),
@@ -94,7 +114,7 @@ const BrowseGrid = React.memo(
     const itemDimensions = useMemo(() => {
       const totalHorizontalPadding = moderateScale(16);
       const gapSpace = moderateScale(10) * (numColumns - 1);
-      const availableWidth = windowWidth - totalHorizontalPadding - gapSpace;
+      const availableWidth = gridWidth - totalHorizontalPadding - gapSpace;
       const itemWidth = availableWidth / numColumns;
       const itemHeight = itemWidth * 1.2;
 
@@ -102,7 +122,7 @@ const BrowseGrid = React.memo(
         width: itemWidth,
         height: itemHeight,
       };
-    }, [windowWidth, numColumns]);
+    }, [gridWidth, numColumns]);
 
     // Render a row of items
     const renderRow = useCallback(
@@ -157,7 +177,7 @@ const BrowseGrid = React.memo(
     }, [isLoading, styles.loadingContainer, theme.colors.text]);
 
     return (
-      <View style={styles.container}>
+      <View style={styles.container} onLayout={onContainerLayout}>
         <LegendList
           data={itemRows}
           renderItem={renderRow}

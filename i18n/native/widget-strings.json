@@ -4,11 +4,23 @@
     "bayaan_widget_now_desc": "ما يناسب هذه اللحظة: الاستماع أو وقت النوم.",
     "bayaan_widget_continue_listening_label": "متابعة الاستماع",
     "bayaan_widget_continue_listening_desc": "استأنف تلاوتك واعرف ما سيُشغَّل بعدها.",
+    "bayaan_widget_text_up_next": "التالي",
+    "bayaan_widget_text_recent": "الأخيرة",
+    "bayaan_widget_text_start_listening": "ابدأ الاستماع",
     "bayaan_widget_continue_reading_label": "متابعة القراءة",
     "bayaan_widget_continue_reading_desc": "عُد إلى الصفحة التي كنت تقرؤها.",
+    "bayaan_widget_text_juz": "الجزء %1$d",
+    "bayaan_widget_text_start_reading": "ابدأ القراءة",
+    "bayaan_widget_text_continue_reading": "تابع القراءة",
     "bayaan_widget_quick_surah_label": "سورة سريعة",
     "bayaan_widget_quick_surah_desc": "شغّل سورتك المفضلة بلمسة واحدة.",
+    "bayaan_widget_text_play_item": "تشغيل %1$s",
+    "bayaan_widget_text_default_reciter": "القارئة الافتراضية",
+    "bayaan_widget_text_open_app_to_set_up": "افتح تطبيق قارئة للإعداد",
     "bayaan_widget_ayah_label": "آية اليوم",
-    "bayaan_widget_ayah_desc": "آية جديدة كل يوم، بخط Digital Khatt."
+    "bayaan_widget_ayah_desc": "آية جديدة كل يوم، بخط Digital Khatt.",
+    "bayaan_widget_text_open_app": "افتح تطبيق قارئة",
+    "bayaan_widget_text_play": "تشغيل",
+    "bayaan_widget_text_pause": "إيقاف مؤقت"
   }
 }

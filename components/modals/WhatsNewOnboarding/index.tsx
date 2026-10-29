@@ -15,7 +15,6 @@ import {
   FlatList,
   ViewToken,
   useWindowDimensions,
-  type ListRenderItemInfo,
 } from 'react-native';
 import {moderateScale} from '@/utils/scale';
 import Animated, {
@@ -38,9 +37,7 @@ import {useTranslation} from 'react-i18next';
 import {appLayoutDirection, isRTL} from '@/utils/rtl';
 // @ai-end
 
-// Card chrome, shared by the styles below and by the height budget that keeps
-// the footer inside the card. Keep the styles reading from these constants —
-// a literal in one place and a guess in the other is how the button escaped.
+// Card chrome: the styles and the height budget both read these, so the footer stays in the card.
 const CARD_PADDING_TOP = moderateScale(20);
 const CARD_PADDING_BOTTOM = moderateScale(12);
 const PAGES_MARGIN_TOP = moderateScale(24);
@@ -71,9 +68,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   const flatListRef = useRef<FlatList<OnboardingPage>>(null);
   const scrollX = useSharedValue(0);
 
-  // Live dimensions, not module-scope ones: on a tablet the card is sized from
-  // the CURRENT window, so a rotation / split-view resize can't leave the card
-  // capped at a stale height with its footer spilling outside the rounded edge.
+  // Live dimensions, so a rotation or split-view resize does not leave a stale card height.
   const {width: windowWidth, height: windowHeight} = useWindowDimensions();
 
   const modalWidth = Math.min(
@@ -82,9 +77,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   );
   const pageWidth = modalWidth - moderateScale(64); // account for modal padding
   const modalMaxHeight = windowHeight * 0.72;
-  // The pager grows with its content but is the only row allowed to shrink, and
-  // its floor is capped at whatever the card can actually spare — so the button
-  // and dots always land inside the card instead of spilling out below it.
+  // The pager is the only row that shrinks; cap its floor at the space the card can spare.
   const pagesMinHeight = Math.max(
     0,
     Math.min(moderateScale(280), modalMaxHeight - CARD_CHROME_HEIGHT),
@@ -125,15 +118,12 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
     checkAndShow();
   }, []);
 
-  // Re-anchor on resize: a paged horizontal list keeps its pixel contentOffset
-  // while the item width changes, so the visible page would otherwise drift.
+  // Re-anchor on resize: a paged list keeps its pixel contentOffset while the item width changes.
   const currentPageRef = useRef(0);
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
-  // @ai Pass C: scrollToIndex, not scrollToOffset — the list runs in the app's
-  // direction, and in RTL a raw offset counts from the last page. scrollX is
-  // the distance from page one in both directions (see scrollHandler).
+  // @ai Pass C: scrollToIndex, not scrollToOffset — in RTL a raw offset counts from the last page.
   useEffect(() => {
     const index = currentPageRef.current;
     if (pages.length > 0) {
@@ -191,7 +181,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   );
 
   const renderItem = useCallback(
-    ({item}: ListRenderItemInfo<OnboardingPage>) => (
+    ({item, index}: {item: OnboardingPage; index: number}) => (
       <OnboardingPageComponent
         page={item}
         width={pageWidth}
@@ -233,8 +223,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
             </Text>
           </Pressable>
 
-          {/* Pages — the only shrinkable row, so the footer below can never be
-              pushed out of the card when the window is short. */}
+          {/* Pages — the only shrinkable row, so the footer stays in the card. */}
           <View style={[styles.pagesContainer, {minHeight: pagesMinHeight}]}>
             {/* Runs in the app's direction: the list's index math follows
                 the native direction, so forcing LTR here breaks Next in RTL. */}
@@ -258,8 +247,7 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
             />
           </View>
 
-          {/* Next / Get Started button — sits ABOVE the dots so the card ends on
-              the progress indicator rather than on a stray button. */}
+          {/* Next / Get Started button */}
           <Pressable
             style={({pressed}) => [
               styles.button,
@@ -308,7 +296,6 @@ const styles = StyleSheet.create({
     paddingTop: CARD_PADDING_TOP,
     paddingBottom: CARD_PADDING_BOTTOM,
     paddingHorizontal: moderateScale(32),
-    // Backstop: nothing paints outside the rounded card, whatever the window.
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 8},
@@ -329,8 +316,7 @@ const styles = StyleSheet.create({
   },
   pagesContainer: {
     marginTop: PAGES_MARGIN_TOP,
-    // The only shrinkable row: `minHeight` (set inline) is its floor, and it
-    // gives up space before the footer does when the card hits maxHeight.
+    // The only shrinkable row: the inline `minHeight` is its floor.
     flexShrink: 1,
     overflow: 'hidden',
     justifyContent: 'center',

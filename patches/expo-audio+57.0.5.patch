@@ -524,22 +524,24 @@ index 33db27c..abbd45f 100644
  
  enum BitRateStrategy: String, Enumerable {
 diff --git a/node_modules/expo-audio/ios/MediaController.swift b/node_modules/expo-audio/ios/MediaController.swift
-index e977f57..7f15bbe 100644
+index e977f57..8094592 100644
 --- a/node_modules/expo-audio/ios/MediaController.swift
 +++ b/node_modules/expo-audio/ios/MediaController.swift
-@@ -14,6 +14,8 @@ class MediaController {
+@@ -14,10 +14,24 @@
    private var artworkLoadToken: UUID?
    private var currentArtworkItemIdentifier: ObjectIdentifier?
    private var isLiveStream = false
 +  // Bayaan patch: next/previous targets this controller registered, by token.
 +  private var trackCommandTargets: [(MPRemoteCommand, Any)] = []
++  // Qariah patch (TECH_DEBT #371): the play, pause, seek and skip targets, by token.
++  private var remoteCommandTargets: [(MPRemoteCommand, Any)] = []
  
    func setActivePlayer(_ player: AudioPlayer?, options: LockScreenOptions? = nil) {
      performOnMain {
-@@ -21,6 +23,16 @@ class MediaController {
-     }
-   }
- 
+       self.setActivePlayerOnMain(player, options: options)
++    }
++  }
++
 +  // Bayaan patch: see applyTrackControls.
 +  func setTrackControls(_ controls: LockScreenTrackControls?, for player: AudioPlayer) {
 +    performOnMain {
@@ -547,13 +549,10 @@ index e977f57..7f15bbe 100644
 +        return
 +      }
 +      self.applyTrackControls(controls)
-+    }
-+  }
-+
-   func updateNowPlayingInfo(for player: AudioPlayer) {
-     performOnMain {
-       self.updateNowPlayingInfoOnMain(for: player)
-@@ -40,9 +52,11 @@ class MediaController {
+     }
+   }
+ 
+@@ -40,9 +54,11 @@
  
      if let player {
        enableRemoteCommands(options: options)
@@ -565,10 +564,69 @@ index e977f57..7f15bbe 100644
        clearNowPlayingInfoOnMain()
      }
    }
-@@ -327,4 +341,50 @@ class MediaController {
+@@ -232,7 +248,9 @@
+   }
+ 
+   private func enableRemoteCommands(options: LockScreenOptions?) {
+-    remoteCommandCenter.playCommand.addTarget { [weak self] _ in
++    // Qariah patch: one set of targets, also when a player activates again.
++    removeRemoteCommandTargets()
++    addRemoteCommandTarget(remoteCommandCenter.playCommand) { [weak self] _ in
+       guard let player = self?.activePlayer else {
+         return .commandFailed
+       }
+@@ -241,7 +259,7 @@
+       return .success
+     }
+ 
+-    remoteCommandCenter.pauseCommand.addTarget { [weak self] _ in
++    addRemoteCommandTarget(remoteCommandCenter.pauseCommand) { [weak self] _ in
+       guard let player = self?.activePlayer else {
+         return .commandFailed
+       }
+@@ -250,7 +268,7 @@
+       return .success
+     }
+ 
+-    remoteCommandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
++    addRemoteCommandTarget(remoteCommandCenter.togglePlayPauseCommand) { [weak self] _ in
+       guard let player = self?.activePlayer else {
+         return .commandFailed
+       }
+@@ -263,7 +281,7 @@
+       return .success
+     }
+ 
+-    remoteCommandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
++    addRemoteCommandTarget(remoteCommandCenter.changePlaybackPositionCommand) { [weak self] event in
+       guard let player = self?.activePlayer,
+       let event = event as? MPChangePlaybackPositionCommandEvent else {
+         return .commandFailed
+@@ -276,7 +294,7 @@
+     }
+ 
+     remoteCommandCenter.skipForwardCommand.preferredIntervals = [10.0]
+-    remoteCommandCenter.skipForwardCommand.addTarget { [weak self] event in
++    addRemoteCommandTarget(remoteCommandCenter.skipForwardCommand) { [weak self] event in
+       guard let player = self?.activePlayer,
+       let event = event as? MPSkipIntervalCommandEvent else {
+         return .commandFailed
+@@ -290,7 +308,7 @@
+     }
+ 
+     remoteCommandCenter.skipBackwardCommand.preferredIntervals = [10.0]
+-    remoteCommandCenter.skipBackwardCommand.addTarget { [weak self] event in
++    addRemoteCommandTarget(remoteCommandCenter.skipBackwardCommand) { [weak self] event in
+       guard let player = self?.activePlayer,
+       let event = event as? MPSkipIntervalCommandEvent else {
+         return .commandFailed
+@@ -326,5 +344,73 @@
+     remoteCommandCenter.changePlaybackPositionCommand.removeTarget(self)
      remoteCommandCenter.skipForwardCommand.removeTarget(self)
      remoteCommandCenter.skipBackwardCommand.removeTarget(self)
-   }
++    // Qariah patch: removeTarget(self) does not remove the block targets above.
++    removeRemoteCommandTargets()
++  }
 +
 +  // MARK: Bayaan patch: next/previous track commands
 +  //
@@ -615,6 +673,26 @@ index e977f57..7f15bbe 100644
 +    }
 +    trackCommandTargets = []
 +  }
++
++  // MARK: Qariah patch: remove the remote command targets (TECH_DEBT #371)
++  //
++  // enableRemoteCommands adds block targets. removeTarget(self) does not remove
++  // a block target, so after a clear the play, pause, seek and skip handlers
++  // stayed registered. iOS then kept an empty Now Playing card for the app in
++  // Control Center. Keep each target by token and remove it by token.
++  private func addRemoteCommandTarget(
++    _ command: MPRemoteCommand,
++    handler: @escaping (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus
++  ) {
++    remoteCommandTargets.append((command, command.addTarget(handler: handler)))
++  }
++
++  private func removeRemoteCommandTargets() {
++    for (command, target) in remoteCommandTargets {
++      command.removeTarget(target)
++    }
++    remoteCommandTargets = []
+   }
  }
 diff --git a/node_modules/expo-audio/src/AudioConstants.ts b/node_modules/expo-audio/src/AudioConstants.ts
 index dcc0452..c9273e2 100644

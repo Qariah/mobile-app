@@ -9,8 +9,8 @@ tags:
     clearState: true
 - runFlow: ../../subflows/skip-onboarding.yaml
 - assertVisible: ".*Listen"
-# "Browse by" → Reciters tile → reciter grid.
-- tapOn: "Reciters"
+# "Browse by" → Qariahs tile (it said "Reciters" before #535) → reciter grid.
+- tapOn: "(Qariahs|Reciters)"
 - tapOn:
     point: 50%,32%
 # reciter profile header loaded: upstream's meta row beside the photo

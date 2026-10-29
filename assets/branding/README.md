@@ -2,7 +2,7 @@
 
 This directory holds every image referenced by `config/branding.js`. Replacing
 a file here is the only thing the design team needs to do to swap Qariah's
-brand artwork — `app.config.ts` reads paths from `config/branding.js`, so no
+brand artwork — `app.config.js` reads paths from `config/branding.js`, so no
 code changes are required to ship a redesign.
 
 ## Status — production artwork (Sprint 10)
@@ -53,6 +53,8 @@ the PNG variants themselves. Keep them in sync when iterating:
 | `notification_icon.png` | Android notification icon | **Q outline + mushaf** silhouette — Android strips color to alpha-only, so we drop the sage interior (becomes transparent) and convert the dark-teal Q ring, tab, and mushaf to white. The mushaf detail survives at status-bar scale; it grounds the icon as Qariah's even when monochrome. White-on-transparent. |
 | `splash-icon.png` | Splash logo (light mode) | Logo on transparent, scaled to **30% of canvas** (360/1200), centered. Sits on Sage `backgroundColor`. Sized down from 50% in Sprint 20 to fit Android 12+ `windowSplashScreenAnimatedIcon`'s 66.7% viewport with comfortable margin for the C glyph's asymmetric opening — see safe-zone math below. |
 | `splash-icon-dark.png` | Splash logo (dark mode) | Inverted-color logo on transparent, scaled to **30% of canvas** (360/1200), centered. Sits on Teal `backgroundColorDark`. |
+| `sidebar-logo.png` | Tablet sidebar mark, light theme (`branding.sidebarLogo.light`, TECH_DEBT #355) | `splash-icon.png` trimmed, scaled to fit 96×96 and centered on a 120×120 transparent canvas (40pt at @3x, with the margin of the inherited 40pt mark). Teal Q on transparent. |
+| `sidebar-logo-dark.png` | Tablet sidebar mark, dark theme (`branding.sidebarLogo.dark`) | The same from `splash-icon-dark.png`: sage Q on transparent. |
 | `ios-{light,dark,tinted}-beta.png` | iOS internal-beta TestFlight icon | Same base as the matching non-beta variant + an **orange `#c97a3b` band** at the bottom 194px tall (y=830→1024), white bold "BETA" centered. Tinted variant uses solid gray band (system tint can't reach the band). Sprint 20. |
 | `ios-{light,dark,tinted}-public-beta.png` | iOS public-beta TestFlight Public Link icon | Same base as the matching non-beta variant + a **purple `#5645a1` band** at the bottom 194px tall (y=830→1024), white bold "PUBLIC BETA" centered. Tinted variant uses solid gray band. Sprint 27, 2026-05-28. |
 
@@ -130,6 +132,10 @@ magick "$TMP/logo-inverted.png" -resize 360x360 -background transparent -gravity
 
 # 8 — Android notification: white Q+book on transparent
 magick "$TMP/q-with-mushaf-white.png" -resize 870x870 -background transparent -gravity center -extent 1024x1024 "$OUT/notification_icon.png"
+
+# 15+16 — Tablet sidebar mark (TECH_DEBT #355): the splash Q, trimmed, 96px in a 120px canvas.
+magick "$OUT/splash-icon.png" -trim +repage -resize 96x96 -background none -gravity center -extent 120x120 -strip "$OUT/sidebar-logo.png"
+magick "$OUT/splash-icon-dark.png" -trim +repage -resize 96x96 -background none -gravity center -extent 120x120 -strip "$OUT/sidebar-logo-dark.png"
 
 # 9+10+11 — iOS BETA-banded variants (internal TestFlight).
 #   Band rect: y=830→1024 (194px = ~19% of 1024). Sample colors taken from

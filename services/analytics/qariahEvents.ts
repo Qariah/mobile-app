@@ -116,8 +116,6 @@ export interface OnboardingStepViewedProps {
 /** Onboarding finished (reached `done`) — the user is now in the app. */
 export interface OnboardingCompletedProps {
   signed_in: boolean;
-  /** Whether the first-run reciter-discovery nudge fired (onboardingReciterNudge). */
-  reciter_nudge: boolean;
 }
 
 /** The user skipped the sign-in step (chose "Skip for now" rather than signing

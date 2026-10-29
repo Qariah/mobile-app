@@ -53,9 +53,8 @@ describe('legacyAppGroupForBundleId (which build moves data at its first launch)
   });
 });
 
-describe('app.config.ts and the committed native tree', () => {
-  const configModule = require('../../app.config.ts');
-  const expo = (configModule.default ?? configModule).expo;
+describe('app.config.js and the committed native tree', () => {
+  const {expo} = require('../../app.config.js');
 
   // The widget key in infoPlist has the same value: the plugin test
   // (plugins/__tests__/withBayaanWidgets.test.js) and
@@ -75,8 +74,11 @@ describe('app.config.ts and the committed native tree', () => {
       path.join(ROOT, 'ios', 'Qariah', 'Info.plist'),
       'utf8',
     );
-    expect(plist).toContain(
-      `<key>AppGroupIdentifier</key>\n    <string>${appGroupForBundleId(PROD)}</string>`,
+    // Any indent: the file uses upstream's tabs since batch C2 (NAT-S9).
+    expect(plist).toMatch(
+      new RegExp(
+        `<key>AppGroupIdentifier</key>\\s*<string>${appGroupForBundleId(PROD).replace(/\./g, '\\.')}</string>`,
+      ),
     );
     expect(plist).not.toContain(LEGACY_APP_GROUP_INFO_PLIST_KEY);
   });

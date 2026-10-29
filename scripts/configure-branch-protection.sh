@@ -25,16 +25,15 @@ BRANCH="${BRANCH:-qariah-main}"
 # `.github/workflows/*.yml` whenever a job is added or renamed.
 #
 # Workflow → check name mapping (as of Sprint 26):
-#   .github/workflows/branding-conformance.yml → "No hardcoded Bayaan brand strings"
-#   .github/workflows/lint.yml                  → "TypeScript + duplicate keys (blocking); Prettier, ESLint (advisory)"
+#   .github/workflows/lint.yml                  → "TypeScript, duplicate keys, Qariah-owned ESLint, branding (blocking); Prettier, full ESLint (advisory)"
+#     (since 2026-10-25 it also runs the branding check; branding-conformance.yml is gone)
 #   .github/workflows/test.yml                  → "Jest"
 #
 # `claude-code-review.yml` ("claude-review") is NOT required: since 2026-09-27 it
 # runs only when someone adds the `claude-review` label, so most PRs never get it.
 
 CONTEXTS_JSON='[
-  "No hardcoded Bayaan brand strings",
-  "TypeScript + duplicate keys (blocking); Prettier, ESLint (advisory)",
+  "TypeScript, duplicate keys, Qariah-owned ESLint, branding (blocking); Prettier, full ESLint (advisory)",
   "Jest"
 ]'
 

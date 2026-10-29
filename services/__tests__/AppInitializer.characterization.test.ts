@@ -2,12 +2,6 @@
 // registration order, the critical flags and the failure tolerance of the
 // services that touch content databases, so the content-sync rewiring of the
 // Translation DB and Tafseer DB block cannot change them unnoticed.
-// Qariah (TECH_DEBT #253): upstream's flag values with Qariah's boot levers
-// off, so this suite pins upstream's boot. Qariah's own boot is pinned in
-// appBoot.qariah.characterization.test.ts. See test-utils/upstreamBootFeatureFlags.ts.
-jest.mock('@/config/featureFlags', () =>
-  jest.requireActual('@/test-utils/upstreamBootFeatureFlags'),
-);
 const mockCalls: string[] = [];
 const mockFailing = new Set<string>();
 

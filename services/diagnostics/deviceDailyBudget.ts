@@ -14,24 +14,16 @@
 //
 // Telemetry only. Nothing in this module throws.
 
-import {createMMKV, type MMKV} from 'react-native-mmkv';
+// The 'analytics' MMKV store, opened lazily and guarded (`analyticsStore.ts`).
+// null = the store cannot be opened (fail closed).
+import {
+  analyticsStore as store,
+  __resetAnalyticsStoreForTests,
+} from './analyticsStore';
 
 // Same 'analytics' store the memory probe uses; the key prefix keeps the two
 // apart, so a budget here can never spend the probe's budget.
 const KEY_PREFIX = 'daily-budget:';
-
-// Lazy and guarded: MMKV native init throws on the iOS Simulator (no app-group
-// container). undefined = not tried yet; null = init failed (fail closed).
-let _mmkv: MMKV | null | undefined;
-function store(): MMKV | null {
-  if (_mmkv !== undefined) return _mmkv;
-  try {
-    _mmkv = createMMKV({id: 'analytics'});
-  } catch {
-    _mmkv = null;
-  }
-  return _mmkv;
-}
 
 // A failed write is cached the same way as a failed init. A storage-full device
 // then does not repeat read + write on every call. It stays closed until the
@@ -106,6 +98,6 @@ export function consumeDeviceDailyBudget(
 
 /** Test seam — drops the memoised MMKV handle and the broken-write latch. */
 export function __resetDeviceDailyBudgetForTests(): void {
-  _mmkv = undefined;
+  __resetAnalyticsStoreForTests();
   writesBroken = false;
 }

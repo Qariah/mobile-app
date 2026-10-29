@@ -1,5 +1,5 @@
 /**
- * SQLite write-through cache + offline write queue for QF user-state.
+ * SQLite offline write queue for QF user-state.
  *
  * Pattern mirrors services/database/DatabaseService.ts: a module-level db
  * handle, idempotent init mutex, WAL mode for concurrent reads.
@@ -11,9 +11,11 @@
  * Schema v1 tables:
  *   - meta                    : key/value (schema_version, etc.)
  *   - sync_queue              : pending QF writes (offline + retry)
- *   - cache_preferences       : local mirror of QF preferences
- *   - cache_reading_sessions  : local mirror of QF reading sessions
- *   - cache_bookmarks         : local mirror of QF bookmarks
+ *   - cache_preferences, cache_reading_sessions, cache_bookmarks : legacy.
+ *     No code writes or reads them since 2026-10-24 (divergence batch C3,
+ *     SEM-S1). They stay in the schema so that the account-switch cleanup
+ *     still empties the rows that older builds wrote. Drop them in the next
+ *     schema migration.
  *
  * Sprint 4 (S4.2).
  */
@@ -24,11 +26,7 @@ import * as Crypto from 'expo-crypto';
 export const USER_STATE_DB_NAME = 'userState.db';
 export const SCHEMA_VERSION = 1;
 
-export type SyncResource =
-  | 'preference'
-  | 'reading_session'
-  | 'collection'
-  | 'bookmark';
+export type SyncResource = 'preference' | 'reading_session';
 export type SyncOperation = 'create' | 'update' | 'delete';
 
 export interface SyncQueueRow {
@@ -40,29 +38,6 @@ export interface SyncQueueRow {
   createdAt: number;
   attempts: number;
   lastError: string | null;
-}
-
-export interface CachedPreference {
-  key: string;
-  value: string;
-  syncedAt: number;
-}
-
-export interface CachedReadingSession {
-  id: string;
-  reciterId: string | null;
-  surahNumber: number | null;
-  ayahNumber: number | null;
-  updatedAt: number;
-}
-
-export interface CachedBookmark {
-  id: string;
-  collectionId: string | null;
-  verseKey: string;
-  surahNumber: number;
-  ayahNumber: number;
-  syncedAt: number;
 }
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -107,6 +82,7 @@ async function createTables(database: SQLite.SQLiteDatabase): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at
       ON sync_queue(created_at);
+    -- Legacy cache tables: no writer or reader (see the file header).
     CREATE TABLE IF NOT EXISTS cache_preferences (
       key       TEXT PRIMARY KEY,
       value     TEXT NOT NULL,
@@ -238,14 +214,6 @@ export async function markWriteFailed(
   );
 }
 
-export async function getQueueDepth(): Promise<number> {
-  const database = requireDb();
-  const row = await database.getFirstAsync<{count: number}>(
-    `SELECT COUNT(*) as count FROM sync_queue WHERE attempts < 3`,
-  );
-  return row?.count ?? 0;
-}
-
 /**
  * Coalesces queued writes for a given (resource, operation, key) tuple. The
  * preferences resource is the obvious candidate: rapid favorites toggles
@@ -268,142 +236,11 @@ export async function coalescePreferenceWrite(key: string): Promise<void> {
   );
 }
 
-// ─────────────────────────── Cache: preferences ────────────────────────────
-
-interface CachedPreferenceDbRow {
-  key: string;
-  value: string;
-  synced_at: number;
-}
-
-export async function getCachedPreference(
-  key: string,
-): Promise<CachedPreference | null> {
-  const database = requireDb();
-  const row = await database.getFirstAsync<CachedPreferenceDbRow>(
-    `SELECT key, value, synced_at FROM cache_preferences WHERE key = ?`,
-    [key],
-  );
-  if (!row) return null;
-  return {key: row.key, value: row.value, syncedAt: row.synced_at};
-}
-
-export async function upsertCachedPreference(
-  key: string,
-  value: string,
-): Promise<void> {
-  const database = requireDb();
-  await database.runAsync(
-    `INSERT INTO cache_preferences (key, value, synced_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, synced_at = excluded.synced_at`,
-    [key, value, Date.now()],
-  );
-}
-
-// ─────────────────────────── Cache: reading sessions ───────────────────────
-
-interface CachedReadingSessionDbRow {
-  id: string;
-  reciter_id: string | null;
-  surah_number: number | null;
-  ayah_number: number | null;
-  updated_at: number;
-}
-
-export async function getCachedReadingSession(): Promise<CachedReadingSession | null> {
-  const database = requireDb();
-  const row = await database.getFirstAsync<CachedReadingSessionDbRow>(
-    `SELECT id, reciter_id, surah_number, ayah_number, updated_at
-     FROM cache_reading_sessions
-     ORDER BY updated_at DESC
-     LIMIT 1`,
-  );
-  if (!row) return null;
-  return {
-    id: row.id,
-    reciterId: row.reciter_id,
-    surahNumber: row.surah_number,
-    ayahNumber: row.ayah_number,
-    updatedAt: row.updated_at,
-  };
-}
-
-export async function upsertCachedReadingSession(
-  session: CachedReadingSession,
-): Promise<void> {
-  const database = requireDb();
-  await database.runAsync(
-    `INSERT INTO cache_reading_sessions (id, reciter_id, surah_number, ayah_number, updated_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       reciter_id = excluded.reciter_id,
-       surah_number = excluded.surah_number,
-       ayah_number = excluded.ayah_number,
-       updated_at = excluded.updated_at`,
-    [
-      session.id,
-      session.reciterId,
-      session.surahNumber,
-      session.ayahNumber,
-      session.updatedAt,
-    ],
-  );
-}
-
-// ─────────────────────────── Cache: bookmarks ──────────────────────────────
-
-interface CachedBookmarkDbRow {
-  id: string;
-  collection_id: string | null;
-  verse_key: string;
-  surah_number: number;
-  ayah_number: number;
-  synced_at: number;
-}
-
-export async function getCachedBookmarks(): Promise<CachedBookmark[]> {
-  const database = requireDb();
-  const rows = await database.getAllAsync<CachedBookmarkDbRow>(
-    `SELECT id, collection_id, verse_key, surah_number, ayah_number, synced_at
-     FROM cache_bookmarks
-     ORDER BY synced_at DESC`,
-  );
-  return rows.map(r => ({
-    id: r.id,
-    collectionId: r.collection_id,
-    verseKey: r.verse_key,
-    surahNumber: r.surah_number,
-    ayahNumber: r.ayah_number,
-    syncedAt: r.synced_at,
-  }));
-}
-
-export async function upsertCachedBookmark(b: CachedBookmark): Promise<void> {
-  const database = requireDb();
-  await database.runAsync(
-    `INSERT INTO cache_bookmarks (id, collection_id, verse_key, surah_number, ayah_number, synced_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       collection_id = excluded.collection_id,
-       verse_key = excluded.verse_key,
-       surah_number = excluded.surah_number,
-       ayah_number = excluded.ayah_number,
-       synced_at = excluded.synced_at`,
-    [b.id, b.collectionId, b.verseKey, b.surahNumber, b.ayahNumber, b.syncedAt],
-  );
-}
-
-export async function deleteCachedBookmark(id: string): Promise<void> {
-  const database = requireDb();
-  await database.runAsync(`DELETE FROM cache_bookmarks WHERE id = ?`, [id]);
-}
-
 // @ai-start
 /**
  * M4 (TECH_DEBT #244) — account-switch cleanup (`accountCleanup.ts`). Deletes
- * the queued writes and the cached QF state of the previous account when a
- * different account signs in. Without this, the next account on the device
+ * the queued writes and the legacy QF cache rows of the previous account when
+ * a different account signs in. Without this, the next account on the device
  * sent the previous account's queued reading sessions and preferences with
  * its own token.
  */
@@ -417,16 +254,3 @@ export async function clearAccountSyncState(): Promise<void> {
   `);
 }
 // @ai-end
-
-/**
- * Test-only / dev helper: wipes the DB. Don't ship a settings hook for this.
- */
-export async function _resetUserStateDb(): Promise<void> {
-  const database = requireDb();
-  await database.execAsync(`
-    DELETE FROM sync_queue;
-    DELETE FROM cache_preferences;
-    DELETE FROM cache_reading_sessions;
-    DELETE FROM cache_bookmarks;
-  `);
-}

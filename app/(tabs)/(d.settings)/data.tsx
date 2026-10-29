@@ -43,6 +43,7 @@ import {ImportConfirmModal} from '@/components/auth/ImportConfirmModal';
 import {useBottomInset} from '@/hooks/useBottomInset';
 import * as Sentry from '@sentry/react-native';
 import {useTranslation} from 'react-i18next';
+import {Stack} from 'expo-router';
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 
 export default function YourDataScreen() {
@@ -199,6 +200,7 @@ export default function YourDataScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen options={{title: t('qariah:settings.screens.yourData')}} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[

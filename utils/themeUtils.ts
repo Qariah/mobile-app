@@ -7,11 +7,17 @@ import {
 import {Dimensions, ColorSchemeName, Appearance} from 'react-native';
 import {PHONE_SCALE_CAP} from '@/utils/responsive';
 
-const {width} = Dimensions.get('window');
 // Clamp scaling base so tablets (iPad) do not inflate the theme typography.
 // Phones always pass through unchanged because their width <= PHONE_SCALE_CAP.
-const scaleBase = Math.min(width, PHONE_SCALE_CAP);
-const scale = (size: number) => (scaleBase / 375) * size;
+// @ai-start TECH_DEBT #278: read the window when a theme is made, not at
+// module load. Use its short side, so a landscape window gives the portrait
+// scale (a portrait window gives the same value as before).
+const scale = (size: number) => {
+  const {width, height} = Dimensions.get('window');
+  const scaleBase = Math.min(width, height, PHONE_SCALE_CAP);
+  return (scaleBase / 375) * size;
+};
+// @ai-end
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type {PrimaryColor} from '@/styles/colorSchemes';

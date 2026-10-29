@@ -8,7 +8,6 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Buffer} from 'node:buffer';
 import {readFileSync} from 'node:fs';
-import {runInNewContext} from 'node:vm';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {composeSchema, validateSnapshot} from '../signals/schema.mjs';
@@ -19,6 +18,7 @@ import * as use from '../signals/sections/use.mjs';
 import * as weekly from '../signals/sections/weekly.mjs';
 import * as retention from '../signals/sections/retention.mjs';
 import * as funnel from '../signals/sections/funnel.mjs';
+import {STEPS as CARD_STEPS} from '../lib/journey-steps.mjs';
 import * as content from '../signals/sections/content.mjs';
 import * as restore from '../signals/sections/restore.mjs';
 
@@ -241,13 +241,8 @@ test('retention: shape gives rates for mature cohorts and null otherwise', () =>
 // --- funnel ----------------------------------------------------------------
 
 /** The STEPS array literal of scripts/daily-card.mjs, evaluated. */
-function cardSteps() {
-  const src = readFileSync(resolve(HERE, '../daily-card.mjs'), 'utf8');
-  const m = src.match(/const STEPS = (\[[\s\S]*?\n\]);/);
-  assert.ok(m, 'daily-card.mjs STEPS not found');
-  // JSON round trip: the objects of another realm fail deepStrictEqual.
-  return JSON.parse(JSON.stringify(runInNewContext(`(${m[1]})`)));
-}
+// The Daily card's steps (scripts/lib/journey-steps.mjs since 2026-10-25).
+const cardSteps = () => CARD_STEPS;
 
 test('funnel: the card-rule rows use the Daily card conditions exactly', () => {
   const card = Object.fromEntries(cardSteps().map(s => [s.key, s]));

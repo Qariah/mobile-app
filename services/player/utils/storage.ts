@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {usePlayerStore} from '../store/playerStore';
 import {useRecentlyPlayedStore} from '../store/recentlyPlayedStore';
+import {lockScreenService} from '@/services/audio/LockScreenService'; // @ai TECH_DEBT #350
 
 /**
  * Clears all player-related caches and state
@@ -18,6 +19,8 @@ export async function clearPlayerCache(): Promise<void> {
 
     // Reset all stores except favorite reciters
     await playerStore.cleanup();
+    // @ai After the pause and the reset: no Now Playing entry stays in Control Center (TECH_DEBT #350).
+    lockScreenService.clearMainPlayer();
     recentlyPlayedStore.reset();
 
     // Clear related AsyncStorage data

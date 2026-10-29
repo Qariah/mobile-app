@@ -10,11 +10,8 @@ import {useTheme} from '@/hooks/useTheme';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useReciterNavigation} from '@/hooks/useReciterNavigation';
 import {ReciterImage} from '@/components/ReciterImage';
-import {
-  formatAyahRange,
-  getReciterById,
-  getSurahMetadataSync,
-} from '@/services/dataService';
+import {getReciterById} from '@/services/dataService';
+import {formatAyahRange, getSurahMetadataSync} from '@/utils/surahMetadata'; // @ai Qariah
 import {useReciterStore} from '@/store/reciterStore';
 import {Reciter, Rewayat} from '@/data/reciterData';
 import {useLoved} from '@/hooks/useLoved';

@@ -13,7 +13,7 @@
 // the test sits here (as components/auth/__tests__/SignInError.test.tsx).
 import React from 'react';
 import i18n from 'i18next';
-import {AppState, Linking} from 'react-native';
+import {AppState, Linking, Platform} from 'react-native';
 import {
   act,
   fireEvent,
@@ -70,6 +70,7 @@ jest.mock('expo-router', () => ({
     useEffect(callback, [callback]);
   },
   Redirect: (props: {href: string}) => mockRedirect(props),
+  Stack: {Screen: () => null},
 }));
 
 jest.mock('@/hooks/useTheme', () => ({
@@ -284,6 +285,20 @@ describe('Notifications settings page', () => {
     expect(mockRequestPermissions).not.toHaveBeenCalled();
     // Opening the system settings is not a prompt.
     expect(mockPrompted).not.toHaveBeenCalled();
+  });
+
+  it('iOS 27+: opens the notification settings URL, not openSettings() (TECH_DEBT #348)', async () => {
+    jest.spyOn(Platform, 'Version', 'get').mockReturnValue('27.0');
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    mockGetPermissions.mockResolvedValue(DENIED);
+    await renderPage();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('notifications-permission-button'));
+    });
+
+    expect(openURL).toHaveBeenCalledWith('app-settings:notifications');
+    expect(Linking.openSettings).not.toHaveBeenCalled();
   });
 
   it('keeps the switches usable while the permission is off', async () => {

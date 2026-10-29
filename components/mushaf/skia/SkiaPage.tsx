@@ -133,10 +133,7 @@ interface SkiaPageProps {
   dividerColor: string;
   contentMarginLeft?: number;
   onReady?: () => void;
-  /**
-   * @ai — called after each commit but the first: the page drew again
-   * (TECH_DEBT #272, components/mushaf/pageDrawReport.ts).
-   */
+  /** @ai — called after each commit but the first: the page drew again (TECH_DEBT #272). */
   onDraw?: () => void;
   onTap?: () => void;
   /**
@@ -151,12 +148,7 @@ interface SkiaPageProps {
   baseLineHeight?: number;
   paddingHorizontal?: number;
   paddingTop?: number;
-  /**
-   * False when the page renders inside a scroll viewport shorter than the
-   * page itself (phone landscape). Suppresses the pages 1-2 vertical
-   * centering, which would otherwise push the block below the fold at scroll
-   * offset 0 and render the page blank (#358). See `calculateLineYPositions`.
-   */
+  /** False inside a scroll viewport shorter than the page (phone landscape), or pages 1-2 show blank (#358). */
   centerShortPages?: boolean;
 }
 

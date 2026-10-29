@@ -61,10 +61,6 @@ import {
   getQCFFontVariant, // @ai
 } from '@/services/mushaf/QCFFontLoader';
 import {qcfLayoutCacheService} from '@/services/mushaf/QCFLayoutCacheService';
-import {
-  qcfFontSizeForContentWidth,
-  QCF_REF_FONT_SIZE as REF_FONT_SIZE,
-} from '@/services/mushaf/qcfFontSizing';
 import {fitQCFLinePositions} from '@/services/mushaf/QCFVerticalLayout'; // @ai
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService';
 import {useMushafFontMgr} from '@/hooks/useMushafFontMgr';
@@ -86,51 +82,19 @@ import {
   type MushafLayoutMetrics, // @ai
   calculateLineYPositions,
   canvasBottomOverflow, // @ai
-  // @ai Qariah (#364): the portrait defaults when no metrics are passed.
-  SCREEN_WIDTH as DEFAULT_SCREEN_WIDTH,
-  SCREEN_HEIGHT as DEFAULT_SCREEN_HEIGHT,
-  PAGE_PADDING_HORIZONTAL as DEFAULT_PAGE_PADDING_HORIZONTAL,
-  PAGE_PADDING_TOP as DEFAULT_PAGE_PADDING_TOP,
-  CONTENT_WIDTH as DEFAULT_CONTENT_WIDTH,
-  CONTENT_HEIGHT as DEFAULT_CONTENT_HEIGHT,
-  BASE_LINE_HEIGHT as DEFAULT_BASE_LINE_HEIGHT,
 } from '../constants';
 
 interface QCFPageProps {
-  /**
-   * @ai Upstream's layout metrics. Optional in Qariah: the individual
-   * overrides below (GH #364, Qariah's earlier fix) win over it, and the
-   * module-level portrait constants are the last fallback.
-   */
-  metrics?: MushafLayoutMetrics;
+  metrics: MushafLayoutMetrics; // @ai
   pageNumber: number;
   textColor: string;
   dividerColor: string;
   contentMarginLeft?: number;
   onReady?: () => void;
-  /**
-   * @ai — called after each commit but the first: the page drew again
-   * (TECH_DEBT #272, components/mushaf/pageDrawReport.ts).
-   */
+  /** @ai — called after each commit but the first: the page drew again (TECH_DEBT #272). */
   onDraw?: () => void;
   onTap?: () => void;
-  /**
-   * Optional layout metrics overrides (Qariah, GH #364). When omitted, the
-   * component reads `metrics`, then the module-level constants
-   * (phone-portrait defaults).
-   */
-  screenWidth?: number;
-  screenHeight?: number;
-  contentWidth?: number;
-  contentHeight?: number;
-  baseLineHeight?: number;
-  paddingHorizontal?: number;
-  paddingTop?: number;
-  /**
-   * #358 — set false when the page is wrapped in a scroll viewport shorter
-   * than the page (phone landscape): centering pages 1-2 inside the full
-   * content box would put the whole block below the fold. Mirrors SkiaPage.
-   */
+  /** #358 — false inside a scroll viewport shorter than the page (phone landscape). Mirrors SkiaPage. */
   centerShortPages?: boolean;
 }
 
@@ -139,6 +103,9 @@ const lineParStyle = {
   textAlign: TextAlign.Center,
   textHeightBehavior: TextHeightBehavior.DisableAll,
 };
+
+const REF_FONT_SIZE = 100;
+const FILL_RATIO = 0.97;
 
 // DK's font + size for basmallah rendering. Matches SkiaPage's calc
 // (FONTSIZE * scale * 0.9 where scale = CONTENT_WIDTH / PAGE_WIDTH).
@@ -179,40 +146,17 @@ const QCFPage: React.FC<QCFPageProps> = ({
   onReady,
   onDraw, // @ai
   onTap,
-  screenWidth: propScreenWidth,
-  screenHeight: propScreenHeight,
-  contentWidth: propContentWidth,
-  contentHeight: propContentHeight,
-  baseLineHeight: propBaseLineHeight,
-  paddingHorizontal: propPaddingHorizontal,
-  paddingTop: propPaddingTop,
-  centerShortPages = true,
+  centerShortPages = true, // @ai #358
 }) => {
   // @ai-start
-  // Qariah (#364): an explicit prop wins, then upstream's `metrics`, then the
-  // module-level portrait constants.
-  const SCREEN_WIDTH =
-    propScreenWidth ?? metrics?.pageWidth ?? DEFAULT_SCREEN_WIDTH;
-  const SCREEN_HEIGHT =
-    propScreenHeight ?? metrics?.screenHeight ?? DEFAULT_SCREEN_HEIGHT;
-  const CONTENT_WIDTH =
-    propContentWidth ?? metrics?.contentWidth ?? DEFAULT_CONTENT_WIDTH;
-  const CONTENT_HEIGHT =
-    propContentHeight ?? metrics?.contentHeight ?? DEFAULT_CONTENT_HEIGHT;
-  const baseLineHeight =
-    propBaseLineHeight ?? metrics?.baseLineHeight ?? DEFAULT_BASE_LINE_HEIGHT;
-  const PAGE_PADDING_HORIZONTAL =
-    propPaddingHorizontal ??
-    metrics?.paddingHorizontal ??
-    DEFAULT_PAGE_PADDING_HORIZONTAL;
-  const PAGE_PADDING_TOP =
-    propPaddingTop ?? metrics?.paddingTop ?? DEFAULT_PAGE_PADDING_TOP;
-  // Memoised: the mushaf keeps several pages mounted at once on the swipe hot
-  // path, so the page View gets a stable style reference.
-  const pageStyle = useMemo(
-    () => ({width: SCREEN_WIDTH, height: SCREEN_HEIGHT}),
-    [SCREEN_WIDTH, SCREEN_HEIGHT],
-  );
+  const {
+    contentWidth: CONTENT_WIDTH,
+    contentHeight: CONTENT_HEIGHT,
+    paddingHorizontal: PAGE_PADDING_HORIZONTAL,
+    paddingTop: PAGE_PADDING_TOP,
+    baseLineHeight,
+  } = metrics;
+  const pageStyle = {width: metrics.pageWidth, height: metrics.screenHeight};
   const basmallahFontSize = (CONTENT_WIDTH / PAGE_WIDTH) * FONTSIZE * 0.9;
   // @ai-end
   const {theme} = useTheme();
@@ -265,10 +209,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
       dividerFont: Skia.Font(qcTypeface, scaledSize),
       nameFontSize: scaledSize * 0.4,
     };
-    // `fontMgr` is not read here, but it is the observable signal that the
-    // preload finished: without it a memo that ran before the QuranCommon
-    // typeface arrived would cache the null divider for the life of the mount.
-    // SkiaPage keeps the same dependency for the same reason.
+    // `fontMgr` signals that the preload finished; without it the memo can cache a null divider (as SkiaPage).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [CONTENT_WIDTH, fontMgr]); // @ai
   // @ai-start
@@ -387,14 +328,11 @@ const QCFPage: React.FC<QCFPageProps> = ({
         ? sortedDesc[1]
         : sortedDesc[0];
 
-    // @ai Qariah: a zero reference width is a failed measurement, not a
-    // layout. Never cache it.
+    // @ai Qariah: a zero reference width is a failed measurement. Never cache it (the size is Infinity).
     if (!(widestRef > 0)) return null;
 
-    // @ai Qariah cache shape (GH #364): the width the page font is calibrated
-    // against; the render size derives from it and the live content width.
     const measured = {
-      widestRef,
+      fontSize: ((CONTENT_WIDTH * FILL_RATIO) / widestRef) * REF_FONT_SIZE,
       lineWidthsAtRef,
     };
     qcfLayoutCacheService.setPageLayout(
@@ -489,9 +427,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
     if (!fontMgr) return;
     let cancelled = false;
     setError(null);
-    // @ai — #272: a page whose font was ready is ready already. Keep the same
-    // state object (no render), and skip the second set after `ensure`: the
-    // rotation stage counts each commit of the page as a draw.
+    // @ai — #272: a ready font keeps the same state object; the rotation stage counts each commit as a draw.
     const wasReady = qcfFontLoader.isReady(pageNumber, fontMgr, fontVariant);
     setLoadedFont(prev =>
       wasReady
@@ -539,12 +475,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
   const rawRenderEntries = useMemo<RenderEntry[]>(() => {
     if (!fontMgr || !fontReady || !layoutMetrics) return [];
 
-    // @ai Derived here, not cached: the page font is calibrated to fill the
-    // CURRENT content width, which changes on rotation and on iPad.
-    const fontSize = qcfFontSizeForContentWidth(
-      layoutMetrics.widestRef,
-      CONTENT_WIDTH,
-    );
+    const fontSize = layoutMetrics.fontSize;
     const lineWidthAtRefByLine = new Map(
       layoutMetrics.lineWidthsAtRef.map(entry => [
         entry.lineIndex,
@@ -720,7 +651,6 @@ const QCFPage: React.FC<QCFPageProps> = ({
     showAllahNameHighlight,
     showTajweed,
     textColor,
-    CONTENT_WIDTH, // @ai
   ]);
 
   // V4's paragraph boxes are taller than the legacy line pitch. Fit their
@@ -1033,14 +963,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
             width: CONTENT_WIDTH,
             height:
               CONTENT_HEIGHT +
-              canvasBottomOverflow(
-                layoutMetrics
-                  ? qcfFontSizeForContentWidth(
-                      layoutMetrics.widestRef,
-                      CONTENT_WIDTH,
-                    )
-                  : 0,
-              ), // @ai
+              canvasBottomOverflow(layoutMetrics?.fontSize ?? 0), // @ai
             marginLeft: contentMarginLeft ?? PAGE_PADDING_HORIZONTAL,
             marginTop: PAGE_PADDING_TOP,
           }}>

@@ -18,8 +18,7 @@ export type RowVariant =
   | 'featured'
   | 'rewayat'
   | 'playlist'
-  | 'country'
-  | 'translation';
+  | 'country';
 
 /** `styles.sectionContent.paddingHorizontal` in RecitersView.tsx. */
 export const ROW_PADDING = moderateScale(16);
@@ -39,7 +38,6 @@ export function rowCardWidth(variant: RowVariant): number {
       return moderateScale(140);
     case 'rewayat':
     case 'country':
-    case 'translation':
       return moderateScale(130);
     case 'playlist':
       return moderateScale(110);

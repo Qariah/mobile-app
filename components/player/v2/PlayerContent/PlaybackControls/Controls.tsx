@@ -50,9 +50,7 @@ export const Controls = () => {
       } else {
         await pause();
       }
-      // @ai Re-sync with the store. play() can return with no audio (an early
-      // tap that got no player) and no state change, so the effect below does
-      // not run and the button would stay on Pause.
+      // @ai Re-sync with the store: play() can return with no audio and no state change.
       setOptimisticIsPlaying(
         usePlayerStore.getState().playback.state === 'playing',
       );

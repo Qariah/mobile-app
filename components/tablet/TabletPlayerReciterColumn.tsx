@@ -30,6 +30,7 @@ import {Feather} from '@expo/vector-icons';
 // @ai-start
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {getRecitationStyleLabel} from '@/components/player/v2/recitationStyle';
+import {useTranslation} from 'react-i18next'; // Qariah: the button labels
 // @ai-end
 
 function sortRewayat(rewayat: Rewayat[]): Rewayat[] {
@@ -73,6 +74,7 @@ export const TabletPlayerReciterColumn: React.FC<{
   initialRewayatId?: string;
 }> = ({reciterId, initialRewayatId}) => {
   const {theme} = useTheme();
+  const {t} = useTranslation(['sheets']); // @ai Qariah: the button labels
   const insets = useSafeAreaInsets();
   const {updateQueue} = usePlayerActions();
   const {navigateToReciterProfile} = useReciterNavigation();
@@ -231,6 +233,7 @@ export const TabletPlayerReciterColumn: React.FC<{
         style={[styles.header, {paddingTop: insets.top + moderateScale(8)}]}>
         <View style={styles.headerMain}>
           <ReciterImage
+            imageUrl={reciter.image_url || undefined} // @ai TECH_DEBT #356: the catalog photo
             reciterName={reciter.name}
             style={styles.avatar}
             profileIconSize={moderateScale(18)}
@@ -254,6 +257,9 @@ export const TabletPlayerReciterColumn: React.FC<{
           <Pressable
             onPress={handleOpenFullProfile}
             style={({pressed}) => [styles.openFull, pressed && {opacity: 0.6}]}
+            accessibilityRole="button" // @ai
+            accessibilityLabel={t('sheets:options.goToReciter')} // @ai
+            testID="player-open-reciter-profile" // @ai
             hitSlop={12}>
             <Feather
               name="external-link"
@@ -274,6 +280,8 @@ export const TabletPlayerReciterColumn: React.FC<{
                 <Pressable
                   key={r.id}
                   onPress={() => setSelectedRewayatId(r.id)}
+                  accessibilityRole="button" // @ai Qariah (TECH_DEBT #339): the chip text is the label
+                  accessibilityState={{selected: active}} // @ai
                   style={[
                     styles.chip,
                     {

@@ -18,8 +18,8 @@
     "notifications": {
       "rowDesc": "Choose the notifications you get",
       "typesSection": "Notification types",
-      "followedRecitation": "New from reciters you follow",
-      "followedRecitationDesc": "When one of your favorite reciters adds a recitation",
+      "followedRecitation": "New from qariahs you follow",
+      "followedRecitationDesc": "When one of your favorite qariahs adds a recitation",
       "newRecitation": "New recitations",
       "newRecitationDesc": "When {{appName}} adds a new recitation",
       "kahfFriday": "Friday Al-Kahf reminder",
@@ -53,10 +53,10 @@
   "listenTop": {
     "eyebrow": "START LISTENING",
     "title": "Browse by",
-    "reciters": "Reciters",
+    "reciters": "Qariahs",
     "surahs": "Surahs",
     "shuffle": "Shuffle",
-    "finding": "Finding random recitations from different reciters..."
+    "finding": "Finding random recitations from different qariahs..."
   },
   "recent": {
     "justNow": "just now",
@@ -75,8 +75,8 @@
     "rewayat": "Browse by Rewaya",
     "country": "Browse by Country",
     "translation": "Browse by Translation",
-    "honored": "Honored Reciters",
-    "paradise": "Paradise Reciters",
+    "honored": "Honored Qariahs",
+    "paradise": "Paradise Qariahs",
     "newlyAdded": "Newly Added",
     "fullQuran": "Full Quran",
     "trending": "Trending This Week",
@@ -84,8 +84,8 @@
     "newlyAddedRecitations": "Newly Added Recitations"
   },
   "countryCard": {
-    "reciters_one": "{{count}} reciter",
-    "reciters_other": "{{count}} reciters"
+    "reciters_one": "{{count}} qariah",
+    "reciters_other": "{{count}} qariahs"
   },
   "translationCard": {
     "items_one": "{{count}} item",
@@ -95,8 +95,8 @@
     "translationTitle": "{{language}} translation",
     "recitationsFound_one": "{{count}} recitation found with current filters",
     "recitationsFound_other": "{{count}} recitations found with current filters",
-    "recitersFound_one": "{{count}} reciter found with current filters",
-    "recitersFound_other": "{{count}} reciters found with current filters"
+    "recitersFound_one": "{{count}} qariah found with current filters",
+    "recitersFound_other": "{{count}} qariahs found with current filters"
   },
   "reciter": {
     "translationChip": "{{language}} translation",
@@ -231,8 +231,8 @@
     "foundHistory": "Found your Qariah history",
     "nothingFound": "We found your account but no saved favorites from the original Qariah app. You're starting fresh — explore freely.",
     "foundList": "We found {{list}} from your original Qariah account. Restore them now?",
-    "skippedNote_one": "Note: {{count}} recitation references a reciter that isn't available in the new app yet — it will be skipped.",
-    "skippedNote_other": "Note: {{count}} recitations reference a reciter that isn't available in the new app yet — these will be skipped.",
+    "skippedNote_one": "Note: {{count}} recitation references a qariah that isn't available in the new app yet — it will be skipped.",
+    "skippedNote_other": "Note: {{count}} recitations reference a qariah that isn't available in the new app yet — these will be skipped.",
     "restoring": "Restoring…",
     "restoreFavorites": "Restore favorites",
     "favoritesRestored": "Favorites restored",
@@ -256,7 +256,7 @@
       "bodyRange": "Surah {{surahName}}, ayahs {{from}}–{{to}}, is ready to listen."
     },
     "followedRecitationSummary": {
-      "title": "New from your favorite reciters",
+      "title": "New from your favorite qariahs",
       "body_one": "{{count}} new recitation, including {{reciterName}}.",
       "body_other": "{{count}} new recitations, including {{reciterName}}."
     },
@@ -279,7 +279,7 @@
       "body": "Surah {{surahName}} by {{reciterName}} is waiting for you."
     },
     "channels": {
-      "followedRecitation": "New from reciters you follow",
+      "followedRecitation": "New from qariahs you follow",
       "newRecitation": "New recitations",
       "kahfFriday": "Friday Al-Kahf reminder",
       "continueListening": "Continue listening",
@@ -315,9 +315,9 @@
   "about": {
     "versionA11y": "App version (tap 5 times for diagnostics)",
     "alhamdulillahBody": "All praise belongs to Allah, who revealed His Book and made it easy to remember. Qariah was built out of love for the Qur'an and for the women whose voices carry it. We ask Allah to accept this small effort and make it a source of good for our daughters and for the whole Ummah.",
-    "missionBody": "Qariah celebrates the recitation of the Holy Qur'an by women — contemporary and historical, gathered from across the world and across many narrations. We've brought over 60 reciters into one calm, beautiful space, so that every listener — and especially the next generation of girls — can hear the Qur'an in a voice that feels like their own.",
-    "commitmentBody": "We're committed to honoring these reciters, and the Book they recite, with the care it deserves. Qariah will stay a respectful, thoughtfully curated home for the Qur'an, and we'll keep adding reciters and refining the experience, insha'Allah. Thank you for being part of this journey. May Allah accept it from us all.",
-    "highQualityAudioDesc": "Crystal clear recitations from the world's best Qaris with optimized streaming"
+    "missionBody": "Qariah celebrates the recitation of the Holy Qur'an by women — contemporary and historical, gathered from across the world and across many narrations. We've brought over 60 qariahs into one calm, beautiful space, so that every listener — and especially the next generation of girls — can hear the Qur'an in a voice that feels like their own.",
+    "commitmentBody": "We're committed to honoring these qariahs, and the Book they recite, with the care it deserves. Qariah will stay a respectful, thoughtfully curated home for the Qur'an, and we'll keep adding qariahs and refining the experience, insha'Allah. Thank you for being part of this journey. May Allah accept it from us all.",
+    "highQualityAudioDesc": "Crystal clear recitations from the world's best Qariahs with optimized streaming"
   },
   "credits": {
     "builtOn": "Built on",
@@ -327,33 +327,33 @@
   "onboarding": {
     "welcomeTitle": "Welcome to Qariah",
     "tagline": "Hear the Qurʾan in her voice",
-    "welcomeBody": "The first Qurʾan app celebrating contemporary and historical women reciters — bringing voices long unheard to a global audience.",
+    "welcomeBody": "The first Qurʾan app celebrating contemporary and historical qariahs — bringing voices long unheard to a global audience.",
     "catalogTitle": "A Curated Catalog",
-    "catalogBody": "Curated with over 60 women reciters across the world and across several narrations. And more on the way.",
+    "catalogBody": "Curated with over 60 qariahs across the world and across several narrations. And more on the way.",
     "followAlongBody": "Each ayah highlights in sync with the recitation so you never lose your place. Available for Zaynab Talha, expanding soon insha Allah.",
     "memorizeBody": "Repeat a single ayah, play a range of verses, or loop an entire page. Built for hifdh and review.",
     "getStarted": "Get started",
     "welcomeHeadline": "Hear the Qurʾan in her voice.",
     "release_3_3": {
       "arabicTitle": "Qariah in Arabic",
-      "arabicBody": "Most of the app is now in Arabic, with a right-to-left layout and the reciters' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language.",
+      "arabicBody": "Most of the app is now in Arabic, with a right-to-left layout and the qariahs' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language.",
       "widgetsTitle": "Home Screen Widgets",
       "widgetsBody": "Add Qariah widgets to your Home Screen on iPhone and Android: continue listening or reading, play a surah, and see the ayah of the day.",
       "recitationsTitle": "New Recitations",
-      "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the reciter and the range of a partial recitation."
+      "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the qariah and the range of a partial recitation."
     }
   },
   "counts": {
-    "reciters_one": "{{count}} reciter",
-    "reciters_other": "{{count}} reciters",
+    "reciters_one": "{{count}} qariah",
+    "reciters_other": "{{count}} qariahs",
     "recitations_one": "{{count}} recitation",
     "recitations_other": "{{count}} recitations",
     "surahs_one": "{{count}} surah",
     "surahs_other": "{{count}} surahs",
     "personalNotes_one": "{{count}} personal note",
     "personalNotes_other": "{{count}} personal notes",
-    "reciterFavorites_one": "{{count}} reciter favorite",
-    "reciterFavorites_other": "{{count}} reciter favorites",
+    "reciterFavorites_one": "{{count}} qariah favorite",
+    "reciterFavorites_other": "{{count}} qariah favorites",
     "recitationFavorites_one": "{{count}} recitation favorite",
     "recitationFavorites_other": "{{count}} recitation favorites",
     "surahFavorites_one": "{{count}} surah favorite",
@@ -377,6 +377,10 @@
       "title": "New in this update",
       "body": "Arabic, Home Screen widgets and new recitations. Tap to see what's new."
     }
+  },
+  "mushafSettings": {
+    "arabicOnly": "Arabic text only",
+    "arabicOnlyPageView": "The Mushaf view shows the Arabic text only. Choose List to see the translation."
   },
   "countries": {
     "DZ": "Algeria",

@@ -1,6 +1,5 @@
 import React, {useState, useCallback, useEffect, useMemo} from 'react';
 import {View, StyleSheet, LayoutChangeEvent} from 'react-native';
-import {diagBreadcrumb} from '@/services/diagnostics/diagnostics';
 import {GlassView} from 'expo-glass-effect';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {FrostedView} from '@/components/FrostedView';
@@ -62,18 +61,6 @@ const PlayerContent: React.FC<PlayerContentProps> = ({
   onOptionsPress,
   onFollowAlongPress,
 }) => {
-  // @ai diag — Redmi play-time JS-thread freeze: PlayerContent mounts QuranView
-  // (Skia mushaf) + many hooks the instant a track plays, even with the sheet
-  // closed (index=-1). Bracket its first render→mount commit so a diagnostic
-  // build's breadcrumbs reveal if THIS is the synchronous JS block. No-op in prod.
-  const diagFirstRenderRef = React.useRef(true);
-  if (diagFirstRenderRef.current) {
-    diagFirstRenderRef.current = false;
-    diagBreadcrumb('play:PlayerContent-render-start');
-  }
-  useEffect(() => {
-    diagBreadcrumb('play:PlayerContent-mounted');
-  }, []);
   const {theme} = useTheme();
   const readingColors = useReadingThemeColors();
   const glassColorScheme = useGlassColorScheme();
@@ -133,6 +120,9 @@ const PlayerContent: React.FC<PlayerContentProps> = ({
           }
         })
         .shouldCancelWhenOutside(false)
+        // @ai Qariah (#380): only a vertical drag moves the sheet; a side-to-side drag stays with the progress bar.
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-10, 10])
         .runOnJS(false),
     [
       handlePanGestureHandler,
@@ -278,8 +268,7 @@ const PlayerContent: React.FC<PlayerContentProps> = ({
               queueTitle={
                 currentTrack ? getTrackArtistDisplay(currentTrack) : undefined
               }
-              // @ai TECH_DEBT #295: the space under the top bar and under the
-              // controls (each overlay's offset from the edge plus its height).
+              // @ai TECH_DEBT #295: the space under the top bar and under the controls.
               contentPaddingTop={insets.top + moderateScale(4) + headerHeight}
               contentPaddingBottom={CONTROLS_BOTTOM_OFFSET + controlsHeight}
             />

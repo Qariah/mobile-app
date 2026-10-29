@@ -54,3 +54,48 @@ then ignored every tap until two more tab changes.
 installed source and fails when the fix is not there. The RNScreens pod builds
 from `node_modules`, so a rebuild compiles the patch. Remove the patch when
 react-native-screens is 4.30.0 or later. The test then still passes.
+
+# FlashList initial scroll offset (TECH_DEBT #376)
+
+`@shopify+flash-list+2.0.2.patch` changes one method,
+`RecyclerViewManager.applyInitialScrollAdjustment`, in `dist/` (the file that
+Metro bundles) and in `src/`.
+
+The defect: the Mushaf reader in List + Vertical, with Community Reflections
+on, reopened on page 25 after a restore from page 50 (Android, Pixel 3). The
+list mounts with `initialScrollIndex`. Until the rows are measured, FlashList
+estimates them, and in each progressive render it moves the rows above the
+target. FlashList 2.0.2 read the target offset before that move, so its
+internal scroll offset kept the value of the previous render (162982 against
+a real 120506). Its `maintainVisibleContentPosition` then took a reference row
+from that wrong offset and scrolled by -50408 when the row went to its real
+place. The rows after the target also kept their old positions, so the
+search for the visible rows could return rows far from the target.
+
+The patch:
+
+1. Recomputes all the rows, not only the rows up to the target.
+2. Reads the target offset after the recompute. This is the fix of
+   Shopify/flash-list#2133 (FlashList 2.3.0).
+
+`patches/__tests__/flash-list-initial-scroll-offset.test.ts` drives the
+installed `RecyclerViewManager` without React and fails when the patch is not
+there. When FlashList moves to 2.3.0 or later, regenerate the patch with item
+1 only, or remove it if the test passes without it.
+
+# expo-audio remote command targets (Qariah, TECH_DEBT #371)
+
+Qariah adds one more hunk to the `ios/MediaController.swift` section of
+`expo-audio+57.0.5.patch`. In expo-audio 57.0.5, `enableRemoteCommands()`
+adds block targets to the play, pause, seek and skip commands, and
+`disableRemoteCommands()` calls `removeTarget(self)`, which does not remove a
+block target. After Settings → Storage → "Clear cache" cleared the lock screen
+entry, iOS kept an empty "Qariah" card in Control Center. Each activation also
+added one more set of handlers.
+
+The hunk keeps each target by token, removes the earlier set before it adds a
+new one, and removes all of them in `disableRemoteCommands()`. expo-audio 58
+does the same (expo/expo#46020). Remove the hunk when expo-audio is 58 or
+later. `patches/__tests__/expo-audio-remote-command-targets.test.ts` reads the
+installed source and fails when the fix is not there; it still passes for 58.
+When a Bayaan sync changes `expo-audio+57.0.5.patch`, keep this hunk.

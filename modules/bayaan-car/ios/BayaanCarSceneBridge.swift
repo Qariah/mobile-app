@@ -17,7 +17,53 @@ import UIKit
   ) {
     self.start = start
     self.onWindow = onWindow
+    observeWidgetCommands() // @ai Qariah: TECH_DEBT #374
   }
+
+  // @ai-start Qariah (TECH_DEBT #374): a widget play button after the app was stopped.
+  /// The widget, Live Activity and control play buttons are AudioPlaybackIntents.
+  /// They run in the app process and only queue a command for JS
+  /// (WidgetCommandQueue in targets/widgets/_shared), which posts this
+  /// notification in the same process. When the app is not running, iOS
+  /// launches it in the background with no scene, so neither scene delegate
+  /// starts React and the command expires unread. Start React offscreen, as a
+  /// background Siri launch does (BayaanCarSiri.handle), and keep the process
+  /// awake while JS boots and starts the audio.
+  private static let widgetCommandQueued = Notification.Name("BayaanWidgetCommandQueued")
+  private static let intentLaunchSeconds: TimeInterval = 25
+  private var widgetCommandObserver: NSObjectProtocol?
+  private var intentLaunchTask = UIBackgroundTaskIdentifier.invalid
+
+  private func observeWidgetCommands() {
+    guard widgetCommandObserver == nil else { return }
+    widgetCommandObserver = NotificationCenter.default.addObserver(
+      forName: Self.widgetCommandQueued, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self, self.hostWindow == nil else { return }
+      self.holdBackgroundTime(seconds: Self.intentLaunchSeconds)
+      self.ensureStarted()
+    }
+  }
+
+  /// Background time for the JS boot. Once the audio plays, the audio
+  /// background mode keeps the app running; if it never plays, iOS suspends
+  /// the app when this ends. Main thread only.
+  private func holdBackgroundTime(seconds: TimeInterval) {
+    guard intentLaunchTask == .invalid else { return }
+    intentLaunchTask = UIApplication.shared.beginBackgroundTask(withName: "BayaanWidgetCommand") {
+      [weak self] in self?.endBackgroundTime()
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+      self?.endBackgroundTime()
+    }
+  }
+
+  private func endBackgroundTime() {
+    guard intentLaunchTask != .invalid else { return }
+    UIApplication.shared.endBackgroundTask(intentLaunchTask)
+    intentLaunchTask = .invalid
+  }
+  // @ai-end
 
   @discardableResult
   public func ensureStarted(

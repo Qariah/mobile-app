@@ -237,10 +237,7 @@ interface QueueListProps {
   onRemoveQueueItem: (index: number) => void;
   // @ai B2: source context shown below "Queue" header (reciter name, playlist title, etc.)
   queueTitle?: string;
-  // @ai-start TECH_DEBT #295: the full player's top bar and controls float
-  // over the list. These props give the space that the overlays cover at the
-  // top and at the bottom of the list, so that the queue header and the first
-  // and last rows show in the clear.
+  // @ai-start TECH_DEBT #295: the space that the floating top bar and controls cover.
   contentPaddingTop?: number;
   contentPaddingBottom?: number;
   // @ai-end
@@ -285,10 +282,7 @@ export const QueueList: React.FC<QueueListProps> = ({
             styles.trackItemContainer,
             {backgroundColor: theme.colors.card},
           ]}>
-          {/* @ai TECH_DEBT #258: the row content gets the rest of the row and
-           * may shrink (flex: 1, minWidth: 0). TrackItem's outer view has no
-           * flex, so it took the full row width, and the ✕ below sat past the
-           * right edge of the screen on every row. */}
+          {/* @ai TECH_DEBT #258: the row content shrinks, so the ✕ stays on screen. */}
           <View style={styles.rowContent}>
             {item.isUserUpload ? (
               <UploadQueueItem
@@ -307,8 +301,7 @@ export const QueueList: React.FC<QueueListProps> = ({
               />
             )}
           </View>
-          {/* @ai TECH_DEBT #258: a testID and a label, so a device test (and a
-           * screen reader) can find the remove control. */}
+          {/* @ai TECH_DEBT #258: a testID and a label for device tests and screen readers. */}
           <Pressable
             style={styles.removeButton}
             testID={`queue-remove-${index}`}
@@ -411,8 +404,7 @@ export const QueueList: React.FC<QueueListProps> = ({
 };
 // @ai-end
 
-// @ai TECH_DEBT #295: the list's own gaps (the old `listContent` padding),
-// added to the space under the player overlays.
+// @ai TECH_DEBT #295: the list's own gaps, added to the space under the player overlays.
 const LIST_GAP_TOP = verticalScale(8);
 const LIST_GAP_BOTTOM = verticalScale(20);
 
@@ -478,8 +470,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingRight: moderateScale(8),
   },
-  // @ai TECH_DEBT #258: the row content takes the free width and can shrink,
-  // so the remove ✕ always has room at the right end of the row.
+  // @ai TECH_DEBT #258: the row content can shrink, so the remove ✕ always has room.
   rowContent: {
     flex: 1,
     minWidth: 0,

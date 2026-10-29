@@ -17,12 +17,17 @@
 #     misread as "no device" (Sprint 36).
 #   - iOS boot-gate needs `pod install` with SENTRY_DISABLE_AUTO_UPLOAD=true, and
 #     Metro started FROM the worktree (Sprint 28 rule #2).
+#   - The widget fonts are git-ignored copies that only `npm run prebuild` made.
+#     A build without them has no Quran font in the Home Screen widgets (the
+#     builds 3490 and 3506), so this script runs scripts/sync-widget-fonts.js
+#     (Sprint 51).
 #
 # Usage:
 #   scripts/bootstrap-worktree.sh            # copy gitignored files + report
 #   scripts/bootstrap-worktree.sh --ios      # also run `pod install` for iOS builds
 #
-# Safe to re-run: only copies a file when the worktree copy is absent.
+# Safe to re-run: only copies a file when the worktree copy is absent. The widget
+# font copies are the exception: they are made again from the fonts in git.
 # Called by qariah-sprint-kickoff Step 6 (before qariah-boot-gate-verify).
 
 set -euo pipefail
@@ -59,6 +64,16 @@ copy_if_missing() {
 if [[ "$MAIN" != "$HERE" ]]; then
   copy_if_missing ".env.local"
   copy_if_missing "ios/ExportOptions.beta.plist"
+fi
+
+# --- Widget fonts (Sprint 51): git-ignored copies of fonts that are in git
+#     (data/mushaf/digitalkhatt/, assets/fonts/). The script copies them into
+#     targets/widgets/ and modules/bayaan-widgets/android/.../assets/fonts/. It
+#     runs in the main checkout too, and it is safe to run again. ------------
+if command -v node >/dev/null 2>&1; then
+  node "$HERE/scripts/sync-widget-fonts.js"
+else
+  echo "  ! node not on PATH — run: node scripts/sync-widget-fonts.js"
 fi
 
 # --- adb PATH caveat (Sprint 36 — a bare `adb` not-found was misread as

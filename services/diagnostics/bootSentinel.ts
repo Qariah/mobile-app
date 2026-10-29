@@ -16,27 +16,11 @@
 // the next boot. It does NOT alter boot flow, force any ready state, or change
 // what the user sees.
 
-import {createMMKV, type MMKV} from 'react-native-mmkv';
-
-// Lazy + GUARDED handle on the existing 'analytics' MMKV store (the same store
-// deviceId.ts opens successfully on real devices). This module runs at the very
-// FIRST line of bootApp() — the app's earliest MMKV touch — so a module-level
-// `createMMKV(...)` const would crash boot if MMKV's native init throws there.
-// It does on the iOS Simulator (no app-group container, unlike real iOS:
-// `MMKVPlatformContext.getAppGroupDirectory(...)` throws), which previously
-// failed module load → `markBootStarted` became undefined → fatal. The module's
-// own contract is "MMKV must NEVER throw into the boot path", so the handle is
-// created lazily inside try/catch and every caller no-ops when it's null.
-let _mmkv: MMKV | null | undefined; // undefined = not yet tried; null = failed
-function store(): MMKV | null {
-  if (_mmkv !== undefined) return _mmkv;
-  try {
-    _mmkv = createMMKV({id: 'analytics'});
-  } catch {
-    _mmkv = null; // never retried; never throws into boot
-  }
-  return _mmkv;
-}
+// The 'analytics' MMKV store, opened lazily and guarded (`analyticsStore.ts`).
+// This module runs at the FIRST line of bootApp(); a module-level
+// `createMMKV(...)` once crashed boot on the iOS Simulator. MMKV must NEVER
+// throw into the boot path: every caller no-ops when the store is null.
+import {analyticsStore as store} from './analyticsStore';
 
 const PENDING_KEY = 'boot:incomplete'; // JSON {startedAt, version, build}
 const LAST_OK_KEY = 'boot:last_completed'; // timestamp string

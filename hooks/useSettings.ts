@@ -71,15 +71,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      // `storage` from `@/utils/storage` IS AsyncStorage (`export const storage
-      // = AsyncStorage`), so this store carries the same destructive shape as
-      // the other 16 — a rejected hydrating read would let the next write
-      // persist defaults over `reciterPreferences` (every per-reciter rewaya
-      // choice the user has ever made) and `defaultReciterSelection`. It was
-      // the last one found precisely because it reaches AsyncStorage through
-      // that alias rather than importing it directly. The alias is passed
-      // through deliberately so the backend seam in `@/utils/storage` survives.
-      // See services/storage/hydrationGuardedStorage.ts and GitHub #329.
+      // `storage` is AsyncStorage: guard it, so a failed hydrating read does not persist defaults (#329).
       storage: guardedJSONStorage('settings-storage', storage),
     },
   ),

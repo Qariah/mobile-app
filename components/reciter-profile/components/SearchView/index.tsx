@@ -1,12 +1,5 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  FlatList,
-  Keyboard,
-  type ListRenderItemInfo,
-} from 'react-native';
+import {View, Text, TouchableOpacity, FlatList, Keyboard} from 'react-native';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
@@ -72,7 +65,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
   // Render list item
   const renderListItem = React.useCallback(
-    ({item}: ListRenderItemInfo<Surah>) => (
+    ({item}: {item: Surah}) => (
       <SurahItem
         item={item}
         onPress={surah => {
@@ -90,7 +83,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
 
   // Render card item
   const renderCardItem = React.useCallback(
-    ({item}: ListRenderItemInfo<Surah>) => (
+    ({item}: {item: Surah}) => (
       <SurahCard
         id={item.id}
         name={item.name}

@@ -109,7 +109,7 @@ export class JustService {
     private fontSizeLineWidthRatio: number,
     private lineWidthRatio: number,
     pParBuilder?: SkParagraphBuilder,
-    fontFamily = 'DigitalKhatt',
+    fontFamily: string = 'DigitalKhatt',
   ) {
     this.fontFamily = fontFamily;
     this.desiredWidth = lineWidthRatio * this.lineWidth;
@@ -198,7 +198,7 @@ export class JustService {
       const stretchByAyaSpace = spaceRatio * maxStretchByAyaSpace;
 
       const simpleSpaceWidth = defaultSpaceWidth + stretchBySpace;
-      const ayaSpaceWidth = defaultSpaceWidth + stretchByAyaSpace;
+      let ayaSpaceWidth = defaultSpaceWidth + stretchByAyaSpace;
 
       currentLineWidth += stretch;
 
@@ -860,7 +860,7 @@ export class JustService {
     pageNumber: number,
     fontSizeLineWidthRatio: number,
     fontMgr: SkTypefaceFontProvider,
-    fontFamily = 'DigitalKhatt',
+    fontFamily: string = 'DigitalKhatt',
   ): JustResultByLine[] {
     const cachedPage = JustService.getCachedPageLayout(
       fontSizeLineWidthRatio,
@@ -920,7 +920,7 @@ export class JustService {
   static getCachedPageLayout(
     fontSizeLineWidthRatio: number,
     pageNumber: number,
-    fontFamily = 'DigitalKhatt',
+    fontFamily: string = 'DigitalKhatt',
   ): JustResultByLine[] | undefined {
     // 1. Check in-memory cache (fastest)
     const pageCache = getPageLayoutCache(fontSizeLineWidthRatio, fontFamily);
@@ -955,7 +955,7 @@ export class JustService {
     fontSizeLineWidthRatio: number,
     pageNumber: number,
     layout: JustResultByLine[],
-    fontFamily = 'DigitalKhatt',
+    fontFamily: string = 'DigitalKhatt',
   ): void {
     const pageCache = getPageLayoutCache(fontSizeLineWidthRatio, fontFamily);
     // Bound the per-partition page cache. Eviction is insertion/rewarm order:

@@ -98,7 +98,7 @@ it('a skipped start verse: says the surah plays from the beginning, once', () =>
   expect(mockShowToast).toHaveBeenCalledTimes(1);
   expect(mockShowToast).toHaveBeenCalledWith(
     'Verse tracking unavailable',
-    'Al-Mulk plays from the beginning without verse tracking for this reciter.',
+    'Al-Mulk plays from the beginning without verse tracking for this qariah.', // @ai Qariah #535 wording
     'none',
   );
 });

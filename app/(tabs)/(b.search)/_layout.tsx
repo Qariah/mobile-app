@@ -113,7 +113,27 @@ export default function SearchLayout() {
               : {headerShown: false}),
           }}
         />
-        <Stack.Screen name="reciter/browse" />
+        {/* @ai On glass devices BrowseReciters draws no header of its own: it needs
+         * the native one (title from the screen), as browse-all does. */}
+        <Stack.Screen
+          name="reciter/browse"
+          options={{
+            ...(USE_GLASS
+              ? {
+                  headerShown: true,
+                  headerLargeTitle: false,
+                  headerTransparent: true,
+                  headerBlurEffect: undefined,
+                  headerStyle: {backgroundColor: 'transparent'},
+                  headerShadowVisible: false,
+                  headerTitle: '',
+                  headerBackTitle: '',
+                  headerBackground: EmptyHeaderBackground,
+                  fullScreenGestureEnabled: false,
+                }
+              : {headerShown: false}),
+          }}
+        />
       </Stack>
     </MaxWidthContainer>
   );

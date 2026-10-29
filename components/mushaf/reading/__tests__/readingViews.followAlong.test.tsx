@@ -8,6 +8,7 @@
 
 import React, {act} from 'react';
 import TestRenderer from 'react-test-renderer';
+import {Dimensions} from 'react-native'; // @ai
 
 interface VerseItemProps {
   verse: {verse_key: string};
@@ -22,6 +23,7 @@ const mockHeaders: {
   surahNumber?: number;
   rewayah?: string;
   visible: boolean;
+  width?: number; // TECH_DEBT #278
 }[] = [];
 // @ai-end
 
@@ -52,6 +54,7 @@ jest.mock(
       surahNumber?: number;
       rewayah?: string;
       visible: boolean;
+      width?: number; // TECH_DEBT #278
     }) => {
       mockHeaders.push(props);
       return null;
@@ -228,6 +231,7 @@ import ContinuousListView from '../ContinuousListView';
 import ReadingPageView from '../ReadingPageView';
 import {useMushafPlayerStore} from '@/store/mushafPlayerStore';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
+import {moderateScale} from 'react-native-size-matters'; // @ai
 
 declare const global: {IS_REACT_ACT_ENVIRONMENT?: boolean};
 global.IS_REACT_ACT_ENVIRONMENT = true;
@@ -356,3 +360,32 @@ describe.each(Object.keys(views))('%s', name => {
   });
   // @ai-end
 });
+
+// @ai-start
+// TECH_DEBT #278: the list rows took their width from the window width read
+// when the constants module loaded. The vertical List mode turns with the
+// reader, so the rows must follow the live window width.
+describe('ContinuousListView row width', () => {
+  const initial = Dimensions.get('window');
+  const setWindow = (width: number, height: number) => {
+    const size = {width, height, scale: 3, fontScale: 1};
+    act(() => {
+      Dimensions.set({window: size, screen: size});
+    });
+  };
+  const headerWidth = () =>
+    mockHeaders.filter(h => h.surahNumber === 2).at(-1)?.width;
+
+  afterEach(() => setWindow(initial.width, initial.height));
+
+  it('follows the window when it turns', () => {
+    setWindow(402, 874);
+    act(() => {
+      renderer = TestRenderer.create(views.ContinuousListView());
+    });
+    expect(headerWidth()).toBeCloseTo(402 - moderateScale(16), 5);
+    setWindow(874, 402);
+    expect(headerWidth()).toBeCloseTo(874 - moderateScale(16), 5);
+  });
+});
+// @ai-end

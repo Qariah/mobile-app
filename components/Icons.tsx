@@ -47,12 +47,7 @@ export const HomeIcon: React.FC<IconProps> = ({color, size, filled}) => (
 );
 
 export const HeadphonesIcon: React.FC<IconProps> = ({color, size}) => (
-  // Use Feather's headphones glyph — matches the rest of the app's icon
-  // family (Settings / Storage / Credits / Collection / Loved / Notes /
-  // Bookmarks / Reciter Choice all use Feather). No `filled` variant: Feather
-  // doesn't ship one and authoring our own kept producing weirder shapes than
-  // the inherited line aesthetic. Tab-bar selection is communicated via
-  // color + label weight instead.
+  // Feather's glyph matches the app's icon family. Feather has no filled variant.
   <Feather name="headphones" size={size} color={color} />
 );
 

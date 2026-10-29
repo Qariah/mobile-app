@@ -50,8 +50,7 @@ export type MushafScreenParams = {
   surah?: string;
   page?: string;
   ayah?: string;
-  /** '1' when this mount is the cold-start session-restore push (app/_layout
-   *  prepare()). Marks the content-stall as the cold-start "won't open" variant. */
+  /** '1' on the cold-start session-restore push: a content stall is then the cold-start variant. */
   restored?: string;
   // @ai-start
   // A stored Hafs anchor ('S:A' or 'S:A:W': a bookmark / note / highlight
@@ -68,15 +67,7 @@ export default function MushafScreen() {
   const {theme} = useTheme();
   const {t} = useTranslation(['reader', 'common']); // @ai
 
-  // Qariah's own reactive-readiness fix (54797bfe: subscribe to the DK cache
-  // version and kick initialize() at mount) is retired here. Upstream's #329
-  // subscribes this screen to the preload pipeline below (`preloadState`),
-  // which awaits the DK init and always notifies, and shows a retry instead
-  // of an endless spinner when the load fails. Qariah's deferred boot preload
-  // (app/_layout.tsx, `deferMushafPreload`) runs through that same pipeline.
-  // @ai The preload can settle before the DK commit notifies, and a DK init
-  // started elsewhere never touches the preload state: re-render on the DK
-  // cache signal too, so `dkReady` below is never a stale read.
+  // @ai Re-render on the DK cache signal too: the preload can settle before the DK commit notifies.
   useSyncExternalStore(subscribeDkCache, getDkCacheVersion);
   const dkReady = digitalKhattDataService.initialized;
   const surahStartPages = dkReady
@@ -108,8 +99,7 @@ export default function MushafScreen() {
   }, [page, surah, surahStartPages]);
   // @ai-end
 
-  // @ai Qariah (#281): a link to this open reader turns it to the link's page
-  // (and names the link's surah, as at mount).
+  // @ai Qariah (#281): a link to this open reader turns it to the link's page and surah.
   useReaderLinkPage(pageNumber, dkReady, initialSurahId);
 
   // Build initial verse key for highlight
@@ -119,11 +109,7 @@ export default function MushafScreen() {
   }, [surah, ayah]);
 
   // Allow landscape while the mushaf screen is open; re-lock portrait on exit.
-  // QARIAHV2-C (#54) — both calls guarded: the unmount-time re-lock especially
-  // races OEM Activity teardown (Samsung kills the Activity during playback →
-  // cleanup runs → ExpoScreenOrientation rejects with "current activity is no
-  // longer available"). Benign — there is nothing to orient anymore.
-  // `?.` because upstream's screen tests stub both calls to return nothing.
+  // QARIAHV2-C (#54): both calls reject when an OEM killed the Activity (benign). `?.`: tests stub them.
   useEffect(() => {
     ScreenOrientation.unlockAsync()?.catch(() => {
       /* Activity may be gone (OEM-killed); benign, swallow it. */
@@ -232,12 +218,7 @@ export default function MushafScreen() {
     // @ai-end
   }, [anchor, initialVerseKey, pageNumber]); // @ai: anchor
 
-  // @ai REPORT-ONLY content-stall watchdog (the post-boot "spinner forever"
-  // class). The `!dkReady` spinner below is exactly what an iOS tester saw stuck
-  // for ~7 min on a cold-start restore — DigitalKhatt init never resolved, yet
-  // boot + splash had already reported success so nothing else was blind to it.
-  // Fires `screen-content-stalled` after the budget if dkReady never flips, and
-  // a companion success when it does. Telemetry only; does not touch the gate.
+  // @ai REPORT-ONLY content-stall watchdog: no boot instrument sees a stuck `!dkReady` spinner.
   useContentReadyWatchdog({
     screen: 'mushaf',
     ready: dkReady,

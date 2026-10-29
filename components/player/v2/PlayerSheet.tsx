@@ -33,6 +33,10 @@ import {TabletPlayerReciterColumn} from '@/components/tablet/TabletPlayerReciter
 import {TabletPlayerControlsColumn} from '@/components/tablet/TabletPlayerControlsColumn';
 import {isFeatureEnabled} from '@/config/featureFlags';
 
+// @ai Qariah: the sheet pan starts after 10 px up or down and fails after 10 px to the side.
+const SHEET_PAN_ACTIVE_Y: [number, number] = [-10, 10];
+const SHEET_PAN_FAIL_X: [number, number] = [-10, 10];
+
 export const PlayerSheet = () => {
   const {theme} = useTheme();
   const {isTablet, orientation} = useResponsive();
@@ -158,19 +162,17 @@ export const PlayerSheet = () => {
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => {
-      // Redmi play-freeze fix (sibling of the Body `sheetUntouchable` guard below).
-      // gorhom's BottomSheetBackdrop MOUNTS with pointerEvents:'auto' and only flips
-      // to 'none' via a reanimated `useAnimatedReaction` -> `runOnJS` -> `setState`
-      // chain gated on its internal `animatedIndex` settling to disappearsOnIndex (-1).
-      // On the slow Helio G85 the closed-sheet layout race delays that settle, so the
-      // full-screen backdrop (opacity 0 but still hit-testable, wrapped in a Tap
-      // GestureDetector) keeps eating EVERY touch while the sheet is logically hidden
-      // -> the whole app goes unresponsive though audio + the JS thread keep running,
-      // and only the hardware BACK key works. Don't render the backdrop at all unless
-      // the sheet is the full player; keyed off the LOGICAL `sheetMode` so it is immune
-      // to gorhom's racing internal `animatedIndex`. The Body `pointerEvents:'none'`
-      // guard alone was INSUFFICIENT (build 1362 still froze) precisely because the
-      // backdrop is a separate sibling view the Body style never reaches.
+      // Slow-Android play-time freeze fix: gorhom's BottomSheetBackdrop mounts
+      // pointerEvents:'auto' (full-screen absoluteFillObject, opacity-0 but still
+      // hit-testable, wrapped in a Tap GestureDetector) and only flips to 'none'
+      // via a useAnimatedReaction -> runOnJS -> setState chain gated on its
+      // internal animatedIndex settling to disappearsOnIndex (-1). On a slow CPU
+      // the *closed* sheet's container-height layout race delays that settle, so
+      // the backdrop keeps eating EVERY touch while the sheet is logically hidden
+      // -> the whole app is unresponsive though audio keeps playing and only the
+      // hardware BACK key works. Don't render the backdrop at all unless the sheet
+      // is the full player; keyed off the LOGICAL sheetMode (set synchronously
+      // before expand()), so it is immune to gorhom's racing animatedIndex.
       if (sheetMode !== 'full') {
         return null;
       }
@@ -382,22 +384,15 @@ export const PlayerSheet = () => {
         animateOnMount={false}
         handleComponent={renderHandleComponent}
         enableContentPanningGesture
+        // @ai Qariah: a side-to-side drag stays with the progress bar; only a vertical drag moves the sheet.
+        activeOffsetY={SHEET_PAN_ACTIVE_Y}
+        failOffsetX={SHEET_PAN_FAIL_X}
         enableOverDrag={false}
-        // @ai Sprint 50: gorhom makes the whole sheet ONE accessibility element
-        // ("Bottom Sheet") by default, so VoiceOver, TalkBack and UI tests cannot
-        // reach the player controls. Expose the content instead.
+        // @ai gorhom makes the sheet ONE accessibility element by default: expose the controls.
         accessible={false}
         style={[styles.sheet, sheetMode !== 'full' && styles.sheetUntouchable]}
         backgroundStyle={[styles.background, {backgroundColor: 'transparent'}]}>
-        {/* Play-path UI-freeze fix (companion to the SurahItem selector narrowing —
-            QARIAHV2-J / incident #184): only MOUNT the heavy Skia player content
-            (PlayerContent → QuranView mushaf) when the sheet is actually expanded. On
-            play the sheet stays at index={-1} and the mini-player renders via a SEPARATE
-            component (tabs/_layout), so mounting the full mushaf behind a hidden sheet
-            paid a Skia render/allocation cost on every play with nothing visible. Keyed
-            off the LOGICAL `sheetMode` (immune to gorhom's internal position race — same
-            signal `sheetUntouchable` uses). Audio + the mini-player live outside
-            PlayerContent, so they are unaffected. */}
+        {/* Mount the heavy Skia content only when the LOGICAL `sheetMode` is full (play-path freeze, #184). */}
         {sheetMode !== 'full' ? null : showTabletSplit ? (
           <View style={styles.tabletSplitRoot}>
             <View
@@ -452,20 +447,12 @@ const styles = StyleSheet.create({
     zIndex: 2000,
     elevation: 20,
   },
-  // Redmi play-time UI-freeze ROOT FIX (H3 touch-capturing overlay). gorhom applies
-  // the `style` above to its BottomSheetBody (an Animated.View), so the elevation:20
-  // lives there. On a slow CPU the *closed* sheet's container-height measurement can
-  // race the mount, leaving that empty full-screen Body sitting over the app — and
-  // because it's elevated, it swallows EVERY touch while the app renders underneath
-  // (JS thread alive + heartbeat ticking, audio plays on its native thread, only the
-  // hardware BACK key works). Confirmed on the tester's Redmi Note 9 via UI Inspector:
-  // taps over the app's buttons resolved to MIUI launcher nodes, nothing clickable.
-  // pointerEvents:'none' removes the Body from hit-testing whenever the sheet is not
-  // the full player, so a mis-positioned *closed* sheet can never capture touches.
-  // Keyed off the LOGICAL sheetMode → correct even when gorhom's internal position is
-  // wrong. The mini-player is a separate component (tabs/_layout), unaffected.
-  // Inherited from Bayaan (#26) → upstream candidate. See
-  // planning/redmi-play-freeze-investigation.md.
+  // Slow-Android play-time freeze fix (sibling guard of the backdrop gate above).
+  // gorhom applies this `style` to BottomSheetBody (an Animated.View), so the
+  // elevation:20 lives there; on a slow CPU a mis-positioned *closed* sheet's
+  // elevated Body can also capture touches (Android elevation drives touch order).
+  // pointerEvents:'none' removes it from hit-testing whenever the sheet is not the
+  // full player — keyed off logical sheetMode, not gorhom's racing animatedIndex.
   sheetUntouchable: {
     pointerEvents: 'none',
   },

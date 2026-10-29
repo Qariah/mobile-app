@@ -7,7 +7,7 @@ import React from 'react';
 import {FlatList} from 'react-native';
 import {act, fireEvent, render} from '@testing-library/react-native';
 import {NewlyAddedRecitationsRow} from '../NewlyAddedRecitationsRow';
-import type {NewlyAddedRecitation} from '@/data/reciterCollections';
+import type {NewlyAddedRecitation} from '@/data/qariahReciterCollections';
 import {
   RECITERS,
   markRecitersUpdated,

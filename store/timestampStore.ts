@@ -170,18 +170,8 @@ export const useTimestampStore = create<TimestampState>()((set, get) => ({
 
     for (const reciter of RECITERS) {
       for (const rewayat of reciter.rewayat) {
-        // Sprint 41 (RFC-019 fast-follow) — derive support from
-        // timestampFetchService.hasSource, which ORs the fork-supplied
-        // bundled coverage (branding.timestampLocalSurahList) with the R2
-        // `has_timestamps` flag, mirroring
-        // mushafPlayerStore.computeAvailableReciters. Reading the raw
-        // catalog flag here left the registry permanently empty for Qariah
-        // (every rewayat ships has_timestamps: false), hiding Zaynab
-        // Talha's local coverage from the Follow-Along badge, the
-        // FollowAlongSheet suggestions, and the verse-actions gating.
-        // hasSource is synchronous + guards the fork-supplied provider
-        // internally; degrade to the pre-RFC-019 flag check anyway so a
-        // throwing seam can never fail registry load.
+        // RFC-019: hasSource() also counts the fork's bundled coverage (every Qariah rewayat has
+        // has_timestamps: false). Fall back to the flag, so a throwing seam cannot fail the registry.
         let supported: boolean;
         try {
           supported = timestampFetchService.hasSource(rewayat.id);

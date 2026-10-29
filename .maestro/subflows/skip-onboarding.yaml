@@ -23,7 +23,7 @@
 #     hit the second one); the old subflow assumed "Skip" → "Get started" → "Skip for now"
 #     and failed 4/4 there.
 # Two more surfaces race the same way: the Android 13+ POST_NOTIFICATIONS system dialog
-# ("Allow", requested at player init, S24.1) came up ~10 s after launch over the splash on a
+# ("Allow", requested at launch, services/notifications/launchPermission.ts) came up ~10 s after launch over the splash on a
 # fresh API-34 emulator, and the S33 background-playback prompt ("NOT NOW") came up over the
 # welcome screen. A fixed chain of one-shot `when:` guards (they check once, never wait)
 # missed whichever overlay arrived a moment late, and that overlay then hid every other

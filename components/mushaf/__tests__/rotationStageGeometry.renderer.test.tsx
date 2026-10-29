@@ -113,12 +113,9 @@ jest.mock('@/services/mushaf/QCFFontLoader', () => ({
 }));
 jest.mock('@/services/mushaf/QCFLayoutCacheService', () => ({
   qcfLayoutCacheService: {
-    // Orientation-independent calibration width — the whole point of the
-    // cache change. 900 matches the stubbed getLongestLine().
-    getPageLayout: () => ({
-      widestRef: 900,
-      lineWidthsAtRef: [{lineIndex: 0, width: 900}],
-    }),
+    // A cache miss: the page measures itself with the stubbed
+    // getLongestLine() (900) and sizes the font from the live content width.
+    getPageLayout: () => undefined,
     setPageLayout: jest.fn(),
   },
 }));
@@ -216,13 +213,7 @@ function drawnFirstLine(page: number, m: MushafLayoutMetrics, book: boolean) {
       textColor="#000000"
       dividerColor="#888888"
       contentMarginLeft={marginLeft}
-      screenWidth={m.pageWidth}
-      screenHeight={m.screenHeight}
-      contentWidth={m.contentWidth}
-      contentHeight={m.contentHeight}
-      baseLineHeight={m.baseLineHeight}
-      paddingHorizontal={m.paddingHorizontal}
-      paddingTop={m.paddingTop}
+      metrics={m}
       centerShortPages={!m.scrollContainerHeight}
     />,
   );

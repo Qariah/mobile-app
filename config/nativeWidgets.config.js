@@ -18,8 +18,7 @@
  * See docs/rfcs/021-native-widget-seams.md.
  */
 module.exports = {
-  // @ai Qariah: the core set only. Owner decision O5, 2026-10-18 (Sprint 46
-  // GATE 1). The other surfaces stay in the code and compile out.
+  // @ai Qariah: the core set only (owner decision O5). The other surfaces compile out.
   widgets: [
     'ContinueListening',
     'ContinueReading',

@@ -54,6 +54,7 @@ import androidx.glance.unit.ColorProvider
 import expo.modules.bayaanwidgets.AppLinks
 import expo.modules.bayaanwidgets.OverrideExpiryWorker
 import expo.modules.bayaanwidgets.WidgetCommandActivity
+import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.PlaybackOverride
 import expo.modules.bayaanwidgets.PlaybackState
 import expo.modules.bayaanwidgets.R
@@ -159,6 +160,8 @@ class ContinueListeningWidget : GlanceAppWidget() {
   @Composable
   private fun Content(context: Context, s: WidgetSnapshot?, override: PlaybackOverride?) {
     val track = s?.nowPlaying?.track ?: s?.recent?.firstOrNull() ?: s?.upNext?.firstOrNull()
+    // @ai Qariah (TECH_DEBT #357): the text follows the app language.
+    val strings = remember(s?.language) { WidgetLanguage.context(context, s?.language) }
     val openPlayer = actionStartActivity(
       Intent(Intent.ACTION_VIEW, Uri.parse(AppLinks.url(context, "player"))).setPackage(context.packageName),
     )
@@ -172,27 +175,29 @@ class ContinueListeningWidget : GlanceAppWidget() {
           verticalAlignment = Alignment.CenterVertically) {
           Logo(24)
           Spacer(GlanceModifier.height(8.dp))
-          Text("Start listening", style = TextStyle(color = WHITE, fontWeight = FontWeight.Medium))
+          Text(strings.getString(R.string.bayaan_widget_text_start_listening), style = TextStyle(color = WHITE, fontWeight = FontWeight.Medium))
         }
         return@Box
       }
       val size = LocalSize.current
       val np = s.nowPlaying
       val playback = np?.let { PlaybackState.effective(it, s.generatedAt, override, System.currentTimeMillis()) }
+      val isPlaying = playback?.isPlaying ?: false
       val hero = Hero(
         track = track,
         hasNowPlaying = np != null,
-        isPlaying = playback?.isPlaying ?: false,
+        isPlaying = isPlaying,
         progress = if (np != null && playback != null && np.durationSec > 0) {
           val rate = if (np.rate > 0 && np.rate.isFinite()) np.rate else 1.0
           (1 - playback.remainingWallSec * rate / np.durationSec).toFloat().coerceIn(0f, 1f)
         } else null,
+        playDescription = strings.getString(if (isPlaying) R.string.bayaan_widget_text_pause else R.string.bayaan_widget_text_play),
       )
       // Drop the side list's first item when it is already the hero.
       val sideSource =
         if (s.upNext.isEmpty()) s.recent.drop(if (s.nowPlaying == null) 1 else 0)
         else s.upNext.drop(if (s.nowPlaying == null && s.recent.isEmpty()) 1 else 0)
-      val sideTitle = if (s.upNext.isEmpty()) "Recent" else "Up next"
+      val sideTitle = strings.getString(if (s.upNext.isEmpty()) R.string.bayaan_widget_text_recent else R.string.bayaan_widget_text_up_next)
       when {
         size.width >= MEDIUM.width && size.height >= LARGE.height -> Large(context, hero, sideSource.take(4), sideTitle)
         size.width >= MEDIUM.width -> Medium(context, hero, sideSource.take(3), sideTitle)
@@ -207,6 +212,8 @@ class ContinueListeningWidget : GlanceAppWidget() {
     val hasNowPlaying: Boolean,
     val isPlaying: Boolean,
     val progress: Float?,
+    /** The play or pause button's description, in the app language. */
+    val playDescription: String,
   )
 
   @Composable
@@ -261,7 +268,7 @@ class ContinueListeningWidget : GlanceAppWidget() {
     ) {
       Image(
         ImageProvider(if (hero.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play),
-        contentDescription = if (hero.isPlaying) "Pause" else "Play",
+        contentDescription = hero.playDescription,
         modifier = GlanceModifier.size(18.dp),
       )
     }

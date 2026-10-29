@@ -5,7 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Alert,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
@@ -27,12 +27,11 @@ import {useTranslation} from 'react-i18next';
 import {getSurahDisplayName, getSurahMeaning} from '@/i18n/format';
 // @ai-end
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 // @ai-start
 export const SelectPlaylistSheet = (props: SheetProps<'select-playlist'>) => {
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation('sheets');
   const {playlists, createPlaylist, addToPlaylist} = usePlaylists();
   const {isLoved, isLovedWithRewayat, toggleLoved} = useLoved();
@@ -274,7 +273,7 @@ export const SelectPlaylistSheet = (props: SheetProps<'select-playlist'>) => {
 // @ai-end
 
 // @ai-start
-const createStyles = (theme: Theme) =>
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
@@ -285,7 +284,7 @@ const createStyles = (theme: Theme) =>
       borderRightWidth: StyleSheet.hairlineWidth,
       borderColor: Color(theme.colors.text).alpha(0.08).toString(),
       paddingTop: moderateScale(8),
-      height: SCREEN_HEIGHT * 0.75,
+      height: screenHeight * 0.75,
     },
     indicator: {
       backgroundColor: Color(theme.colors.text).alpha(0.3).toString(),

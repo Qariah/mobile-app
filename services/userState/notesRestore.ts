@@ -250,10 +250,3 @@ export async function restoreQfNotesOnce(): Promise<NotesRestoreResult> {
     inFlightRestore = null;
   }
 }
-
-/** Test-only: clear the done flag so the next call re-runs the restore. */
-export async function clearNotesRestoredFlag(): Promise<void> {
-  await AsyncStorage.removeItem(
-    await currentAccountFlagKey(NOTES_RESTORED_AT_KEY),
-  ); // @ai
-}

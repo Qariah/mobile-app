@@ -8,8 +8,8 @@
  * `slugify(country)` from `data/countryCollections.ts`).
  *
  * Adding a new country: add a row here AND populate the `Reciter.country`
- * via the curation CSV. Catalog regeneration via
- * `scripts/apply-reciter-metadata.ts` does not touch this file.
+ * in the catalog (qariah-ops-console). A catalog change does not touch
+ * this file.
  *
  * Long-term: TECH_DEBT row tracks proper SVG country silhouettes — the
  * 2-letter code is an interim that ships the user-feedback "no more

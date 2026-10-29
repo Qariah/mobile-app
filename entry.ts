@@ -6,7 +6,7 @@ import {
   CarRoot,
   carKeepAliveTask,
 } from './services/car/CarRoot';
-// Qariah (Sprint 48, S48.6): loads with the other imports; the call is below.
+// Qariah: the call is below.
 import {defineQariahCatalogTask} from './services/notifications/backgroundTask';
 
 // Android Auto starts this headless root when the phone app is not open, and
@@ -14,9 +14,5 @@ import {defineQariahCatalogTask} from './services/notifications/backgroundTask';
 AppRegistry.registerComponent(CAR_ROOT_COMPONENT, () => CarRoot);
 AppRegistry.registerHeadlessTask(CAR_KEEP_ALIVE_TASK, () => carKeepAliveTask);
 
-// Qariah (Sprint 48, S48.6): the background catalog check of the local
-// notifications. The OS can start the app only to run this task (an Android
-// headless start, an iOS background launch), so the call below defines the
-// task at module scope, before the app runs, and not in a component or the
-// boot. services/qariahBoot.ts registers it after the boot.
+// Qariah: define the notification catalog task at module scope; the OS can start the app only to run it.
 defineQariahCatalogTask();

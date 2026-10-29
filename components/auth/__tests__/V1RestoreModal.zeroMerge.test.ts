@@ -33,10 +33,10 @@ jest.mock('expo-crypto', () => ({
   randomUUID: () => 'test-device-id',
 }));
 
-jest.mock('@/services/userState', () => ({
+// The v1 restore pushes the merged favourites through syncBus, which pulls in
+// the user-state SQLite queue.
+jest.mock('@/services/userState/syncBus', () => ({
   enqueueFavoritesSync: jest.fn(),
-  enqueueReadingSessionSync: jest.fn(),
-  enqueuePreferenceSync: jest.fn(),
 }));
 
 // RECITERS is populated in-place at runtime; empty is fine here because the
@@ -48,7 +48,7 @@ jest.mock('@/data/reciterData', () => ({RECITERS: []}));
 // sheet, so stub the chassis rather than reaching into a third party's
 // internals (components/__tests__/BottomSheetModal.test.tsx mocks gorhom
 // itself, because that test IS about the sheet).
-jest.mock('@/components/BottomSheetModal', () => ({
+jest.mock('@/components/auth/QariahBottomSheetModal', () => ({
   __esModule: true,
   default: () => null,
 }));

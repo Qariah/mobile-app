@@ -155,50 +155,6 @@ export class LocalAggregationStore {
     this.saveKhatmahProgress(progress);
   }
 
-  // --- Aggregations / read-side ---
-
-  /**
-   * Sum `listeningMs` per reciter over the last `windowDays` (default 30),
-   * sorted descending. Returns at most `limit` entries (default 10). Iterates
-   * MMKV keys (small N — at most one entry per recent day), so this is
-   * cheap to call on each home-screen render.
-   *
-   * Sprint 8 (post-S7) — backs the "Most Played by You" home row. Pure
-   * client-side analytics; no PostHog roundtrip.
-   */
-  getMostPlayedReciters(opts?: {
-    windowDays?: number;
-    limit?: number;
-  }): Array<{reciterId: string; listeningMs: number}> {
-    const windowDays = opts?.windowDays ?? 30;
-    const limit = opts?.limit ?? 10;
-
-    // Build the set of allowed dates (YYYY-MM-DD) inside the window. Doing
-    // string comparison (rather than parsing every key as a Date) is fine
-    // because YYYY-MM-DD sorts lexicographically.
-    const today = new Date();
-    const cutoff = new Date(today);
-    cutoff.setDate(cutoff.getDate() - windowDays + 1);
-    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
-
-    const totals = new Map<string, number>();
-    for (const key of this.mmkv.getAllKeys()) {
-      if (!key.startsWith(DAILY_PREFIX)) continue;
-      const date = key.slice(DAILY_PREFIX.length);
-      if (date < cutoffStr) continue;
-      const agg = this.getDailyAggregate(date);
-      if (!agg) continue;
-      for (const [reciterId, ms] of Object.entries(agg.reciters)) {
-        totals.set(reciterId, (totals.get(reciterId) ?? 0) + ms);
-      }
-    }
-
-    return Array.from(totals.entries())
-      .map(([reciterId, listeningMs]) => ({reciterId, listeningMs}))
-      .sort((a, b) => b.listeningMs - a.listeningMs)
-      .slice(0, limit);
-  }
-
   // --- Listening Goal ---
 
   getListeningGoal(): number {

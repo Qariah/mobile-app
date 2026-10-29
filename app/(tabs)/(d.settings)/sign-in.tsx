@@ -17,7 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useRouter} from 'expo-router';
+import {Stack, useRouter} from 'expo-router';
 import {moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {useAuth} from '@/services/auth';
@@ -50,6 +50,7 @@ export default function SettingsSignIn() {
     // stack header.
     <View
       style={[styles.container, {backgroundColor: theme.colors.background}]}>
+      <Stack.Screen options={{title: t('qariah:settings.screens.signIn')}} />
       <View style={styles.content}>
         <Text style={[styles.title, {color: theme.colors.text}]}>
           {t('qariah:account.signInTitle')}

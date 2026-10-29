@@ -1,14 +1,5 @@
-import React, {useMemo, useState, useEffect} from 'react';
-import {
-  Text,
-  Pressable,
-  ScrollView,
-  View,
-  Linking,
-  Switch,
-  Alert,
-  Platform,
-} from 'react-native';
+import React, {useMemo} from 'react';
+import {Text, Pressable, ScrollView, View, Linking, Switch} from 'react-native';
 import {useRouter} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
@@ -21,9 +12,6 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {GlassView} from 'expo-glass-effect';
 import {openAppStoreForReview, markAsRated} from '@/utils/reviewUtils';
-import {useAuth} from '@/services/auth';
-import {fetchQfUserInfo} from '@/services/userState/qfUserInfo';
-import {SignOutConfirmModal} from '@/components/auth/SignOutConfirmModal';
 import {
   QuranIcon,
   DualPagesIcon,
@@ -42,53 +30,25 @@ import {
 import {useDevSettingsStore} from '@/store/devSettingsStore';
 import {useAnalyticsConsentStore} from '@/store/analyticsConsentStore';
 import {ThemePicker} from '@/components/settings/ThemePicker';
-import {showBackgroundPlaybackGuide} from '@/hooks/useBackgroundPlaybackPrompt';
 import branding from '@/config/branding';
-import * as Clipboard from 'expo-clipboard';
-import {getDebugId, getDebugIdBlock} from '@/services/diagnostics/debugId';
-import {showToast} from '@/utils/toastUtils';
-
-// Opens the user's mail composer pre-addressed to branding.supportEmail.
-// Calls Linking.openURL('mailto:…') directly instead of gating on
-// Linking.canOpenURL: on iOS canOpenURL('mailto:') returns false unless the
-// scheme is whitelisted in LSApplicationQueriesSchemes, which made the old
-// code fall back to branding.supportUrl (the marketing homepage) and read as
-// a dead link. If no mail handler exists, surface the address in an Alert so
-// the user can still reach us — never bounce to a web page.
-// The body carries the anonymous diagnostic block, so a report arrives with the
-// debug ID that finds the sender's telemetry in Sentry and PostHog. The user
-// sees the text in the composer before they send it — it is never hidden.
-// `subject` is the subject line (qariah:support.emailSubject*). Callers pass
-// the English text in every language, so the support inbox can sort by it.
-// @ai
-const openSupportEmail = async (subject: string): Promise<void> => {
-  const encodedSubject = encodeURIComponent(subject);
-  const body = encodeURIComponent(`\n\n${getDebugIdBlock()}\n`);
-  const mailto = `mailto:${branding.supportEmail}?subject=${encodedSubject}&body=${body}`;
-  try {
-    await Linking.openURL(mailto);
-  } catch {
-    Alert.alert(
-      i18n.t('qariah:support.emailUsTitle'),
-      // No digit post-processing: an e-mail address keeps Latin digits.
-      i18n.t('qariah:support.emailUsBody', {
-        email: branding.supportEmail,
-        postProcess: [],
-      }),
-    );
-  }
-};
 // @ai-start
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
 import type {TFunction} from 'i18next';
-import i18n from '@/i18n';
 import {
   getNotificationsSettingsItems,
   NOTIFICATIONS_SETTINGS_ROUTE,
   NOTIFICATIONS_SETTINGS_TYPE,
   useNotificationsHoldout,
 } from '@/components/settings/notificationsSettingsItem';
+// Qariah rows and sections (divergence batch C3, SHT-S6).
+import {openSupportEmail} from '@/utils/openSupportEmail';
+import {
+  getBackgroundPlaybackSettingsItems,
+  handleQariahSettingPress,
+} from '@/components/settings/backgroundPlaybackSettingsItem';
+import {DebugIdRow} from '@/components/settings/DebugIdRow';
+import {useQariahAccountSettings} from '@/components/auth/QariahAccountSection';
 // @ai-end
 
 const isExternalLink = (type: string): boolean => {
@@ -145,21 +105,7 @@ const getSettingsSections = (
           icon: 'selectionList',
           iconType: 'custom',
         },
-        // @ai Qariah (S33): Android-only. OEM battery restriction (Samsung
-        // "Sleeping apps" etc.) can stop background audio. This row keeps the
-        // fix discoverable beyond the bounded kill-triggered prompt
-        // (hooks/useBackgroundPlaybackPrompt).
-        ...(Platform.OS === 'android'
-          ? [
-              {
-                title: t('qariah:settings.backgroundPlayback'),
-                type: 'backgroundPlayback',
-                description: t('qariah:settings.backgroundPlaybackDesc'),
-                icon: 'battery-charging',
-                iconType: 'feather',
-              },
-            ]
-          : []),
+        ...getBackgroundPlaybackSettingsItems(t), // @ai Qariah (S33)
       ],
     },
     {
@@ -321,55 +267,11 @@ export default function SettingsScreen() {
     [t, notificationsHoldout],
   );
   const {analyticsEnabled, setAnalyticsEnabled} = useAnalyticsConsentStore();
-  const {status, signOut} = useAuth();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [signOutModalOpen, setSignOutModalOpen] = useState(false);
-
-  // Pull the signed-in user's email for display. Best-effort — silent on
-  // failure (network blip just hides the line; chevron and rows still work).
-  useEffect(() => {
-    let cancelled = false;
-    if (status !== 'authenticated') {
-      setUserEmail(null);
-      return;
-    }
-    fetchQfUserInfo()
-      .then(info => {
-        if (cancelled) return;
-        setUserEmail(info?.email ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setUserEmail(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
-
-  // The debug ID is stable for the install, so read it once per mount.
-  const debugId = useMemo(() => getDebugId(), []);
-
-  // Copies the full diagnostic block. The toast repeats the ID, so the user
-  // sees the value even if the paste target is another app. Never rejects: a
-  // clipboard failure falls back to an Alert that shows the ID to read or type.
-  const handleCopyDebugId = async (): Promise<void> => {
-    try {
-      await Clipboard.setStringAsync(getDebugIdBlock());
-      showToast(t('qariah:debug.copied'), debugId);
-    } catch {
-      Alert.alert(t('qariah:debug.title'), debugId);
-    }
-  };
 
   const handleAnalyticsToggle = (value: boolean): void => {
     // The analytics service subscribes to this store and pushes the choice
     // straight to the PostHog SDK, so flipping the flag is all we do here.
     setAnalyticsEnabled(value);
-  };
-
-  const handleSignOutConfirm = async () => {
-    setSignOutModalOpen(false);
-    await signOut();
   };
 
   const iconColor = theme.colors.text;
@@ -406,9 +308,6 @@ export default function SettingsScreen() {
       case 'storage':
         router.push('/(d.settings)/storage');
         break;
-      case 'backgroundPlayback':
-        showBackgroundPlaybackGuide();
-        break;
       case 'clearCache':
         await clearPlayerCache();
         break;
@@ -420,14 +319,10 @@ export default function SettingsScreen() {
         router.push('/(d.settings)/whats-new');
         break;
       case 'support':
-        await openSupportEmail(
-          t('qariah:support.emailSubjectSupport', {lng: 'en'}),
-        );
+        await openSupportEmail('support'); // @ai Qariah (Sprint 32)
         break;
       case 'featureRequest':
-        await openSupportEmail(
-          t('qariah:support.emailSubjectFeatureRequest', {lng: 'en'}),
-        );
+        await openSupportEmail('featureRequest'); // @ai Qariah (Sprint 32)
         break;
       case 'terms':
         await Linking.openURL(branding.termsUrl);
@@ -445,6 +340,7 @@ export default function SettingsScreen() {
         await Linking.openURL(branding.urls.github);
         break;
       default:
+        handleQariahSettingPress(type); // @ai Qariah (S33)
         break;
     }
   };
@@ -459,17 +355,28 @@ export default function SettingsScreen() {
         paddingBottom: bottomInset,
       };
 
-  const renderCard = (children: React.ReactNode) =>
+  const renderCard = (
+    children: React.ReactNode,
+    qariahFooter?: React.ReactNode, // @ai Qariah: the debug-ID row (SHT-S6)
+  ) =>
     USE_GLASS ? (
       <GlassView
         style={styles.card}
         glassEffectStyle="regular"
         colorScheme={glassColorScheme}>
         {children}
+        {qariahFooter}
       </GlassView>
     ) : (
-      <View style={styles.card}>{children}</View>
+      <View style={styles.card}>
+        {children}
+        {qariahFooter}
+      </View>
     );
+
+  // @ai Qariah (Sprint 11): the Account section and its sign-out sheet.
+  const qariahSlot = {styles, renderCard, iconColor, chevronColor};
+  const qariahAccount = useQariahAccountSettings(qariahSlot);
 
   return (
     <View style={styles.container}>
@@ -477,123 +384,7 @@ export default function SettingsScreen() {
         contentInsetAdjustmentBehavior={USE_GLASS ? 'automatic' : 'never'}
         contentContainerStyle={[styles.scrollContent, contentPadding]}
         showsVerticalScrollIndicator={false}>
-        {/* Account (Sprint 11) */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeader}>
-            {t('qariah:account.section')}
-          </Text>
-          {renderCard(
-            status === 'authenticated' ? (
-              <>
-                <View style={styles.settingsRow}>
-                  <View style={styles.settingsItemIcon}>
-                    <Feather
-                      name="user-check"
-                      size={moderateScale(20)}
-                      color={iconColor}
-                    />
-                  </View>
-                  <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>
-                      {t('qariah:account.signedIn')}
-                    </Text>
-                    <Text style={styles.settingsDescription}>
-                      {userEmail ?? t('qariah:account.qfAccount')}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.divider} />
-                <Pressable
-                  style={({pressed}) => [
-                    styles.settingsRow,
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => router.push('/(d.settings)/data')}>
-                  <View style={styles.settingsItemIcon}>
-                    <Feather
-                      name="download-cloud"
-                      size={moderateScale(20)}
-                      color={iconColor}
-                    />
-                  </View>
-                  <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>
-                      {t('qariah:account.yourData')}
-                    </Text>
-                    <Text style={styles.settingsDescription}>
-                      {t('qariah:account.yourDataDesc')}
-                    </Text>
-                  </View>
-                  <Feather
-                    name="chevron-right"
-                    size={moderateScale(16)}
-                    color={chevronColor}
-                    style={flipX}
-                  />
-                </Pressable>
-                <View style={styles.divider} />
-                <Pressable
-                  style={({pressed}) => [
-                    styles.settingsRow,
-                    pressed && styles.pressed,
-                  ]}
-                  onPress={() => setSignOutModalOpen(true)}>
-                  <View style={styles.settingsItemIcon}>
-                    <Feather
-                      name="log-out"
-                      size={moderateScale(20)}
-                      color={iconColor}
-                    />
-                  </View>
-                  <View style={styles.settingsTextContainer}>
-                    <Text style={styles.settingsTitle}>
-                      {t('qariah:account.signOut')}
-                    </Text>
-                    <Text style={styles.settingsDescription}>
-                      {t('qariah:account.signOutDesc')}
-                    </Text>
-                  </View>
-                  <Feather
-                    name="chevron-right"
-                    size={moderateScale(16)}
-                    color={chevronColor}
-                    style={flipX}
-                  />
-                </Pressable>
-              </>
-            ) : (
-              <Pressable
-                style={({pressed}) => [
-                  styles.settingsRow,
-                  pressed && styles.pressed,
-                ]}
-                onPress={() => router.push('/(d.settings)/sign-in')}>
-                <View style={styles.settingsItemIcon}>
-                  <Feather
-                    name="log-in"
-                    size={moderateScale(20)}
-                    color={iconColor}
-                  />
-                </View>
-                <View style={styles.settingsTextContainer}>
-                  <Text style={styles.settingsTitle}>
-                    {t('qariah:account.signInTitle')}
-                  </Text>
-                  <Text style={styles.settingsDescription}>
-                    {t('qariah:account.signInDesc')}
-                  </Text>
-                </View>
-                <Feather
-                  name="chevron-right"
-                  size={moderateScale(16)}
-                  color={chevronColor}
-                  style={flipX}
-                />
-              </Pressable>
-            ),
-          )}
-        </View>
-
+        {qariahAccount.section}
         {/* Appearance */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>
@@ -650,71 +441,34 @@ export default function SettingsScreen() {
             {t('settings:index.analytics.section')}
           </Text>
           {renderCard(
-            <>
-              <View style={styles.settingsRow}>
-                <View style={styles.settingsItemIcon}>
-                  <Feather
-                    name="bar-chart-2"
-                    size={moderateScale(20)}
-                    color={iconColor}
-                  />
-                </View>
-                <View style={styles.settingsTextContainer}>
-                  <Text style={styles.settingsTitle}>
-                    {t('settings:index.analytics.title')}
-                  </Text>
-                  <Text style={styles.settingsDescription}>
-                    {t('settings:index.analytics.description', {
-                      appName: branding.appName,
-                    })}
-                  </Text>
-                </View>
-                <Switch
-                  value={analyticsEnabled}
-                  onValueChange={handleAnalyticsToggle}
-                  trackColor={trackColor}
-                  thumbColor="#FFFFFF"
-                  ios_backgroundColor={trackColor.false}
-                  style={styles.switchStyle}
+            <View style={styles.settingsRow}>
+              <View style={styles.settingsItemIcon}>
+                <Feather
+                  name="bar-chart-2"
+                  size={moderateScale(20)}
+                  color={iconColor}
                 />
               </View>
-              <View style={styles.divider} />
-              {/*
-               * Copy debug ID. The subtitle shows the ID itself, so a user who
-               * cannot paste can read it aloud or type it. The tap copies the
-               * full diagnostic block. The ID is the anonymous device UUID —
-               * it holds no name, no email, and no account link.
-               */}
-              <Pressable
-                style={({pressed}) => [
-                  styles.settingsRow,
-                  pressed && styles.pressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={t('qariah:debug.copy')}
-                onPress={handleCopyDebugId}>
-                <View style={styles.settingsItemIcon}>
-                  <Feather
-                    name="hash"
-                    size={moderateScale(20)}
-                    color={iconColor}
-                  />
-                </View>
-                <View style={styles.settingsTextContainer}>
-                  <Text style={styles.settingsTitle}>
-                    {t('qariah:debug.copy')}
-                  </Text>
-                  <Text style={styles.settingsDescription} selectable>
-                    {debugId}
-                  </Text>
-                </View>
-                <Feather
-                  name="copy"
-                  size={moderateScale(16)}
-                  color={chevronColor}
-                />
-              </Pressable>
-            </>,
+              <View style={styles.settingsTextContainer}>
+                <Text style={styles.settingsTitle}>
+                  {t('settings:index.analytics.title')}
+                </Text>
+                <Text style={styles.settingsDescription}>
+                  {t('settings:index.analytics.description', {
+                    appName: branding.appName,
+                  })}
+                </Text>
+              </View>
+              <Switch
+                value={analyticsEnabled}
+                onValueChange={handleAnalyticsToggle}
+                trackColor={trackColor}
+                thumbColor="#FFFFFF"
+                ios_backgroundColor={trackColor.false}
+                style={styles.switchStyle}
+              />
+            </View>,
+            <DebugIdRow {...qariahSlot} />,
           )}
         </View>
 
@@ -752,11 +506,7 @@ export default function SettingsScreen() {
           </View>
         )}
       </ScrollView>
-      <SignOutConfirmModal
-        isVisible={signOutModalOpen}
-        onConfirm={handleSignOutConfirm}
-        onCancel={() => setSignOutModalOpen(false)}
-      />
+      {qariahAccount.signOutSheet}
     </View>
   );
 }

@@ -49,8 +49,7 @@ export function getLanguagePreference(): LanguagePreference {
 
 export function getDeviceLanguage(): AppLanguage {
   try {
-    // Qariah: on iOS, skip the per-app language that Qariah wrote
-    // (i18n/qariahIosLanguage.ts); otherwise the device's own list.
+    // Qariah: on iOS, skip the per-app language that Qariah wrote.
     const codes =
       deviceLanguagesWithoutOverride() ??
       getLocales().map(locale => locale.languageCode);
@@ -139,8 +138,7 @@ export function languageChangeRequiresRestart(
 export function setLanguagePreference(preference: LanguagePreference): boolean {
   storage.set(PREFERENCE_KEY, preference);
   applyDirection(resolveLanguage(preference));
-  // Qariah: the iOS per-app language follows the choice, so UIKit's natural
-  // text alignment matches the layout (i18n/qariahIosLanguage.ts).
+  // Qariah: the iOS per-app language follows the choice, so UIKit text alignment matches the layout.
   const iosLanguageChanged = syncIosAppLanguage(preference);
   return languageChangeRequiresRestart(preference) || iosLanguageChanged;
 }

@@ -20,9 +20,7 @@ export default function AdhkarPlayingRoute(): null {
   const navigation = useNavigation();
   const container = useNavigationContainerRef();
   useEffect(() => {
-    // @ai Qariah (Sprint 47 Pass C): with the adhkar feature off, a
-    // qariah://adhkar-playing link has no session and no Adhkar screen to
-    // open. Leave the route for the tabs after one frame, as below.
+    // @ai Qariah: with `adhkar` off, the link has nothing to open: leave the route after one frame.
     if (!isFeatureEnabled('adhkar')) {
       const frame = requestAnimationFrame(() => {
         if (navigation.canGoBack()) navigation.goBack();

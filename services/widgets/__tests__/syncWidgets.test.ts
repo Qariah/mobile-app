@@ -1,8 +1,6 @@
 import type {QueuedWidgetCommand, WidgetCommand} from 'bayaan-widgets';
 
-// @ai Qariah: this upstream suite pins Bayaan's full widget list. Qariah ships
-// a core set (owner decision O5, 2026-10-18). Run it with upstream's list (see
-// test-utils/upstreamNativeWidgetsConfig.ts).
+// @ai Qariah: run this upstream suite with upstream's full widget list (Qariah ships a core set).
 jest.mock('@/config/nativeWidgets.config', () =>
   jest.requireActual('@/test-utils/upstreamNativeWidgetsConfig'),
 );

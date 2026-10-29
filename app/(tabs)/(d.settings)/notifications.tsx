@@ -10,7 +10,8 @@
  * foreground (the user can change it in the system settings and return).
  * When it is off, a banner shows at the top. Its button shows the system
  * dialog while the system can still ask (iOS before the first answer), else
- * it opens the system settings of the app. The switches stay usable while the
+ * it opens the system settings of the app (on iOS 27+ its notification
+ * settings, `notificationSettingsLink.ts`). The switches stay usable while the
  * permission is off, but they look secondary.
  *
  * The switches stay disabled until the stored choices are read
@@ -32,14 +33,13 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   AppState,
-  Linking,
   Pressable,
   ScrollView,
   Switch,
   Text,
   View,
 } from 'react-native';
-import {Redirect, useFocusEffect} from 'expo-router';
+import {Redirect, Stack, useFocusEffect} from 'expo-router';
 import type {NotificationPermissionsStatus} from 'expo-notifications';
 import {Feather} from '@expo/vector-icons';
 import {moderateScale, ScaledSheet} from 'react-native-size-matters';
@@ -58,13 +58,15 @@ import {
 } from '@/services/notifications/prefsStore';
 import {useNotificationsHoldout} from '@/components/settings/notificationsSettingsItem';
 import {notificationPermissionAction} from '@/services/notifications/permissionAction';
+import {openNotificationSettings} from '@/services/notifications/notificationSettingsLink';
 import type {NotificationType} from '@/services/notifications/types';
 
 /**
  * expo-notifications, required on first use: expo-router loads each route
  * module at startup, and the page must not add the native module to the cold
- * start (PERF-01). services/audio/ExpoAudioProvider.tsx loads it on demand
- * too. A `require`, not `import()`: Jest runs without ESM dynamic imports.
+ * start (PERF-01). services/notifications/launchPermission.ts loads it on
+ * demand too. A `require`, not `import()`: Jest runs without ESM dynamic
+ * imports.
  */
 function notificationsModule(): typeof import('expo-notifications') {
   return require('expo-notifications') as typeof import('expo-notifications');
@@ -267,7 +269,8 @@ export default function NotificationsSettingsScreen() {
       }
     }
     try {
-      await Linking.openSettings();
+      // iOS 27+: the notification settings URL (TECH_DEBT #348); else openSettings().
+      await openNotificationSettings();
     } catch (error) {
       if (__DEV__) {
         console.warn('[notifications] openSettings failed', error);
@@ -302,6 +305,9 @@ export default function NotificationsSettingsScreen() {
 
   return (
     <View style={styles.container}>
+      <Stack.Screen
+        options={{title: t('qariah:settings.screens.notifications')}}
+      />
       <ScrollView
         style={styles.scroll}
         contentInsetAdjustmentBehavior="automatic"

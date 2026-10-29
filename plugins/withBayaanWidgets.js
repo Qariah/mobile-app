@@ -4,11 +4,8 @@
 //   - URL scheme: `BayaanURLScheme` in the app Info.plist, the
 //     `BAYAAN_URL_SCHEME` build setting the widget Info.plist expands, and
 //     the `bayaan_widgets_url_scheme` Android string.
-//   - App Group (@ai Qariah, Sprint 46): the `BAYAAN_APP_GROUP` build setting
-//     the widget Info.plist expands into its `BayaanAppGroup` key, from the
-//     app's `ios.infoPlist.BayaanAppGroup` (else `group.<bundle id>`). The
-//     widget then uses the app's group even when a release script rewrites
-//     the extension bundle id (a `.beta` id would derive another group).
+//   - App Group (@ai Qariah): the `BAYAAN_APP_GROUP` build setting, from the app's
+//     `ios.infoPlist.BayaanAppGroup` (else `group.<bundle id>`), so a `.beta` widget id keeps it.
 //   - App name: Android widget-picker labels that carry the brand ("Bayaan
 //     Now"). Runtime copy reads the app label / CFBundleDisplayName instead.
 //   - Enabled widgets: config/nativeWidgets.config.js `widgets` plus
@@ -63,12 +60,7 @@ function resolveName(config) {
   return name || DEFAULT_NAME;
 }
 
-/**
- * @ai Qariah (Sprint 46): the App Group the app uses. The app's
- * `BayaanAppGroup` Info.plist key, else `group.<bundle id>` (the value
- * targets/widgets/expo-target.config.js gives the widget entitlement), else
- * null (the widget then derives the group from its own bundle id).
- */
+/** @ai Qariah: the app's App Group: its `BayaanAppGroup` Info.plist key, else `group.<bundle id>`, else null. */
 function resolveAppGroup(config) {
   const ios = config.ios || {};
   const key = ios.infoPlist && ios.infoPlist.BayaanAppGroup;

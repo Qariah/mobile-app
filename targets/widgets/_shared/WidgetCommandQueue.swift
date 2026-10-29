@@ -6,9 +6,7 @@ enum BayaanAppGroup {
   static let extensionSuffix = ".widget"
 
   static var id: String {
-    // @ai Qariah (Sprint 46): the key expands the BAYAAN_APP_GROUP build
-    // setting (plugins/withBayaanWidgets.js). A project without the setting
-    // expands it to "", so an empty or unexpanded value falls back here.
+    // @ai Qariah: an empty or unexpanded build-setting value falls back to the bundle id below.
     if let v = Bundle.main.object(forInfoDictionaryKey: "BayaanAppGroup") as? String,
        !v.isEmpty, !v.contains("$(") { return v }
     var bundle = Bundle.main.bundleIdentifier ?? "com.bayaan.app"

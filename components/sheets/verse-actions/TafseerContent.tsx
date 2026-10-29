@@ -146,9 +146,7 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
     [downloadedMeta, selectedTafseerId],
   );
 
-  // Sprint 35 (S35.1) — with lazyOpenFeatureDbs the Tafseer DB isn't opened at
-  // boot, so load downloaded meta on mount (the read effect below lazy-opens the
-  // DB itself; this just populates the picker with bundled + downloaded tafaseer).
+  // The Tafseer DB opens lazily (lazyOpenFeatureDbs): load the downloaded meta for the picker on mount.
   useEffect(() => {
     loadDownloadedMeta();
   }, [loadDownloadedMeta]);

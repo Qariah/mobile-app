@@ -14,6 +14,7 @@ import {readFileSync} from 'node:fs';
 import {
   WIDTH,
   buildLines,
+  anrScoreBuilds,
   cardBuilds,
   renderActive,
   renderHeader,
@@ -61,6 +62,39 @@ describe('cardBuilds', () => {
     );
     assert.deepEqual(cardBuilds(null), []);
   });
+  it('keeps anrScore: false, and anrScoreBuilds leaves those builds out', () => {
+    const cfg = {
+      card: {
+        builds: [
+          {platform: 'Android', release: 'com.qariah.app@3.2.1+2027'},
+          {
+            platform: 'Android',
+            release: 'com.qariah.app@3.2.0+1717',
+            anrScore: false,
+          },
+          {
+            platform: 'iOS',
+            release: 'com.qariah.app@3.2.1+1718',
+            anrScore: true,
+          },
+        ],
+      },
+    };
+    assert.deepEqual(cardBuilds(cfg), [
+      {platform: 'Android', version: '3.2.1', build: '2027'},
+      {platform: 'Android', version: '3.2.0', build: '1717', anrScore: false},
+      {platform: 'iOS', version: '3.2.1', build: '1718'},
+    ]);
+    assert.deepEqual(
+      anrScoreBuilds(cfg).map(b => b.build),
+      ['2027', '1718'],
+    );
+  });
+  it("the rollout file: 1717 counts for people and for Google's score (owner 2026-10-25)", () => {
+    assert.ok(cardBuilds(ROLLOUT).some(b => b.build === '1717'));
+    assert.ok(anrScoreBuilds(ROLLOUT).some(b => b.build === '1717'));
+    assert.ok(anrScoreBuilds(ROLLOUT).some(b => b.platform === 'Android'));
+  });
   it('the rollout file names a production build on each platform', () => {
     const builds = cardBuilds(ROLLOUT);
     assert.ok(builds.some(b => b.platform === 'iOS'));
@@ -92,14 +126,15 @@ describe('renderHeader', () => {
   const lines = renderHeader({
     date: '2026-10-11',
     weekday: 'Sun',
-    windowLabel: 'since launch (2026-09-28)',
+    windowLabel: 'since rollout start (2026-09-28)',
+    windowEnd: '11:00',
     builds,
     ios: '3.2.1 (1718) phased release COMPLETE 100%',
     android: 'vc2027 40% staged, 182 h, DECISION DUE (see report)',
   });
   it('names the date, the window and each counted build', () => {
     assert.equal(lines[0], 'QARIAH · Sun 2026-10-11');
-    assert.equal(lines[1], 'Counted since launch (2026-09-28):');
+    assert.equal(lines[1], 'Counted since rollout start (2026-09-28):');
     assert.deepEqual(buildLines(builds), [
       'iOS 1718 (3.2.1)',
       'Android 1717 (3.2.0), 2027 (3.2.1)',
@@ -107,6 +142,8 @@ describe('renderHeader', () => {
     assert.ok(lines.includes('  Android 1717 (3.2.0), 2027 (3.2.1)'));
     assert.ok(lines.includes('Active and use: all versions'));
     assert.ok(lines.includes('Never counted: lab devices'));
+    // the fixed end of the PostHog windows (owner decision A, 2026-10-25)
+    assert.ok(lines.includes('Counts end 11:00 Los Angeles time'));
   });
   it('prints the rollout, wrapped to the phone width', () => {
     assert.ok(lines.includes('Rollout'));
@@ -116,6 +153,8 @@ describe('renderHeader', () => {
   it('leaves the rollout out when the loop passes none', () => {
     const l = renderHeader({date: 'd', windowLabel: 'w', builds});
     assert.ok(!l.includes('Rollout'));
+    // no window end given: no line
+    assert.ok(!l.some(x => x.startsWith('Counts end')));
   });
 });
 

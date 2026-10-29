@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   Animated as RNAnimated,
-  type ListRenderItemInfo,
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {USE_GLASS} from '@/hooks/useGlassProps';
@@ -250,7 +249,7 @@ export default function PlaylistsScreen() {
   }, [existingColors, createPlaylist]);
 
   const renderItem = useCallback(
-    ({item}: ListRenderItemInfo<(typeof playlists)[0]>) => (
+    ({item}: {item: (typeof playlists)[0]}) => (
       <PlaylistItem
         id={item.id}
         name={item.name}

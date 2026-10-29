@@ -42,12 +42,16 @@ describe('catalog data contract (assets/data/catalog.json)', () => {
     expect(dupes).toEqual([]);
   });
 
-  it('every rewaya server is an https origin, never wasabi/http (S15: wasabi 403 silently broke audio)', () => {
+  it('every rewaya server is an https origin with no final slash, never wasabi/http (S15: wasabi 403 silently broke audio; the app requests server//018.mp3 for a final slash)', () => {
     const offenders: string[] = [];
     for (const r of catalog) {
       for (const rw of r.rewayat ?? []) {
         const server = String(rw.server ?? '');
-        if (!/^https:\/\//.test(server) || /wasabi/i.test(server)) {
+        if (
+          !/^https:\/\//.test(server) ||
+          server.endsWith('/') ||
+          /wasabi/i.test(server)
+        ) {
           offenders.push(`${r.slug} / ${rw.name}: ${server || '(empty)'}`);
         }
       }
@@ -265,7 +269,7 @@ describe('catalog data contract (assets/data/catalog.json)', () => {
   // checks it only when it is present. A later task makes it required.
   // Sprint 48 (Task 7): catalog v93 dates every listed recitation, so the
   // bundled copy must too. The first row of each listed surah carries the date
-  // (the ops console and `scripts/catalog-added-at.mjs` write it there).
+  // (the ops console writes it there; the Sprint 48 backfill dated v93).
   it('every listed surah has a first surah_metadata row with added_at (S48)', () => {
     const offenders: string[] = [];
     for (const r of catalog) {

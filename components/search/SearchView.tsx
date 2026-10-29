@@ -44,12 +44,7 @@ import {useTranslation} from 'react-i18next';
 const RECENT_SEARCHES_KEY = 'recentSearches';
 const MAX_RECENT_SEARCHES = 10;
 const SEARCH_DEBOUNCE_MS = 300;
-// Analytics fires on the FINAL settled query, not on every intermediate
-// keystroke. Live results still update at SEARCH_DEBOUNCE_MS; the
-// search_performed EVENT waits a longer idle window so typing "omar" emits one
-// event (the final value), not four ("o","om","oma","omar"). One tester typing
-// an email produced ~1,900 search_performed events under the old per-debounce
-// firing — this protects any future search funnel + general data hygiene.
+// search_performed fires once on the final settled query, not on each keystroke.
 const SEARCH_ANALYTICS_DEBOUNCE_MS = 1200;
 
 interface RecentSearchItem {
@@ -84,8 +79,7 @@ export function SearchView({
   const bottomInset = useBottomInset();
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  // Last query we already reported to analytics — dedupes the final-query event
-  // so re-settling on an unchanged value never re-fires.
+  // The last query reported to analytics (dedupe).
   const lastReportedQueryRef = useRef('');
   const [, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -226,9 +220,7 @@ export function SearchView({
       const combinedResults = catalogSearch.search(debouncedQuery);
 
       setSearchResults(combinedResults);
-      // NOTE: search_performed is NOT fired here — firing per debounced query
-      // emits an event for every intermediate keystroke. The dedicated
-      // long-idle effect below fires it once on the final settled query.
+      // search_performed fires in the long-idle effect below, not here.
     } catch (error) {
       console.error('Search error:', error);
       setSearchResults([]);
@@ -241,11 +233,7 @@ export function SearchView({
     performSearch();
   }, [performSearch]);
 
-  // Fire search_performed once on the FINAL settled query (submit / long-idle),
-  // not per keystroke. Resets on every `query` change, so only the value the
-  // user lands on after they stop typing is reported — and only when the live
-  // results already correspond to it (debouncedQuery === final query). Deduped
-  // against the last reported value.
+  // Fire search_performed once on the final settled query, when the live results match it.
   useEffect(() => {
     const finalQuery = query.trim();
     if (finalQuery.length === 0) {

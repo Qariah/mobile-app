@@ -172,9 +172,7 @@ export async function setSelectionHighlight(
  * Save a note on the selected verses: verse_key = the first verse's anchor,
  * verse_keys = every verse's anchor when there are several, with the
  * selection's rewayah. Hafs: the Hafs keys, as before.
- *
- * Qariah: returns the saved note (null when the selection has no verse), so
- * the caller can sync it to Quran Foundation (services/userState/notesSync).
+ * Qariah: returns the saved note (or null), so the caller can sync it to QF.
  */
 export async function addSelectionNote(
   selection: ReadyVerseSelection,

@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale, verticalScale} from 'react-native-size-matters';
 import {pickRandomRecitations} from '@/utils/randomRecitation';
 import * as Haptics from 'expo-haptics';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
@@ -24,9 +24,8 @@ import {
   renderFullWidthBackground,
   getTextColors,
 } from './random-recitation/backgrounds';
-// Sprint 13 — COPY_VARIANTS intentionally retained in
-// `./random-recitation/types` for fork-discipline (don't delete upstream
-// data). We bypass it here and render a single "Shuffle" title.
+import {SESSION_SEED} from '@/components/hero/heroThemes';
+import {COPY_VARIANTS} from './random-recitation/types';
 // @ai-start
 import {latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
@@ -53,9 +52,15 @@ export function RandomRecitationHero({
   isCompact = false,
 }: RandomRecitationHeroProps) {
   const {theme} = useTheme();
-  const {t} = useTranslation(['home', 'common']);
+  const {t} = useTranslation('home');
   const {updateQueue, play} = usePlayerActions();
-  const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
+  const {startNewChain} = useRecentlyPlayedStore();
+
+  // Pick a copy variant per session (cycling)
+  const copy = useMemo(() => {
+    const index = Math.abs(SESSION_SEED) % COPY_VARIANTS.length;
+    return COPY_VARIANTS[index];
+  }, []);
 
   // Animation
   const scale = useSharedValue(1);
@@ -124,11 +129,14 @@ export function RandomRecitationHero({
         {/* Always gradient ribbon background */}
         {renderFullWidthBackground('fw-ribbon', theme)}
 
-        {/* Content — Sprint 13: simplified to a single "Shuffle" label */}
+        {/* Content */}
         <View style={styles.content}>
           <View style={styles.textContainer}>
             <Text style={[styles.title, {color: textColors.labelColor}]}>
-              {t('common:actions.shuffle')}
+              {copy.label}
+            </Text>
+            <Text style={[styles.subtitle, {color: textColors.subtitleColor}]}>
+              {copy.subtitle}
             </Text>
           </View>
         </View>
@@ -158,9 +166,15 @@ const createStyles = (theme: Theme) =>
     title: {
       textAlign: 'left',
       fontFamily: 'Manrope-Bold',
-      fontSize: moderateScale(13),
-      letterSpacing: latinLetterSpacing(moderateScale(0.3)),
+      fontSize: moderateScale(9),
+      letterSpacing: latinLetterSpacing(moderateScale(0.5)),
+      marginBottom: verticalScale(2),
       textTransform: 'uppercase',
+    },
+    subtitle: {
+      textAlign: 'left',
+      fontFamily: 'Manrope-Medium',
+      fontSize: moderateScale(11),
     },
   });
 // @ai-end

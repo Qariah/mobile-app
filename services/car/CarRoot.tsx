@@ -1,6 +1,5 @@
 import React, {useEffect, useSyncExternalStore} from 'react';
 import {bootApp} from '@/services/appBoot';
-import {markCarRootBoot} from '@/services/qariahBoot';
 import {
   ExpoAudioProvider,
   isPhoneProviderMounted,
@@ -34,8 +33,7 @@ export function CarRoot(): React.JSX.Element | null {
   );
 
   useEffect(() => {
-    markCarRootBoot(); // @ai Qariah: no phone boot sentinel for a car boot.
-    bootApp().catch((error: unknown) => {
+    bootApp('car').catch((error: unknown) => {
       if (__DEV__) console.warn('[CarRoot] boot failed', error);
     });
   }, []);

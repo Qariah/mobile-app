@@ -251,7 +251,7 @@ function safe<T>(fn: () => T, fallback: T): T {
 export function createBootSplashExperiment(deps: {
   native: BootSplashNative;
   isAndroid: boolean;
-  /** config/featureFlags `nonBlockingSplash` build flag; false = hard-off. */
+  /** config/qariahFeatureFlags `nonBlockingSplash` build flag; false = hard-off. */
   buildFlagEnabled: boolean;
 }): BootSplashExperiment {
   const {native, isAndroid, buildFlagEnabled} = deps;

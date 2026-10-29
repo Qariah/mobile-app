@@ -22,14 +22,7 @@ module.exports = {
       },
     ],
     'react/prop-types': 'off',
-    // Sprint 29 (TECH_DEBT #91): explicit guard against duplicate object-literal
-    // keys. `eslint:recommended` already enables this, but declaring it here
-    // makes the intent visible + survives any future `extends` reordering. The
-    // Sprint 26 regression — two `homeRowConfig` keys in `config/branding.js`,
-    // JS last-key-wins silently shadowing Qariah's curated 7-row lineup with
-    // Bayaan's 12-row default — shipped because CI never ran the lint (org
-    // Actions billing block), not because the rule was absent. Keeping it loud.
-    // Eligible upstream chore PR for Bayaan's own `config/branding.js`.
+
     'no-dupe-keys': 'error',
     'react/no-unused-prop-types': 'warn',
     'react/react-in-jsx-scope': 'off',

@@ -42,8 +42,7 @@ interface TrackItemProps {
   hidePlayButton?: boolean;
   onOptionsPress?: () => void;
   onLongPress?: () => void;
-  // @ai C2: pre-resolved artwork URL from the track object, used as fallback
-  // when catalog image_url is null and reciter has no local bundled photo
+  // @ai C2: the track's artwork URL, the fallback when the reciter has no catalog or bundled photo
   artworkUrl?: string;
 }
 

@@ -20,6 +20,8 @@ data class WidgetSnapshot(
   val nowPlaying: WidgetNowPlaying?, val upNext: List<WidgetTrack>, val recent: List<WidgetTrack>,
   val defaultReciter: WidgetReciter?, val reciterRecents: Map<String, List<WidgetTrack>>,
   val lastRead: WidgetLastRead?, val tasbeeh: Map<String, WidgetTasbeehEntry>,
+  // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage); null in an older app's snapshot.
+  val language: String? = null,
 )
 
 object SnapshotModels {
@@ -63,6 +65,7 @@ object SnapshotModels {
         tb.keys().asSequence().associateWith { k ->
           tb.getJSONObject(k).let { WidgetTasbeehEntry(it.getInt("count"), it.getInt("target"), it.getString("day")) }
         },
+        o.optStringOrNull("language"),
       )
     }
   } catch (e: Exception) { null }

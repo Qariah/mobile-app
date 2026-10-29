@@ -47,20 +47,14 @@ const Feature = ({title, description, styles}: FeatureProps) => (
   </View>
 );
 
-// @ai Qariah (Sprint 32 About rewrite) drops these upstream rows. Filtered at
-// render so upstream's key lists stay byte-identical.
+// @ai Qariah hides these upstream rows at render, so upstream's key lists stay byte-identical.
 const QARIAH_HIDDEN_ABOUT_KEYS: ReadonlySet<string> = new Set([
   'personalization',
   'wordByWord',
   'learningTools',
 ]);
 
-// Sprint 8 (S8.3, TECH_DEBT #34): hidden 5-tap-on-version gesture sends a
-// synthetic exception to Sentry. Used to validate the crash-reporting
-// path end-to-end (event arrival, source-map symbolication, release
-// tagging, alert delivery) without waiting for an organic crash.
-// Production-safe — requires deliberate gesture; no UI affordance.
-// Window: 5 taps within 2s. Resets on timeout or successful trigger.
+// Hidden gesture (TECH_DEBT #34): 5 taps on the version within 2 s send a test exception to Sentry.
 const SYNTHETIC_CRASH_TAP_COUNT = 5;
 const SYNTHETIC_CRASH_TAP_WINDOW_MS = 2000;
 
@@ -116,10 +110,7 @@ export default function AboutScreen() {
             onPress={handleVersionTap}
             hitSlop={12}
             accessibilityLabel={t('qariah:about.versionA11y')}>
-            {/* showBuildNumber → "Version 3.1.8 (1315)"; the (NNNN) is the
-                versionCode/build number users need when reporting issues.
-                NOT showBuildType — getBuildTypeLabel() tags every prod build
-                "Preview (qariah-main)" since our branch isn't literally main. */}
+            {/* The build number helps issue reports. No build type: it labels production builds "Preview". */}
             <VersionDisplay showBuildNumber style={styles.version} />
           </Pressable>
 
@@ -129,10 +120,7 @@ export default function AboutScreen() {
             <Text style={styles.contentHeading}>
               {t('about.alhamdulillahHeading')}
             </Text>
-            <Text style={styles.bodyText}>
-              {/* @ai Qariah copy (Sprint 32). */}
-              {t('qariah:about.alhamdulillahBody')}
-            </Text>
+            <Text style={styles.bodyText}>{t('about.alhamdulillahBody')}</Text>
           </View>
 
           <View style={styles.section}>
@@ -140,8 +128,7 @@ export default function AboutScreen() {
               {t('about.missionHeading')}
             </Text>
             <Text style={styles.bodyText}>
-              {/* @ai Qariah copy (Sprint 32). */}
-              {t('qariah:about.missionBody')}
+              {t('about.missionBody', {appName})}
             </Text>
           </View>
 
@@ -187,8 +174,7 @@ export default function AboutScreen() {
               {t('about.commitmentHeading')}
             </Text>
             <Text style={styles.bodyText}>
-              {/* @ai Qariah copy (Sprint 32). */}
-              {t('qariah:about.commitmentBody')}
+              {t('about.commitmentBody', {appName})}
             </Text>
           </View>
         </View>

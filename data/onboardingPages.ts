@@ -1,20 +1,3 @@
-/**
- * What's-New / first-launch onboarding pages.
- *
- * Filtered + rewritten for Qariah v2: dropped pages for features hidden by
- * `config/featureFlags.ts` (adhkar, user uploads, word-by-word, colored
- * highlights, per-verse notes), and rewrote copy to lead with Qariah's
- * mission — the first Quran app celebrating contemporary women reciters.
- *
- * Upstream keeps the full page list; this is a Qariah-only edit.
- * Tracked in DIVERGENCE_LEDGER.md row "data/onboardingPages.ts".
- *
- * Sprint 25 (#283) — converted from top-level const to a `getOnboardingPages()`
- * factory so `branding.appName` resolves at call time, not module load. Forks
- * that override `branding` no longer need to fork this file just to retitle
- * the welcome card. Qariah's curated copy is preserved verbatim.
- */
-
 import branding from '@/config/branding';
 // @ai-start
 import i18n from '@/i18n';
@@ -48,12 +31,7 @@ export interface OnboardingPage {
 // @ai-start
 export function getOnboardingPages(): OnboardingPage[] {
   return [
-    // @ai Qariah keeps its own page set (Sprint 12/13 onboarding): no uploads,
-    // ambient, adhkar or word-by-word pages, and none of upstream's 2.3
-    // release pages (widgets, CarPlay, Arabic, adhkar playback, Mushaf 1440,
-    // search, iPad), which describe a Bayaan release. Pages whose text matches
-    // upstream use upstream's keys; Qariah's own copy uses the qariah
-    // i18n namespace.
+    // @ai Qariah keeps its own page set (no upstream release pages); its own copy uses the qariah namespace.
     {
       id: 'welcome',
       icon: 'app-icon',
@@ -142,8 +120,7 @@ export function getOnboardingPages(): OnboardingPage[] {
       description: i18n.t('content:onboarding.playlists.description'),
       minVersion: '2.0',
     },
-    // @ai Qariah (Sprint 48, S48.8): the update pages of the next release
-    // (updateOnly; data/qariahReleasePages.ts).
+    // @ai Qariah: the update pages of the next release (updateOnly).
     ...getQariahReleasePages(),
   ];
 }

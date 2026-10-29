@@ -21,6 +21,11 @@
 #      QARIAH_UPLOAD_STORE_FILE itself is a project property in
 #      ~/.gradle/gradle.properties.
 #
+# The script also copies the widget fonts (scripts/sync-widget-fonts.js) before
+# Gradle, and fails when the APK or the AAB lacks them (scripts/check-widget-fonts.mjs).
+# It deletes the failed build. Git ignores the font copies, so a fresh checkout
+# has none (Sprint 51). SKIP_WIDGET_FONT_CHECK=1 turns the check off (a WARNING).
+#
 # Branch-driven QF environment (mirrors scripts/ios-archive.sh):
 #   - On `qariah-main` → QF production (EXPO_PUBLIC_QF_* sourced from
 #     .env.local's QF_PROD_*). This is the build that represents the
@@ -232,7 +237,7 @@ else
     echo -e "             ${YELLOW}$QF_REASON${NC}"
 fi
 
-# Assert version sync (app.config.ts source-of-truth vs Info.plist +
+# Assert version sync (app.config.js source-of-truth vs Info.plist +
 # android/app/build.gradle) BEFORE the expensive build. --fix auto-patches
 # the working tree on drift. Same step ios-archive.sh runs.
 echo -e "\n${YELLOW}🔍 Verifying version sync (auto-fix on drift)...${NC}"
@@ -260,6 +265,12 @@ if [ ! -f "$REPO_ROOT/android/local.properties" ]; then
     echo -e "${RED}❌ android/local.properties still missing — set ANDROID_HOME and retry.${NC}"
     exit 1
 fi
+
+# Copy the widget fonts into the widget module (Sprint 51). Git ignores these
+# copies, and only `npm run prebuild` made them before. A build without them
+# has no Quran font in the Home Screen widgets (the builds 3490 and 3506).
+echo -e "\n${YELLOW}🔤 Copying the widget fonts...${NC}"
+node "$SCRIPT_DIR/sync-widget-fonts.js"
 
 cd "$REPO_ROOT/android"
 
@@ -296,6 +307,16 @@ if [ ! -f "$APK_PATH" ]; then
 fi
 echo -e "${GREEN}✅ Signed APK: $APK_PATH${NC}"
 
+# Stop when the APK has no widget fonts. This runs before the durable archive
+# copy and before the AAB build (Sprint 51). --root: this tree holds the widget
+# module, so the APK must hold the widget assets too. The failed APK is deleted:
+# android-upload-play.sh and a person who sideloads look at the default path.
+if ! node "$SCRIPT_DIR/check-widget-fonts.mjs" --root "$REPO_ROOT" "$APK_PATH"; then
+    rm -f "$APK_PATH"
+    echo -e "${RED}❌ The APK has no widget fonts. Deleted $APK_PATH. Not archiving.${NC}"
+    exit 1
+fi
+
 if [ "$BUNDLE" = true ]; then
     echo -e "\n${YELLOW}📦 Building Release AAB (bundleRelease)...${NC}"
     ./gradlew bundleRelease
@@ -305,6 +326,14 @@ if [ "$BUNDLE" = true ]; then
         exit 1
     fi
     echo -e "${GREEN}✅ Signed AAB: $AAB_PATH${NC}"
+    # Stop before the upload when the AAB has no widget fonts (Sprint 51). The
+    # failed AAB is deleted, because a later run of only android-upload-play.sh
+    # would take it from this default path.
+    if ! node "$SCRIPT_DIR/check-widget-fonts.mjs" --root "$REPO_ROOT" "$AAB_PATH"; then
+        rm -f "$AAB_PATH"
+        echo -e "${RED}❌ The AAB has no widget fonts. Deleted $AAB_PATH. Not uploading.${NC}"
+        exit 1
+    fi
 fi
 
 # Sprint 34 (S34.4, TECH_DEBT #141) — durable archive of every release APK.

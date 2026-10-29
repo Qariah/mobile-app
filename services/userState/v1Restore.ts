@@ -41,10 +41,49 @@ import {
   currentAccountFlagKey,
 } from './accountKeys';
 import {ensureAccountVerified} from './accountCleanup';
+import {enqueueFavoritesSync} from './syncBus';
 // @ai-end
 import {useFavoriteRecitersStore} from '@/services/player/store/favoriteRecitersStore';
 import {useLovedStore} from '@/services/player/store/lovedStore';
 import {RECITERS, type Reciter, type Rewayat} from '@/data/reciterData';
+
+// @ai-start
+/**
+ * Bulk-adds favourite reciters with ONE favourites push at the end (Sprint 13,
+ * TECH_DEBT #52). With `addFavoriteReciter` in a loop, each added reciter
+ * would push its own list. The sync queue keeps only the latest list, but the
+ * burst was wasteful and noisy in Sentry breadcrumbs. Divergence batch C3
+ * (PLY-S8) moved it here from the inherited favourites store.
+ *
+ * Returns the count of reciters newly added (it skips reciters that are
+ * already favourites, and repeats in `reciters`).
+ */
+function addFavoriteRecitersBatch(reciters: Reciter[]): number {
+  let nextIds: string[] | null = null;
+  let added = 0;
+  useFavoriteRecitersStore.setState(state => {
+    const existing = new Set(state.favoriteReciterIds);
+    const now = Date.now();
+    const additions: typeof state.favoriteReciters = {};
+    const addedIds: string[] = [];
+    for (const r of reciters) {
+      if (existing.has(r.id)) continue;
+      existing.add(r.id);
+      additions[r.id] = {...r, favoritedAt: now};
+      addedIds.push(r.id);
+    }
+    if (addedIds.length === 0) return state;
+    added = addedIds.length;
+    nextIds = [...state.favoriteReciterIds, ...addedIds];
+    return {
+      favoriteReciterIds: nextIds,
+      favoriteReciters: {...state.favoriteReciters, ...additions},
+    };
+  });
+  if (nextIds) enqueueFavoritesSync(nextIds);
+  return added;
+}
+// @ai-end
 
 /** Base key; the flag itself is per account (`accountKeys.ts`). // @ai */
 export const V1_RESTORE_FLAG_KEY = V1_RESTORE_DONE_BASE_KEY;
@@ -392,7 +431,7 @@ export async function mergeV1IntoLocalStores(
     queuedReciterIds.add(reciter.id);
     recitersToAdd.push(reciter);
   }
-  result.recitersAdded = favStore.addFavoriteRecitersBatch(recitersToAdd);
+  result.recitersAdded = addFavoriteRecitersBatch(recitersToAdd);
 
   // 2. Recitation favorites — map (slug, surahNumber, rewayah-name) into lovedStore.
   const loved = useLovedStore.getState();

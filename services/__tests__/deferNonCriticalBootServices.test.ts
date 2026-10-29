@@ -13,7 +13,10 @@
 // `splash-hide-timeout` on OnePlus 8 Pro / Android 11 builds 1345/1353,
 // with `slow_init_service` naming 'Uploads Service' + 'Verse Annotations'.
 
-import {featureFlags, isFeatureEnabled} from '../../config/featureFlags';
+import {
+  qariahFeatureFlags,
+  isQariahFeatureEnabled,
+} from '../../config/qariahFeatureFlags';
 
 // ── Mock expo-sqlite so VerseAnnotationDatabaseService can be imported in Jest ──
 jest.mock('expo-sqlite', () => ({
@@ -172,28 +175,36 @@ function requireAppInitializerWithFlag(deferNonCritical: boolean): {
   // Reset module registry so the flag mock is picked up freshly.
   jest.resetModules();
   jest.doMock('../../config/featureFlags', () => ({
-    isFeatureEnabled: (flag: string) => {
+    isFeatureEnabled: () => false, // adhkar off, as Qariah ships
+    featureFlags: {adhkar: false},
+  }));
+  jest.doMock('../../config/qariahFeatureFlags', () => ({
+    isQariahFeatureEnabled: (flag: string) => {
       if (flag === 'deferNonCriticalBootServices') return deferNonCritical;
       if (flag === 'lazyOpenFeatureDbs') return true;
       if (flag === 'deferMushafPreload') return true;
-      if (flag === 'adhkar') return false;
       return false;
     },
-    featureFlags: {deferNonCriticalBootServices: deferNonCritical},
+    qariahFeatureFlags: {deferNonCriticalBootServices: deferNonCritical},
   }));
 
-  return require('../../services/AppInitializer').appInitializer;
+  // qariahBootStarted() applies the Qariah startup config at boot.
+  const {appInitializer} = require('../../services/AppInitializer');
+  require('../../services/qariahInitConfig').applyQariahInitConfig(
+    appInitializer,
+  );
+  return appInitializer;
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('deferNonCriticalBootServices flag (S38.2)', () => {
   it('is enabled by default (the cold-start lever is active)', () => {
-    expect(featureFlags.deferNonCriticalBootServices).toBe(true);
+    expect(qariahFeatureFlags.deferNonCriticalBootServices).toBe(true);
   });
 
-  it('isFeatureEnabled returns true for deferNonCriticalBootServices', () => {
-    expect(isFeatureEnabled('deferNonCriticalBootServices')).toBe(true);
+  it('isQariahFeatureEnabled returns true for deferNonCriticalBootServices', () => {
+    expect(isQariahFeatureEnabled('deferNonCriticalBootServices')).toBe(true);
   });
 
   describe('AppInitializer service registration', () => {

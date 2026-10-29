@@ -35,14 +35,15 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import expo.modules.bayaanwidgets.AppBrand
 import expo.modules.bayaanwidgets.CatalogModels
 import expo.modules.bayaanwidgets.GlanceState
+import expo.modules.bayaanwidgets.R
 import expo.modules.bayaanwidgets.SnapshotModels
 import expo.modules.bayaanwidgets.StaticData
 import expo.modules.bayaanwidgets.StaticSurah
 import expo.modules.bayaanwidgets.WidgetConfigJson
 import expo.modules.bayaanwidgets.WidgetInputs
+import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.ui.Logo
 import expo.modules.bayaanwidgets.ui.ReciterPhoto
 import expo.modules.bayaanwidgets.ui.RoundButton
@@ -66,13 +67,17 @@ class QuickSurahWidget : GlanceAppWidget() {
       val catalog = remember(inputs.catalogJson) { inputs.catalogJson?.let { CatalogModels.decode(it) } }
       val snapshot = remember(inputs.snapshotJson) { inputs.snapshotJson?.let { SnapshotModels.decode(it) } }
       val reciter = catalog?.reciter(config.reciterId)
+      // @ai Qariah (TECH_DEBT #357): the text follows the app language.
+      val language = WidgetLanguage.resolve(context, snapshot?.language)
+      val strings = remember(language) { WidgetLanguage.context(context, language) }
       // A push after new artwork lands must redraw cards whose inputs did not change.
       key(inputs.pushedAt) {
         Content(
-          context,
+          context, strings, language,
           surahs = config.surahIds.mapNotNull { StaticData.surah(context, it) },
           reciterId = reciter?.id,
-          reciterName = reciter?.name ?: snapshot?.defaultReciter?.name ?: "Default reciter",
+          reciterName = reciter?.name ?: snapshot?.defaultReciter?.name
+            ?: strings.getString(R.string.bayaan_widget_text_default_reciter),
           photoId = reciter?.id ?: snapshot?.defaultReciter?.id,
           photoFile = reciter?.artworkFile ?: snapshot?.defaultReciter?.artworkFile,
         )
@@ -92,14 +97,14 @@ class QuickSurahWidget : GlanceAppWidget() {
 
   @Composable
   private fun Content(
-    context: Context, surahs: List<StaticSurah>, reciterId: String?, reciterName: String,
+    context: Context, strings: Context, language: String?, surahs: List<StaticSurah>, reciterId: String?, reciterName: String,
     photoId: String?, photoFile: String?,
   ) {
     val root = GlanceModifier.fillMaxSize().background(WidgetColors.BACKGROUND).cornerRadius(20.dp)
     val first = surahs.firstOrNull()
     if (first == null) {
       Box(root.padding(14.dp), contentAlignment = Alignment.Center) {
-        Text("Open ${AppBrand.name(context)} to set up", style = TextStyle(color = WidgetColors.WHITE, fontWeight = FontWeight.Medium))
+        Text(strings.getString(R.string.bayaan_widget_text_open_app_to_set_up, WidgetLanguage.appName(strings)), style = TextStyle(color = WidgetColors.WHITE, fontWeight = FontWeight.Medium))
       }
       return
     }
@@ -111,21 +116,28 @@ class QuickSurahWidget : GlanceAppWidget() {
           Logo(14)
         }
         Spacer(GlanceModifier.height(8.dp))
-        Row(GlanceModifier.fillMaxWidth()) { Tile(context, surahs.getOrNull(0), reciterId); Tile(context, surahs.getOrNull(1), reciterId) }
+        Row(GlanceModifier.fillMaxWidth()) {
+          Tile(context, strings, language, surahs.getOrNull(0), reciterId)
+          Tile(context, strings, language, surahs.getOrNull(1), reciterId)
+        }
         Spacer(GlanceModifier.height(8.dp))
-        Row(GlanceModifier.fillMaxWidth()) { Tile(context, surahs.getOrNull(2), reciterId); Tile(context, surahs.getOrNull(3), reciterId) }
+        Row(GlanceModifier.fillMaxWidth()) {
+          Tile(context, strings, language, surahs.getOrNull(2), reciterId)
+          Tile(context, strings, language, surahs.getOrNull(3), reciterId)
+        }
       }
       return
     }
     val play = commandAction(context, playTrackCommand(first.id, reciterId, null, null), "quick/${first.id}/${reciterId ?: "default"}")
+    val firstName = WidgetLanguage.surahName(first, language)
     Column(root.padding(14.dp).clickable(play)) {
       Row(GlanceModifier.fillMaxWidth()) {
-        SurahCard(context, first, 52)
+        SurahCard(context, first, 52, language)
         Spacer(GlanceModifier.defaultWeight())
         Logo(14)
       }
       Spacer(GlanceModifier.defaultWeight())
-      Text(first.name, maxLines = 1, style = TextStyle(color = WidgetColors.WHITE, fontSize = 15.sp, fontWeight = FontWeight.Bold))
+      Text(firstName, maxLines = 1, style = TextStyle(color = WidgetColors.WHITE, fontSize = 15.sp, fontWeight = FontWeight.Bold))
       Spacer(GlanceModifier.height(4.dp))
       Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (photoId != null) {
@@ -133,24 +145,26 @@ class QuickSurahWidget : GlanceAppWidget() {
           Spacer(GlanceModifier.width(6.dp))
         }
         Text(reciterName, maxLines = 1, modifier = GlanceModifier.defaultWeight(), style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 12.sp))
-        RoundButton(android.R.drawable.ic_media_play, "Play ${first.name}", play)
+        RoundButton(android.R.drawable.ic_media_play, strings.getString(R.string.bayaan_widget_text_play_item, firstName), play)
       }
     }
   }
 
   @Composable
-  private fun RowScope.Tile(context: Context, surah: StaticSurah?, reciterId: String?) {
+  private fun RowScope.Tile(context: Context, strings: Context, language: String?, surah: StaticSurah?, reciterId: String?) {
     if (surah == null) {
       Spacer(GlanceModifier.defaultWeight())
       return
     }
     val play = commandAction(context, playTrackCommand(surah.id, reciterId, null, null), "quick/${surah.id}/${reciterId ?: "default"}")
+    val name = WidgetLanguage.surahName(surah, language)
+    val description = strings.getString(R.string.bayaan_widget_text_play_item, name)
     Row(
-      GlanceModifier.defaultWeight().semantics { contentDescription = "Play ${surah.name}" }.clickable(play),
+      GlanceModifier.defaultWeight().semantics { contentDescription = description }.clickable(play),
       verticalAlignment = Alignment.CenterVertically) {
-      SurahCard(context, surah, 36)
+      SurahCard(context, surah, 36, language)
       Spacer(GlanceModifier.width(8.dp))
-      Text(surah.name, maxLines = 1, style = TextStyle(color = WidgetColors.WHITE, fontSize = 13.sp, fontWeight = FontWeight.Bold))
+      Text(name, maxLines = 1, style = TextStyle(color = WidgetColors.WHITE, fontSize = 13.sp, fontWeight = FontWeight.Bold))
     }
   }
 }

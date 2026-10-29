@@ -23,6 +23,14 @@ class SnapshotModelsTest {
     assertNull(s!!.nowPlaying)
   }
 
+  // @ai Qariah (TECH_DEBT #357)
+  @Test fun decodesTheAppLanguage() {
+    val withLanguage = fixture("snapshot.full.json").replace("\"tasbeeh\": {", "\"language\": \"ar\",\n  \"tasbeeh\": {")
+    assertEquals("ar", SnapshotModels.decode(withLanguage)!!.language)
+    // A snapshot from an older app build has none.
+    assertNull(SnapshotModels.decode(fixture("snapshot.full.json"))!!.language)
+  }
+
   @Test fun rejectsFutureVersionAndGarbage() {
     assertNull(SnapshotModels.decode(fixture("snapshot.full.json").replace("\"version\": 1", "\"version\": 2")))
     assertNull(SnapshotModels.decode("nope"))

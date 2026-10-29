@@ -24,7 +24,7 @@ import {
   useFeatureFlag,
   useFeatureFlagWithPayload,
 } from 'posthog-react-native';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {getBootSplashMode} from '@/modules/qariah-boot-splash';
 import {
   bootSplashExperiment,
@@ -77,7 +77,7 @@ function QariahPreConnectEffects(): null {
   useEffect(() => {
     // iOS (or no native module): the experiment is inactive. Emit nothing.
     if (!posthog || !bootSplashExperiment.active) return;
-    if (!isFeatureEnabled('nonBlockingSplash')) {
+    if (!isQariahFeatureEnabled('nonBlockingSplash')) {
       // `off` (not `false`) so the build hard-off is distinguishable from a
       // remote flag that resolved false. The controller does not notify
       // listeners in this case.
@@ -146,11 +146,11 @@ function QariahPreConnectEffects(): null {
   useDeepLinkColdStartReplay(pathname);
 
   // @ai S33.2 — one-time "set Battery to Unrestricted" prompt, shown only after
-  // the audio provider observes an involuntary OEM background-stop. Android-only.
+  // the playback observer sees an involuntary OEM background-stop. Android-only.
   useBackgroundPlaybackPrompt();
 
   // @ai S39.2 (#104) — one-time "allow notifications" prompt, shown only when
-  // the audio provider observes that POST_NOTIFICATIONS is denied. Android-only.
+  // the launch request sees that POST_NOTIFICATIONS is denied. Android-only.
   useNotificationsDeniedPrompt();
 
   // @ai Sprint 48 (S48.8) — once for each process, when the app first becomes
@@ -251,6 +251,10 @@ function QariahPostConnectEffects(): null {
         furthest_step: prev.furthestStep ?? 'unknown',
       },
       extra: {...prev, detected_at_ms: Date.now()},
+      // Group by the message, not by the call site. Without it, a build with
+      // no source map collapses both next-launch reports into one Sentry issue
+      // (QARIAHV2-1V, GitHub #603).
+      fingerprint: ['boot-not-completed'],
     });
     qariahAnalytics.trackBootNotCompleted({
       failed_version: prev.version,
@@ -263,9 +267,9 @@ function QariahPostConnectEffects(): null {
   }, [posthog]);
 
   // @ai REPORT-ONLY playback-kill sentinel report (#54's user symptom / #104).
-  // If a PREVIOUS process died while audio was playing (the sentinel in
-  // ExpoAudioProvider was never cleared — OEM task killer, swipe-away, or
-  // crash mid-playback), report it once now that PostHog is connected. The
+  // If a PREVIOUS process died while audio was playing (the sentinel of
+  // services/diagnostics/playbackObserver.ts was never cleared — OEM task
+  // killer, swipe-away, or crash mid-playback), report it once now that PostHog is connected. The
   // death itself emits nothing, so this next-launch report is the only signal.
   // Observe + report only; no playback or boot-flow change.
   useEffect(() => {
@@ -276,6 +280,7 @@ function QariahPostConnectEffects(): null {
       level: 'warning',
       tags: {scope: 'audio'},
       extra: {...killed, detected_at_ms: Date.now()},
+      fingerprint: ['playback-killed-in-background'],
     });
     qariahAnalytics.trackPlaybackKilledInBackground({
       surah_id: killed.surahId,

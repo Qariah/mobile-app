@@ -33,9 +33,6 @@ web-build/
 .mcp.json
 
 config.ts
-# Qariah: services/auth/config.ts is non-sensitive (public client IDs + QF endpoint URLs only).
-# Negation exception so it gets committed alongside the other auth service files.
-!services/auth/config.ts
 
 # Large data files
 assets/data/timestamps.db
@@ -164,41 +161,22 @@ assets/data/timestamps.db.playwright-mcp/
 migration-log.json
 
 # AI assistant instructions (private — contains internal operational paths)
-# Qariah divergence: project-versioned Claude Code skills + scheduled tasks live in .claude/.
-# Machine-local .claude/ state (sessions, settings.local.json, scheduled_tasks.lock, worktrees,
-# session caches) is still ignored. CLAUDE.md is versioned for Qariah's fork.
-# See DIVERGENCE_LEDGER.md for the upstream-PR plan.
+CLAUDE.md
 GEMINI.md
 AGENTS.md
-# Qariah opts into project-versioned Claude Code skills + scheduled tasks
-# (per the upstream-merged convention from thebayaan/Bayaan#246). Machine-local
-# Claude state stays ignored.
-.claude/*
-!.claude/skills/
-!.claude/scheduled-tasks/
-!.claude/hooks/
-# Committed hook wiring (2026-09-27): the publish guard + run limits run in every checkout,
-# cloud sessions included. Machine-local settings stay in settings.local.json (ignored below).
-!.claude/settings.json
-# The committed prompt of the cloud triage routine (docs/operations/cloud-triage.md).
-!.claude/routines/
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
-.claude/worktrees/
-# Upstream (Bayaan #377) ignores Codex state too.
+.claude/
 .codex/
+# Forks may opt into project-versioned Claude Code skills / scheduled tasks
+# by un-ignoring those subfolders in the fork's own .gitignore (e.g.
+# `!.claude/skills/`, `!.claude/scheduled-tasks/`). Machine-local Claude
+# state — `.claude/settings.local.json`, `scheduled_tasks.lock`,
+# `.claude/projects/` — should always remain ignored.
 
 # Build/release configs (contain owner-specific IDs)
 ExportOptions.plist
-ExportOptions.beta.plist
 **/sentry.properties
 .env.r2
 .env.r2-worker
-
-# Ephemeral user-test artifacts (audio/video/photos/transcripts).
-# Keep the folder via feedback/.gitkeep; contents stay local.
-feedback/*
-!feedback/.gitkeep
 
 # Golden SQLite sidecars (goldens are copied before use, never opened in place)
 test-fixtures/golden/**/*.db-shm
@@ -210,3 +188,33 @@ targets/widgets/*.ttf
 modules/bayaan-widgets/android/src/main/assets/fonts/DigitalKhattFont.otf
 modules/bayaan-widgets/android/src/main/assets/fonts/surah_names.ttf
 modules/bayaan-widgets/android/src/main/assets/fonts/ScheherazadeNew-Regular.ttf
+
+# ══ Qariah additions. Keep upstream's lines above byte-identical. ══
+
+# services/auth/config.ts holds only public client IDs and QF endpoint URLs.
+!services/auth/config.ts
+
+# CLAUDE.md is versioned for Qariah's fork.
+!CLAUDE.md
+
+# Versioned Claude Code skills, hooks and tasks; machine-local state stays ignored.
+# `!.claude/` re-includes the directory that upstream ignores, so the negations below work.
+!.claude/
+.claude/*
+!.claude/skills/
+!.claude/scheduled-tasks/
+!.claude/hooks/
+# Committed hook wiring: the publish guard and run limits run in every checkout.
+!.claude/settings.json
+# The committed prompt of the cloud triage routine (docs/operations/cloud-triage.md).
+!.claude/routines/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
+# The beta export options (contain the team id, like ExportOptions.plist).
+ExportOptions.beta.plist
+
+# Local user-test artifacts; feedback/.gitkeep keeps the folder.
+feedback/*
+!feedback/.gitkeep

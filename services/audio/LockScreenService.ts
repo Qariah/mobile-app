@@ -30,7 +30,7 @@ import {
 } from '@/services/adhkar/playback/trackControls';
 import branding from '@/config/branding';
 import i18n from '@/i18n';
-// Qariah: lock screen names in the UI language (Sprint 47 Tier-2 fix).
+// Qariah: lock screen names in the UI language.
 import {
   getReciterDisplayName,
   getTrackArtistDisplay,
@@ -47,6 +47,12 @@ interface LockScreenTrack {
   reciterId?: string;
   surahId?: string;
   isUserUpload?: boolean;
+}
+
+/** @ai A queued main track: the lock screen fields, its id and its URL (TECH_DEBT #277). */
+interface MainTrack extends LockScreenTrack {
+  id: string;
+  url: string;
 }
 
 // @ai-start
@@ -155,6 +161,13 @@ class LockScreenService {
   private adhkarSession: AdhkarSession | null = null;
   // The next / previous last given to the adhkar entry; null when off.
   private adhkarTrackControls: AdhkarTrackControls | null = null;
+  // @ai-start TECH_DEBT #277: true while the main controls are cleared because the main player holds
+  // no source for the current track (a load that failed offline, or a player store that hydrated after
+  // the restore wait). A remote Play there would start a player with no audio. A Play in the app loads
+  // the track; when that load succeeds, the controls come back (onMainSource).
+  private mainHidden = false;
+  private sourceUnsubscribe: (() => void) | null = null;
+  // @ai-end
 
   private constructor() {}
 
@@ -170,6 +183,10 @@ class LockScreenService {
    * expo-audio handles remote commands and playback state natively.
    */
   async startSync(): Promise<void> {
+    // @ai TECH_DEBT #277: the end of each main load. Optional: test mocks of the service leave it out.
+    this.sourceUnsubscribe =
+      expoAudioService.addSourceListener?.(url => this.onMainSource(url)) ??
+      null;
     this.subscribeToStore();
     this.subscribeToMushafStore();
     this.syncCurrentState();
@@ -189,6 +206,10 @@ class LockScreenService {
       this.mushafStoreUnsubscribe();
       this.mushafStoreUnsubscribe = null;
     }
+    // @ai TECH_DEBT #277
+    this.sourceUnsubscribe?.();
+    this.sourceUnsubscribe = null;
+    this.mainHidden = false;
 
     // Clear lock screen for both players
     this.clearPlayer(expoAudioService.getPlayer());
@@ -233,7 +254,7 @@ class LockScreenService {
     if (this.isMushafActive || this.adhkarPlayer) return;
     const {queue} = usePlayerStore.getState();
     const track = queue.tracks[queue.currentIndex];
-    if (track) this.activateMainPlayer(track);
+    if (track && !this.mainHidden) this.activateMainPlayer(track); // @ai #277
   }
 
   /**
@@ -247,7 +268,7 @@ class LockScreenService {
     if (Platform.OS !== 'ios') return;
     if (this.carAyahLabel === label) return;
     this.carAyahLabel = label;
-    if (this.isMushafActive || this.adhkarPlayer) return;
+    if (this.isMushafActive || this.adhkarPlayer || this.mainHidden) return; // @ai #277
     const player = expoAudioService.getPlayer();
     const {queue} = usePlayerStore.getState();
     const track = queue.tracks[queue.currentIndex];
@@ -257,6 +278,18 @@ class LockScreenService {
     } catch {
       // Player may not be active for the lock screen yet
     }
+  }
+
+  /**
+   * @ai Remove the main player's lock-screen controls and Now Playing entry (TECH_DEBT #350).
+   * Settings → Clear cache calls it after `playerStore.cleanup()`, so the entry goes also when the
+   * store subscription did not clear it (the Mushaf override flag, a held adhkar entry). Natively a
+   * no-op while another player holds the entry. The next track activates the main player again.
+   */
+  clearMainPlayer(): void {
+    this.clearPlayer(expoAudioService.getPlayer());
+    this.lastTrackId = null;
+    this.mainHidden = false; // @ai #277: the next track decides again
   }
 
   /** True while the adhkar session holds the lock screen entry. */
@@ -284,16 +317,75 @@ class LockScreenService {
     const {queue} = state;
     const currentTrack = queue.tracks[queue.currentIndex];
 
-    if (currentTrack) {
-      this.lastTrackId = currentTrack.id;
-      this.activateMainPlayer(currentTrack);
+    if (currentTrack) this.showMainTrack(currentTrack); // @ai #277
+  }
+
+  // @ai-start TECH_DEBT #277
+  /** No source for `url` and no load of it running. A test mock without the source API: a source. */
+  private mainLacksSource(url: string): boolean {
+    if (typeof expoAudioService.holdsSource !== 'function') return false;
+    if (!url || expoAudioService.holdsSource(url)) return false;
+    return !expoAudioService.runningLoad?.(url);
+  }
+
+  /** The current track of the main queue. */
+  private currentMainTrack(): MainTrack | undefined {
+    const {queue} = usePlayerStore.getState();
+    return queue.tracks[queue.currentIndex];
+  }
+
+  /**
+   * A new current track: show its controls when the player holds its source or loads it. With no
+   * source and no load, decide after a microtask: the action that set the track (updateQueue, Next)
+   * starts its load later in the same turn, and those controls must not flicker.
+   */
+  private showMainTrack(track: MainTrack): void {
+    this.lastTrackId = track.id;
+    if (!this.mainLacksSource(track.url)) {
+      this.mainHidden = false;
+      this.activateMainPlayer(track);
+      return;
+    }
+    const trackId = track.id;
+    queueMicrotask(() => this.decideMainTrack(trackId));
+  }
+
+  private decideMainTrack(trackId: string): void {
+    if (this.isMushafActive || this.adhkarPlayer) return;
+    const track = this.currentMainTrack();
+    if (!track || track.id !== trackId || this.lastTrackId !== trackId) return;
+    if (this.mainLacksSource(track.url)) {
+      this.mainHidden = true;
+      this.clearPlayer(expoAudioService.getPlayer());
+      return;
+    }
+    this.mainHidden = false;
+    this.activateMainPlayer(track);
+  }
+
+  /**
+   * A main load ended, or a late error lost its source. A failed load of the current track clears
+   * its controls; a good load brings cleared controls back. Never while the Mushaf or adhkar owns
+   * the lock screen.
+   */
+  private onMainSource(url: string): void {
+    if (this.isMushafActive || this.adhkarPlayer) return;
+    const track = this.currentMainTrack();
+    if (!track || track.id !== this.lastTrackId || track.url !== url) return;
+    const lacks = this.mainLacksSource(url);
+    if (lacks && !this.mainHidden) {
+      this.mainHidden = true;
+      this.clearPlayer(expoAudioService.getPlayer());
+    } else if (!lacks && this.mainHidden) {
+      this.mainHidden = false;
+      this.activateMainPlayer(track);
     }
   }
+  // @ai-end
 
   private mainMetadata(track: LockScreenTrack): AudioMetadata {
     const label = this.carMode ? this.carAyahLabel : null;
-    // Qariah: the surah and reciter names in the UI language, as the players
-    // show them (Arabic in Arabic; English text is unchanged).
+    // Qariah: the surah and reciter names in the UI language, as the players show them.
     const artist = getTrackArtistDisplay(track);
     return {
       title: getTrackDisplayTitle(track),
@@ -385,22 +477,15 @@ class LockScreenService {
 
       // Update when track changes
       if (currentTrack && currentTrack.id !== this.lastTrackId) {
-        this.lastTrackId = currentTrack.id;
-        this.activateMainPlayer(currentTrack);
+        this.showMainTrack(currentTrack); // @ai #277: or hide it while there is no source
       }
 
-      // @ai The queue has no current track any more: playerStore.cleanup()
-      // (Settings -> Clear cache), a removeFromQueue() of the last tracks,
-      // or an updateQueue() with no track to load. Each of those pauses the
-      // main player before it writes the queue. Clear the main player's lock
-      // screen and notification controls once. Without this, a remote Play
-      // there resumed the old source while the app showed no player. A
-      // track change cannot get here: every queue write sets the tracks and
-      // the index together. The Mushaf player is not touched (see the
-      // isMushafActive return above).
+      // @ai No current track any more: clear the main player's lock-screen controls once, or a remote
+      // Play resumes the old source while the app shows no player.
       if (!currentTrack && this.lastTrackId !== null) {
         this.clearPlayer(expoAudioService.getPlayer());
         this.lastTrackId = null;
+        this.mainHidden = false; // @ai #277
       }
     });
   }
@@ -436,8 +521,7 @@ class LockScreenService {
           if (player) {
             player.updateLockScreenMetadata({
               title,
-              // @ai Qariah (TECH_DEBT #311): the reciter's name in the UI
-              // language, found through the recitation id.
+              // @ai Qariah (TECH_DEBT #311): the reciter's name in the UI language.
               artist: reciterName
                 ? getReciterDisplayName({
                     id:
@@ -466,9 +550,7 @@ class LockScreenService {
         this.lastTrackId = null;
         if (!this.adhkarPlayer) {
           this.syncCurrentState();
-          // @ai The main queue lost its current track while the Mushaf played
-          // (the main-store subscription skips that time). Clear the main
-          // player's controls now, as the subscription does.
+          // @ai The main queue lost its track while the Mushaf played: clear the main controls now.
           if (hadMainTrack && this.lastTrackId === null) {
             this.clearPlayer(expoAudioService.getPlayer());
           }

@@ -41,7 +41,7 @@ jest.mock('expo-router', () => ({
 import {NotificationSoftPrompt} from '../NotificationSoftPrompt';
 
 const TYPE_TITLES = [
-  'New from reciters you follow',
+  'New from qariahs you follow',
   'New recitations',
   'Friday Al-Kahf reminder',
   'Continue listening',

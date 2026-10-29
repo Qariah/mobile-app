@@ -5,6 +5,7 @@ import {SURAHS} from '@/data/surahData';
 import {getSystemPlaylists} from '@/data/systemPlaylists';
 import {Track} from '@/types/audio';
 import {getTrackArtistDisplay} from '@/i18n/format'; // @ai Qariah (#311)
+import {markPlaylistTracks} from '@/services/player/utils/queueSource'; // @ai Qariah (PLY-13)
 import {
   addUploadToRecentlyPlayed,
   createTrack,
@@ -234,7 +235,12 @@ export async function executeCarRequest(
   // not overwrite it or swap the audio under it.
   markCarReplacedQueue();
   const player = usePlayerStore.getState();
-  await player.updateQueue(ordered, startIndex, plan.startPosition);
+  // @ai Qariah (PLY-13): a user playlist marks its tracks, so its end stops.
+  const queued =
+    request.kind === 'playlist' && !request.system
+      ? markPlaylistTracks(ordered)
+      : ordered;
+  await player.updateQueue(queued, startIndex, plan.startPosition);
   await player.play();
   // The phone's Uploads screen records the upload after it starts playing.
   if (plan.chain === 'new' && firstUpload) {

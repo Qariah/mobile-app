@@ -17,9 +17,10 @@
 //      verbatim. There is no iOS configuration that reports `59/0`, so the
 //      symmetric cases below are the real ones and the asymmetric case is
 //      generality only.
-//   2. The insets are honoured on iOS ONLY. Android carries the NAVIGATION BAR
-//      through the same fields because the app draws edge-to-edge, so applying
-//      them there would be a pure regression. That is the `android` block.
+//   2. The insets are honoured on BOTH platforms (TECH_DEBT #377). Android
+//      carries the side NAVIGATION BAR (and a cutout) through the same fields,
+//      because the reader draws edge to edge, and the bar hides the text under
+//      it. That is the `android` block.
 
 import {Platform} from 'react-native';
 import {getMushafLayout, getPageLabelOffsets} from '../constants';
@@ -152,39 +153,93 @@ describe('getMushafLayout — phone landscape display cutout (#349)', () => {
   });
 });
 
-describe('getMushafLayout — Android is never shrunk (regression guard)', () => {
+// @ai-start TECH_DEBT #377
+describe('getMushafLayout — Android side navigation bar (#377)', () => {
   const original = Platform.OS;
   afterEach(() => {
     Platform.OS = original;
   });
 
-  it('ignores Android navigation-bar insets entirely', () => {
-    // The app draws edge-to-edge on Android (translucent status bar +
-    // transparent navigationBarColor), so in landscape `insets.left` or
-    // `insets.right` is the ~48dp 3-button nav bar — NOT a cutout. Honouring it
-    // would shrink the reader for no reason. This is the regression this gate
-    // exists to catch; a gesture-navigation device reports 0 and cannot catch
-    // it, which is exactly how it slipped through review once.
+  // Pixel 3 in landscape: a 2160 x 1080 px screen at 2.75 px/dp. The 2-button
+  // or 3-button navigation bar is 132 px (48 dp) on the side. The bar is
+  // translucent and the reader draws edge to edge, so the bar hid the first
+  // word of a line (Mushaf + Horizontal) and the verse menu and the juz label
+  // (List + Horizontal).
+  const PIXEL3_W = 2160 / 2.75;
+  const PIXEL3_H = 1080 / 2.75;
+  const pixel3 = {...baseOpts, width: PIXEL3_W, height: PIXEL3_H};
+  const STATUS = 24;
+
+  it('keeps the page clear of a navigation bar on the right (rotation 90)', () => {
     Platform.OS = 'android';
+    const m = getMushafLayout({...pixel3, insets: insets(0, NAV_BAR)});
 
-    const withNavBar = getMushafLayout({
-      ...baseOpts,
-      insets: insets(NAV_BAR, 0),
-    });
-    const withNothing = getMushafLayout({...baseOpts, insets: insets(0, 0)});
-
-    expect(withNavBar).toEqual(withNothing);
-    expect(withNavBar.pageWidth).toBe(W);
-    expect(withNavBar.pageOffsetX).toBe(0);
+    // The pager item stays one full window wide, so paging does not change.
+    expect(m.screenWidth).toBe(PIXEL3_W);
+    expect(m.pageOffsetX).toBe(0);
+    expect(m.pageOffsetX + m.pageWidth).toBe(PIXEL3_W - NAV_BAR);
+    expect(m.scrollContainerHeight).toBe(PIXEL3_H);
   });
 
-  it('still applies the same insets on iOS', () => {
-    Platform.OS = 'ios';
+  it('keeps the page clear of a navigation bar on the left (rotation 270)', () => {
+    Platform.OS = 'android';
+    const left = getMushafLayout({...pixel3, insets: insets(NAV_BAR, 0)});
+    const right = getMushafLayout({...pixel3, insets: insets(0, NAV_BAR)});
 
-    const m = getMushafLayout({...baseOpts, insets: insets(NAV_BAR, NAV_BAR)});
-    expect(m.pageOffsetX).toBe(NAV_BAR);
+    expect(left.pageOffsetX).toBe(NAV_BAR);
+    expect(left.pageOffsetX + left.pageWidth).toBe(PIXEL3_W);
+    // The same reading width in both directions.
+    expect(left.pageWidth).toBe(right.pageWidth);
+    expect(left.contentWidth).toBe(right.contentWidth);
+  });
+
+  it('documents the font cost of the navigation bar on a Pixel 3', () => {
+    Platform.OS = 'android';
+    const before = getMushafLayout({...pixel3, insets: insets(0, 0)});
+    const after = getMushafLayout({...pixel3, insets: insets(0, NAV_BAR)});
+
+    expect(after.contentWidth).toBeCloseTo(before.contentWidth - NAV_BAR, 6);
+    // The glyphs follow contentWidth: about 6% smaller, and every word shows.
+    const lossPct = (1 - after.contentWidth / before.contentWidth) * 100;
+    expect(lossPct).toBeCloseTo(6.2, 1);
+  });
+
+  it('does not move the page on gesture navigation (no side inset)', () => {
+    Platform.OS = 'android';
+    // Gesture navigation keeps its handle at the bottom in landscape.
+    const m = getMushafLayout({
+      ...pixel3,
+      insets: {top: STATUS, bottom: 16, left: 0, right: 0},
+    });
+    expect(m.pageOffsetX).toBe(0);
+    expect(m.pageWidth).toBe(PIXEL3_W);
+  });
+
+  it('gives the same metrics on Android and iOS for the same insets', () => {
+    Platform.OS = 'android';
+    const android = getMushafLayout({...baseOpts, insets: insets(0, NAV_BAR)});
+    Platform.OS = 'ios';
+    const ios = getMushafLayout({...baseOpts, insets: insets(0, NAV_BAR)});
+    expect(android).toEqual(ios);
+  });
+
+  it('leaves Android portrait unchanged', () => {
+    Platform.OS = 'android';
+    const portrait = {...pixel3, width: PIXEL3_H, height: PIXEL3_W};
+    const withSide = getMushafLayout({
+      ...portrait,
+      insets: {top: STATUS, bottom: NAV_BAR, left: NAV_BAR, right: NAV_BAR},
+    });
+    const without = getMushafLayout({
+      ...portrait,
+      insets: {top: STATUS, bottom: NAV_BAR, left: 0, right: 0},
+    });
+    expect(withSide).toEqual(without);
+    expect(withSide.pageOffsetX).toBe(0);
+    expect(withSide.pageWidth).toBe(PIXEL3_H);
   });
 });
+// @ai-end
 
 describe('getMushafLayout — no movement where there is no cutout', () => {
   it('phone landscape is unchanged (pre-fix behaviour)', () => {

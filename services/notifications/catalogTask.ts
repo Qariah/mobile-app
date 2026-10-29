@@ -27,6 +27,7 @@ import type {Reciter} from '@/data/reciterData';
 import {SURAHS} from '@/data/surahData';
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {
+  CATALOG_NOTICE_HELD_SINCE_KEY,
   runCatalogCheck,
   type CatalogCheckDeps,
   type CatalogCheckResult,
@@ -309,6 +310,7 @@ function forgetSnapshot(
   snapshotStore.clear();
   safeRemove(storage, LAST_CATALOG_VERSION_KEY);
   safeRemove(storage, CATALOG_CHECK_PENDING_KEY);
+  safeRemove(storage, CATALOG_NOTICE_HELD_SINCE_KEY);
 }
 
 /** `NotificationTextMissingError` of `expoNotifier.ts`, by name (no import of that module). */
@@ -436,6 +438,8 @@ async function runOnce(
     extraCandidates: extra,
     formatReciterName,
     formatSurahName,
+    // The cap of a held catalog notice: the same store as the other records.
+    heldSinceStorage: storage,
     ...deps.checkDeps,
     snapshotStore,
     prefs: prefsSource,

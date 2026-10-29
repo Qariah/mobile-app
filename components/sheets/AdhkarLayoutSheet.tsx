@@ -2,7 +2,7 @@ import React, {useMemo} from 'react';
 import {
   View,
   Text,
-  Dimensions,
+  useWindowDimensions,
   Switch,
   Pressable,
   StyleSheet,
@@ -29,8 +29,6 @@ import {isRTL, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
 import {localizeDigits} from '@/i18n/format';
 // @ai-end
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // Internal reusable component for font size control
 interface FontSizeControlProps {
@@ -135,7 +133,11 @@ const FontSizeControl: React.FC<FontSizeControlProps> = ({
 // @ai-start
 export const AdhkarLayoutSheet = (props: SheetProps<'adhkar-layout'>) => {
   const {theme} = useTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = useMemo(
+    () => createStyles(theme, screenHeight),
+    [theme, screenHeight],
+  );
   const {t} = useTranslation(['sheets', 'common']);
 
   const {
@@ -261,14 +263,14 @@ export const AdhkarLayoutSheet = (props: SheetProps<'adhkar-layout'>) => {
 // @ai-end
 
 // @ai-start
-const createStyles = (theme: Theme) =>
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
       borderTopLeftRadius: moderateScale(20),
       borderTopRightRadius: moderateScale(20),
       paddingTop: moderateScale(8),
-      height: SCREEN_HEIGHT * 0.6,
+      height: screenHeight * 0.6,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderLeftWidth: StyleSheet.hairlineWidth,
       borderRightWidth: StyleSheet.hairlineWidth,

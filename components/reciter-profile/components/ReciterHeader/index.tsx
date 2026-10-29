@@ -23,10 +23,7 @@ import {
 } from '@/components/reciter-profile/qariahHeaderMeta';
 // @ai-end
 
-/**
- * Bio paragraph length above which the "Read more" toggle appears.
- * 240 chars ~ 3 lines on most screens at the current type scale.
- */
+/** Bio length above which the "Read more" toggle appears (about 3 lines). */
 const BIO_TRUNCATE_CHARS = 240;
 
 function countUniqueSurahs(reciter: Reciter): number {
@@ -59,14 +56,7 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
     metaParts.push(t('reciterProfile.rewayatCount', {count: rewayatCount}));
   }
 
-  // @ai-start Qariah (Sprint 6, Sprint 15 S15.5): recitations count,
-  // narration tag line, country / translation chips and the bio, shown with
-  // upstream's editorial header (#378). The text is in the qariah namespace.
-  // Sprint 47 (Pass C): the catalog names, the country and the bio are in
-  // Arabic when the app shows Arabic (i18n/qariahCatalog.ts).
-  // TECH_DEBT #306: the recitation count and the narration names go into
-  // upstream's meta row beside the photo, so the header shows each count once.
-  // The recitation count shows only when it differs from the surah count.
+  // @ai-start Qariah: recitations count, narration line, chips and bio (TECH_DEBT #306).
   const extraRecitations = qariahRecitationsCount(
     reciter.recitationsCount,
     surahCount,
@@ -76,7 +66,6 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
   }
   const narrationTagLine = qariahNarrationLine(reciter.rewayat);
 
-  // Sprint 15 (S15.5) — bio + country + translation surfaces.
   const countryValue = reciter.country?.trim() || null;
   const country = countryValue ? getCountryDisplayName(countryValue) : null;
   const translationValue = reciter.translation?.trim() || null;
@@ -100,8 +89,8 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
   const topPadding = showSearch
     ? moderateScale(15)
     : USE_GLASS
-      ? moderateScale(8)
-      : insets.top + moderateScale(50);
+    ? moderateScale(8)
+    : insets.top + moderateScale(50);
 
   const image = (
     <View>
@@ -122,8 +111,7 @@ export const ReciterHeader: React.FC<ReciterHeaderProps> = ({
         ) : (
           image
         )}
-        {/* @ai Qariah (TECH_DEBT #306): the narration names sit under
-         * upstream's counts, beside the photo. */}
+        {/* @ai Qariah (TECH_DEBT #306): the narration names sit under the counts. */}
         <View style={styles.metaColumn}>
           {metaParts.length > 0 ? (
             <Text style={styles.meta} numberOfLines={1}>
@@ -224,9 +212,7 @@ const createStyles = (theme: Theme) =>
       letterSpacing: -0.5,
       marginTop: moderateScale(14),
     },
-    // @ai-start Qariah (Sprint 6, Sprint 15 S15.5). Start-aligned to follow
-    // upstream's editorial header (#378); the Qariah rows were centred before.
-    // TECH_DEBT #306: the narration names sit in the meta column.
+    // @ai-start Qariah rows, start-aligned to follow the editorial header (TECH_DEBT #306).
     metaColumn: {
       flexShrink: 1,
     },

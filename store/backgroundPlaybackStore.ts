@@ -9,7 +9,8 @@ import {guardedJSONStorage} from '@/services/storage/hydrationGuardedStorage';
  * background stop: a prior-launch mid-playback process death (the MMKV
  * playback sentinel, consumed in `components/QariahRootEffects.tsx`) or a
  * silent player death
- * caught on foreground (`ExpoAudioProvider`). That is the OEM
+ * caught on foreground (`services/diagnostics/playbackObserver.ts`). That is
+ * the OEM
  * battery-restriction path (Samsung "Sleeping apps" → the system stops the
  * media foreground service "due to app idle" — see
  * planning/background-audio-kill-diagnosis-2026-06-10.md).
@@ -29,7 +30,8 @@ interface BackgroundPlaybackState {
   /** Total times the prompt has been shown. */
   promptCount: number;
   /**
-   * S39.2 (#104) — set true when the audio provider observes that the
+   * S39.2 (#104) — set true when the launch request
+   * (`services/notifications/launchPermission.ts`) sees that the
    * POST_NOTIFICATIONS permission is denied (Android 13+). Without it the
    * media foreground-service notification can't post, so aggressive OEMs kill
    * background playback. A distinct failure from the OEM battery-restriction

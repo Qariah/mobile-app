@@ -1,8 +1,9 @@
 // @ai Qariah (TECH_DEBT #243) — pins the startup sequence that Qariah's flags
 // produce, so the move of Qariah's service skips out of the upstream
 // registerService() blocks cannot change it. Two flag sets:
-//   - SHIPPING: the real config/featureFlags.ts (adhkar off, the three
-//     cold-start levers on), which is what every Qariah build runs.
+//   - SHIPPING: the real config/featureFlags.ts (adhkar off) and
+//     config/qariahFeatureFlags.ts (the three cold-start levers on), which is
+//     what every Qariah build runs.
 //   - LEGACY: every lever off and adhkar on, which must give upstream's full
 //     list (the same list as AppInitializer.characterization.test.ts).
 // It also pins the 'Arabic Fonts' font set for both, which guards the
@@ -149,10 +150,16 @@ function freshInitializer(legacy: boolean): Initializer {
       jest.doMock('@/config/featureFlags', () => ({
         isFeatureEnabled: (flag: string) => flag === 'adhkar',
       }));
+      jest.doMock('@/config/qariahFeatureFlags', () => ({
+        isQariahFeatureEnabled: () => false,
+      }));
     } else {
       jest.dontMock('@/config/featureFlags');
+      jest.dontMock('@/config/qariahFeatureFlags');
     }
     initializer = require('../AppInitializer').appInitializer;
+    // The boot (qariahBootStarted) applies the Qariah startup config.
+    require('../qariahInitConfig').applyQariahInitConfig(initializer);
   });
   if (!initializer) throw new Error('AppInitializer not loaded');
   return initializer;
@@ -189,6 +196,7 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
   jest.dontMock('@/config/featureFlags');
+  jest.dontMock('@/config/qariahFeatureFlags');
 });
 
 describe('Qariah startup sequence (shipping flags)', () => {

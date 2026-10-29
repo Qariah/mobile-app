@@ -57,12 +57,9 @@ function MiniPlayerInner() {
   const textColor = theme.colors.text;
 
   return (
-    // #179 / #401 a11y -- plain View row (not a grouping Pressable) so the
-    // play/pause control is INDIVIDUALLY focusable. A Pressable is
-    // `accessible` by default, and on iOS an accessible container ABSORBS its
-    // children into one composed label -- which is why neither VoiceOver nor
-    // Maestro could reach a control on its own. The expand action lives on
-    // the inner body only.
+    // a11y — plain View row (not a grouping Pressable) so the play/pause
+    // control is INDIVIDUALLY focusable by VoiceOver; the expand action lives
+    // on the inner body only.
     <View style={[styles.row, appLayoutDirection]} testID="mini-player-bar">
       <Pressable
         onPress={handlePress}
@@ -122,19 +119,7 @@ export const MiniPlayer: React.FC = React.memo(MiniPlayerInner);
 // @ai-start
 const styles = StyleSheet.create({
   row: {
-    // #270 — symmetric horizontal insets (was 14) so the artwork and the play
-    // control sit the same distance from each pill edge (the play control read
-    // cramped against the right edge), even 12px rhythm between
-    // every element, and balanced top/bottom padding (was 8/20) so the content
-    // is vertically centred in the native BottomAccessory (see #421 below for
-    // why the row must fill the accessory frame).
-    // @ai #421 — fill the accessory height. The accessory does NOT size to
-    // content: its content view is absoluteFill inside a native frame of a
-    // fixed height (about 46pt on iOS 26.5), which is shorter than this row's
-    // 60pt. Without flex: 1 the row sits at the top of that frame, so the
-    // content reads low and the bottom of the artwork clips. With flex: 1 the
-    // row takes the frame height, and the symmetric padding plus
-    // alignItems: 'center' centre the content in it.
+    // @ai #421 — fill the accessory height: the native frame (about 46pt) does not size to content.
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -143,14 +128,10 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 12,
   },
-  // #401 — the expand target. It carries the artwork + the two text lines, so
-  // it reproduces exactly the row spacing those elements had as direct
-  // children of `row` (same 12px gap, same flex:1 growth): the bar looks
-  // identical, it just gained its own accessibility element.
   body: {
-    // #179 / #401 a11y -- the expand-to-full-player hit target (artwork +
-    // track info). Preserves the artwork|trackInfo rhythm of the old grouping
-    // row, so the layout is visually unchanged.
+    // a11y — expand-to-full-player hit target (artwork + track info). Same
+    // `gap` as the row it was split out of, so the artwork|trackInfo rhythm is
+    // unchanged: this refactor is a11y-only, with no visual delta.
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',

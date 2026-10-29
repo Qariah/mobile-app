@@ -4,10 +4,7 @@ const mmkv = createMMKV({id: 'mushaf-session'});
 
 const RECENT_KEY = 'lastReadPages';
 const LEGACY_KEY = 'lastReadPage';
-// Sprint 23 (S23.3) — bumped 5 → 10 to match RFC-011's MAX_HISTORY_SIZE.
-// The Continue-Reading carousel caps *display* to
-// `branding.continueReadingHistorySize`; the store keeps enough history
-// to satisfy any value in the RFC-011 [1, 10] range.
+// RFC-011 MAX_HISTORY_SIZE. The carousel caps the display to `branding.continueReadingHistorySize`.
 const MAX_RECENT = 10;
 
 export type RecentPage = {
@@ -48,11 +45,7 @@ export const mushafSessionStore = {
     return list[0]?.page ?? null;
   },
 
-  /**
-   * Record a page turn. Dedupes (existing entry for the page is removed first),
-   * prepends, then trims to MAX_RECENT. Keeps the legacy `lastReadPage` key in
-   * sync for any reader that still expects a single number.
-   */
+  /** Record a page turn: remove its old entry, prepend, trim to MAX_RECENT. Also write the legacy key. */
   setLastReadPage: (p: number): void => {
     const list = readRecent();
     const without = list.filter(entry => entry.page !== p);

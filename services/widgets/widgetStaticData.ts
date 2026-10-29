@@ -10,6 +10,8 @@ export interface StaticSurah {
   translatedName: string;
   glyph: string; // surah_names.ttf ("icomoon") code point
   artworkFile: string;
+  // @ai Qariah (TECH_DEBT #357): the Arabic name, for a widget in an Arabic-content app language.
+  nameArabic?: string;
 }
 
 export interface StaticAyah {
@@ -25,6 +27,7 @@ export interface SurahSource {
   id: number;
   name: string;
   translated_name_english: string;
+  name_arabic?: string;
 }
 
 export interface AyahSources {
@@ -66,6 +69,7 @@ export function buildStaticSurahs(
     translatedName: s.translated_name_english,
     glyph: glyphs[s.id] ?? '',
     artworkFile: surahArtworkFileName(s.id),
+    ...(s.name_arabic ? {nameArabic: s.name_arabic} : {}),
   }));
 }
 

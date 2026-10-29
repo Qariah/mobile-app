@@ -6,7 +6,7 @@
 // - iOS: the card asks before the system notification dialog ("Allow",
 //   "Not now").
 // - Android: Android 13+ asks for the permission at the first launch
-//   (`ExpoAudioProvider`), and Android 12 and earlier does not ask. So the
+//   (`launchPermission.ts`), and Android 12 and earlier does not ask. So the
 //   card only introduces the types ("Choose notifications" opens the
 //   Notifications page, "OK" closes the card). It asks for nothing.
 //

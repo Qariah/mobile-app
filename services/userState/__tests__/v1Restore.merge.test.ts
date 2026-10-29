@@ -44,13 +44,10 @@ jest.mock('expo-crypto', () => ({
   randomUUID: () => 'test-device-id',
 }));
 
-// The favorites store mirrors additions to QF via the services/userState
-// barrel. The barrel pulls the whole user-state stack (db, syncQueue, QF SDK);
-// the merge ledger does not depend on any of it.
-jest.mock('@/services/userState', () => ({
+// The v1 restore pushes the merged favourites through syncBus, which pulls in
+// the user-state SQLite queue; the merge ledger does not depend on it.
+jest.mock('@/services/userState/syncBus', () => ({
   enqueueFavoritesSync: jest.fn(),
-  enqueueReadingSessionSync: jest.fn(),
-  enqueuePreferenceSync: jest.fn(),
 }));
 
 // RECITERS is an empty array until dataService populates it in-place at

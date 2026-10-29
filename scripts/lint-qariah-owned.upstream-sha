@@ -4,7 +4,9 @@
 # tree at this commit is an upstream file, and the blocking ESLint step skips
 # it. Every other tracked .js, .ts or .tsx file is Qariah-owned.
 #
-# Each upstream absorption PR updates this line. After the merge, run:
+# Each upstream absorption PR updates this line. The weekly sync workflow
+# (.github/workflows/upstream-sync.yml) does it in the same PR, in a second commit.
+# For a merge that you make by hand, run this after the merge:
 #   git fetch upstream develop
 #   node scripts/lint-qariah-owned.mjs --update-pin
 # The command writes `git merge-base HEAD upstream/develop` below. Keep the

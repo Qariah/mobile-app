@@ -31,11 +31,7 @@ export const BackButton: React.FC<BackButtonProps> = ({
     }
   };
 
-  // @ai — the button does not add the safe-area inset. Its container
-  // owns the inset: the Mushaf reader header (its only user) pads both
-  // sides by the inset. A second inset here made the button wider than its
-  // header slot in landscape, and the "Search surahs" button then covered
-  // it (TECH_DEBT #274).
+  // @ai The container owns the safe-area inset; a second inset here broke the landscape header (TECH_DEBT #274).
   return (
     <Pressable style={[styles.backButton, style]} onPress={handlePress}>
       <Feather

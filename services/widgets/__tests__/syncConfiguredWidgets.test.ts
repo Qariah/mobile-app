@@ -6,15 +6,11 @@ import type {
 } from 'bayaan-widgets';
 import type {Reciter} from '@/data/reciterData';
 
-// @ai Qariah: this upstream suite pins Bayaan's widget set, which needs the
-// flags Qariah turns off (adhkar, the ambient overlay). Run it with upstream's
-// flag values (see test-utils/upstreamFeatureFlags.ts).
+// @ai Qariah: run this upstream suite with upstream's flag values (Qariah turns adhkar and ambient off).
 jest.mock('@/config/featureFlags', () =>
   jest.requireActual('@/test-utils/upstreamFeatureFlags'),
 );
-// @ai Qariah: this upstream suite pins Bayaan's full widget list. Qariah ships
-// a core set (owner decision O5, 2026-10-18). Run it with upstream's list (see
-// test-utils/upstreamNativeWidgetsConfig.ts).
+// @ai Qariah: and with upstream's full widget list (Qariah ships a core set).
 jest.mock('@/config/nativeWidgets.config', () =>
   jest.requireActual('@/test-utils/upstreamNativeWidgetsConfig'),
 );

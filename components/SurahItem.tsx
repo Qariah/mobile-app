@@ -13,7 +13,7 @@ import * as Haptics from 'expo-haptics';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 
 import {NowPlayingIndicator} from './NowPlayingIndicator';
-import {formatAyahRange, getSurahMetadataSync} from '@/services/dataService';
+import {formatAyahRange, getSurahMetadataSync} from '@/utils/surahMetadata';
 import {useReciterStore} from '@/store/reciterStore';
 import {
   useDownloadProgress,
@@ -95,16 +95,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
     // Get download progress
     const downloadProgress = useDownloadProgress(downloadId);
 
-    // Play-path UI-freeze fix (QARIAHV2-J / incident #184, 69 events / 27 users):
-    // derive each row's playing/current state with a NARROW selector that returns a
-    // scalar boolean, instead of subscribing to the whole `queue.tracks` array +
-    // `currentIndex` + playback state and recomputing in a useMemo. `updateQueue(...)`
-    // assigns a NEW tracks array on every play, so the old array-reference
-    // subscription re-rendered EVERY inline (unvirtualized) profile row inside the
-    // play-tap commit — a synchronous JS-thread block that scales with recitation
-    // count (3–5 s at 14 rows → 20 s+ at 114-row reciters). With a boolean selector,
-    // zustand's Object.is equality means a row only re-renders when ITS OWN
-    // playing/current state flips.
+    // Boolean selectors: a subscription to the tracks array re-rendered every row on each play (QARIAHV2-J).
     const isCurrentlyPlaying = usePlayerStore(state => {
       const status = state.playback.state;
       if ((status !== 'playing' && status !== 'buffering') || !reciterId) {
@@ -116,8 +107,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
           ? state.queue.tracks[idx]
           : null;
       if (!currentTrack) return false;
-      // Match rewayatId too (consistent with isCurrentTrack below) so a different
-      // rewayat of the same reciter+surah doesn't read as playing.
+      // Match rewayatId too, so another rewayat of the same surah does not read as playing.
       const rewayatMatches =
         rewayatId && currentTrack.rewayatId
           ? rewayatId === currentTrack.rewayatId
@@ -129,7 +119,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
       );
     });
 
-    // Whether this is the current track regardless of play state.
+    // Check if this is the current track (regardless of play state)
     const isCurrentTrack = usePlayerStore(state => {
       const idx = state.queue.currentIndex;
       const currentTrack =
@@ -184,8 +174,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
       return md ? formatAyahRange(md) : undefined;
     }, [reciterId, rewayatId, item.id, recitersInitialized]);
 
-    // @ai Qariah ayah range (Sprint 20) after upstream's meaning line.
-    // formatAyahRange returns the translated label ("ayahs 1–7").
+    // @ai Qariah: the translated ayah range ("ayahs 1–7") after the meaning line.
     const baseSecondary = meaning ?? versesLabel;
     const secondaryLabel = ayahRangeLabel
       ? `${baseSecondary} · ${localizeDigits(ayahRangeLabel)}`

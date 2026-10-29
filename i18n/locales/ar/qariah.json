@@ -474,6 +474,10 @@
       "body": "التطبيق بالعربية، وأدوات مصغّرة للشاشة الرئيسية، وتلاوات جديدة. اضغط لمعرفة الجديد."
     }
   },
+  "mushafSettings": {
+    "arabicOnly": "النص العربي فقط",
+    "arabicOnlyPageView": "The Mushaf view shows the Arabic text only. Choose List to see the translation."
+  },
   "countries": {
     "DZ": "الجزائر",
     "AU": "أستراليا",

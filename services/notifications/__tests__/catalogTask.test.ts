@@ -3,6 +3,7 @@
 // the foreground run (`runQariahCatalogTask`), with fakes for the network,
 // MMKV, the preferences, the favorites and the notifier.
 import type {Reciter, Rewayat} from '@/data/reciterData';
+import {CATALOG_NOTICE_HELD_SINCE_KEY} from '../catalogCheck';
 import {CATALOG_SNAPSHOT_KEY, createCatalogSnapshotStore} from '../catalogDiff';
 import {
   CATALOG_CHECK_PENDING_KEY,
@@ -457,12 +458,15 @@ describe('runQariahCatalogTask (background)', () => {
     d.srv.state.version = 6;
     d.srv.state.catalogs.set(LIVE_URL, WITH_KAHF);
     d.srv.fetchFn.mockClear();
+    // A held catalog notice (the cap of TECH_DEBT #328) goes with the snapshot.
+    d.storage.data.set(CATALOG_NOTICE_HELD_SINCE_KEY, '2026-10-16');
     const result = await d.background({isHoldout: () => true});
     expect(result.status).toBe('holdout');
     expect(d.srv.fetchFn).not.toHaveBeenCalled();
     expect(d.notifier.schedule).not.toHaveBeenCalled();
     expect(d.snapshot()).toBeNull();
     expect(d.storage.data.has(LAST_CATALOG_VERSION_KEY)).toBe(false);
+    expect(d.storage.data.has(CATALOG_NOTICE_HELD_SINCE_KEY)).toBe(false);
   });
 
   it('stops before any download without permission; the first run after a yes is a first check', async () => {

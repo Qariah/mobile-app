@@ -1,13 +1,11 @@
 import React, {Component, ErrorInfo, ReactNode} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import * as Sentry from '@sentry/react-native';
+// @ai-start
 import i18n from '@/i18n';
+// @ai-end
 
-/**
- * Translated text for the last-resort screen, with an English fallback: the
- * boundary must render even when the failure came from the i18n layer.
- * // @ai Qariah (Sprint 47 review)
- */
+/** @ai Qariah: translated text with an English fallback, so the boundary renders if i18n failed. */
 function safeT(
   key: string,
   fallback: string,
@@ -31,8 +29,8 @@ interface State {
   eventId: string | null;
 }
 
-// Two retries, then stop offering one. A render throw is usually deterministic,
-// so a third attempt just re-throws and the button reads as broken.
+// @ai-start
+// A render throw is usually deterministic: stop the retry offer after two.
 const MAX_RETRIES = 2;
 
 class ErrorBoundary extends Component<Props, State> {
@@ -42,11 +40,7 @@ class ErrorBoundary extends Component<Props, State> {
     eventId: null,
   };
 
-  // Clear `eventId` here, not just in `handleRetry`. This runs in the RENDER
-  // phase, so the error screen's first paint happens before
-  // `componentDidCatch` has captured the new event. Without the reset that
-  // paint shows the PREVIOUS crash's reference, and a tester who reads it
-  // quotes the wrong Sentry event — the exact thing the reference is for.
+  // Clear `eventId` here: the first paint comes before componentDidCatch captures the new event.
   public static getDerivedStateFromError(_: Error): Partial<State> {
     return {hasError: true, eventId: null};
   }
@@ -54,15 +48,7 @@ class ErrorBoundary extends Component<Props, State> {
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
 
-    // @ai #455 — report the crash. Until this, a throw below this boundary
-    // reached the user as a blank screen and reached Sentry as NOTHING: the
-    // boundary catches the error, so no global handler sees it, and
-    // `console.error` is not an event. An owner report on 3.2.2 (1974) could
-    // not be diagnosed for exactly this reason.
-    // Fingerprint by message, for the same reason `captureAndFlush` does in
-    // services/diagnostics/diagnostics.ts: without it every boundary crash
-    // collapses into ONE issue by call-site, and distinct crashes cannot be
-    // triaged apart.
+    // @ai #455 — report the crash (no global handler sees it). Fingerprint by message, not call-site.
     const eventId = Sentry.captureException(error, {
       tags: {scope: 'error-boundary'},
       contexts: {
@@ -72,24 +58,11 @@ class ErrorBoundary extends Component<Props, State> {
     });
     this.setState(s => ({...s, eventId}));
 
-    // @ai #455 — flush, for the same reason `captureAndFlush` does in
-    // services/diagnostics/diagnostics.ts. This screen is what the user sees
-    // when the app is already dead, and their next action is a force quit: the
-    // owner's own report on 3.2.2 (1974) shows two cold starts three minutes
-    // apart. Without a flush the report races the kill and can lose it. This
-    // path fires at most a handful of times per process, so the cost is bounded.
+    // @ai #455 — flush: the next user action is usually a force quit.
     Sentry.flush().catch(() => undefined);
   }
 
-  // `retries` is a per-INCIDENT budget, not a per-process one. Reset it once
-  // the children commit without throwing, or a user who recovered twice over
-  // a long session would be refused a retry on their next, unrelated error
-  // and told "Qariah hit the same error again".
-  //
-  // The guard is what keeps MAX_RETRIES meaningful. When a retry re-throws,
-  // React catches it during the render pass and re-renders with
-  // `hasError: true`, so the only `componentDidUpdate` that ever sees
-  // `hasError: false` is one where the children actually survived.
+  // `retries` is per incident: reset it once the children commit without a throw.
   public componentDidUpdate() {
     if (!this.state.hasError && this.state.retries > 0) {
       this.setState(s => ({...s, retries: 0}));
@@ -104,11 +77,7 @@ class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       const canRetry = this.state.retries < MAX_RETRIES;
 
-      // Deliberately no theme, no safe-area hook and no icon set: this screen
-      // renders when something below it has already failed, so it must not
-      // depend on a provider that may be the thing that failed. The top inset
-      // is a fixed value for the same reason — the old screen had none, so the
-      // message rendered under the status bar and was cut off.
+      // No theme, safe-area hook or icon set: a provider may be the thing that failed.
       return (
         <View style={styles.container} testID="app-error-boundary">
           <Text style={styles.title}>
@@ -130,8 +99,7 @@ class ErrorBoundary extends Component<Props, State> {
               style={styles.reference}
               selectable
               testID="app-error-boundary-id">
-              {/* No post-processing: the id keeps its Latin digits, so a
-               * user can quote it to support in any language. */}
+              {/* No post-processing: the id keeps its Latin digits. */}
               {safeT(
                 'qariah:errorBoundary.reference',
                 `Reference ${this.state.eventId.slice(0, 8)}`,
@@ -161,6 +129,7 @@ class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+// @ai-end
 
 const styles = StyleSheet.create({
   container: {
@@ -185,9 +154,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
-  // Lets a tester quote the exact Sentry event instead of describing the
-  // screen. Selectable so it can be copied; truncated because the first 8 of
-  // 32 hex chars already identify the event in a search.
+  // The first 8 hex chars identify the Sentry event in a search.
   reference: {
     fontSize: 12,
     color: '#9A9A9F',

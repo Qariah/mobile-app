@@ -222,7 +222,7 @@ describe('notices', () => {
     setPlayer({timestampError: VERSE_TIMING_UNAVAILABLE_ERROR});
     expect(mockShowToast).toHaveBeenCalledWith(
       'Playback unavailable',
-      VERSE_TIMING_UNAVAILABLE_ERROR,
+      "Verse-by-verse playback isn't available for this qariah on this surah. Try a different qariah.", // @ai Qariah #535 wording
       'error',
     );
   });
@@ -237,7 +237,7 @@ describe('notices', () => {
     expect(mockShowToast).toHaveBeenCalledTimes(1);
     expect(mockShowToast).toHaveBeenCalledWith(
       'Verse tracking unavailable',
-      'Al-Mulk plays without verse highlighting for this reciter.',
+      'Al-Mulk plays without verse highlighting for this qariah.', // @ai Qariah #535 wording
       'none',
     );
   });

@@ -15,8 +15,7 @@ import arSheets from './locales/ar/sheets.json';
 import arPlayer from './locales/ar/player.json';
 import arContent from './locales/ar/content.json';
 import arReader from './locales/ar/reader.json';
-// Qariah: the fork's own namespace and the overlay for upstream keys
-// (i18n/qariahOverrides.ts, DIVERGENCE_LEDGER.md 2026-10-19).
+// Qariah: the fork's own namespace and the overlay for upstream keys (i18n/qariahOverrides.ts).
 import enQariah from './locales/en/qariah.json';
 import arQariah from './locales/ar/qariah.json';
 import {withQariahOverrides} from './qariahOverrides';

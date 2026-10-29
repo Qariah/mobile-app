@@ -34,8 +34,10 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import expo.modules.bayaanwidgets.ArabicBitmap
 import expo.modules.bayaanwidgets.GlanceState
+import expo.modules.bayaanwidgets.R
 import expo.modules.bayaanwidgets.SnapshotModels
 import expo.modules.bayaanwidgets.StaticData
+import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.WidgetLastRead
 import expo.modules.bayaanwidgets.ui.ArabicText
 import expo.modules.bayaanwidgets.ui.Logo
@@ -55,21 +57,25 @@ class ContinueReadingWidget : GlanceAppWidget() {
     recordMissingArtwork(context, listOf(shown), emptyList())
     provideContent {
       val inputs = GlanceState.current(currentState(), stored)
-      val lastRead = remember(inputs.snapshotJson) { inputs.snapshotJson?.let { SnapshotModels.decode(it) }?.lastRead }
+      val snapshot = remember(inputs.snapshotJson) { inputs.snapshotJson?.let { SnapshotModels.decode(it) } }
+      val lastRead = snapshot?.lastRead
+      // @ai Qariah (TECH_DEBT #357): the text follows the app language.
+      val language = WidgetLanguage.resolve(context, snapshot?.language)
+      val strings = remember(language) { WidgetLanguage.context(context, language) }
       // A push after new artwork lands must redraw even when lastRead did not change.
-      key(inputs.pushedAt) { Content(context, lastRead) }
+      key(inputs.pushedAt) { Content(context, strings, language, lastRead) }
     }
   }
 
   @Composable
-  private fun Content(context: Context, lastRead: WidgetLastRead?) {
+  private fun Content(context: Context, strings: Context, language: String?, lastRead: WidgetLastRead?) {
     val size = LocalSize.current
     val page = lastRead?.page ?: 1
     val root = GlanceModifier.fillMaxSize().background(WidgetColors.BACKGROUND).cornerRadius(20.dp)
       .padding(14.dp).clickable(appLink(context, "mushaf/$page"))
     if (size.width >= WidgetSizes.MEDIUM.width) {
       Row(root) {
-        PageColumn(context, lastRead, showLogo = false, GlanceModifier.width(110.dp).fillMaxHeight())
+        PageColumn(context, strings, language, lastRead, showLogo = false, GlanceModifier.width(110.dp).fillMaxHeight())
         Spacer(GlanceModifier.width(14.dp))
         Column(GlanceModifier.defaultWeight().fillMaxHeight(), horizontalAlignment = Alignment.End) {
           Logo(14)
@@ -79,31 +85,35 @@ class ContinueReadingWidget : GlanceAppWidget() {
             ArabicText(context, opening, ArabicBitmap.QURAN_FONT, size.width.value - 28 - 14 - 110, 50f, 22f, 12f, 2, center = false)
             Spacer(GlanceModifier.height(4.dp))
           }
-          Text(if (lastRead == null) "Start reading" else "Continue reading", maxLines = 1,
+          Text(strings.getString(if (lastRead == null) R.string.bayaan_widget_text_start_reading else R.string.bayaan_widget_text_continue_reading), maxLines = 1,
             style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
       }
     } else {
-      PageColumn(context, lastRead, showLogo = true, root)
+      PageColumn(context, strings, language, lastRead, showLogo = true, root)
     }
   }
 
   @Composable
-  private fun PageColumn(context: Context, lastRead: WidgetLastRead?, showLogo: Boolean, modifier: GlanceModifier) {
+  private fun PageColumn(
+    context: Context, strings: Context, language: String?, lastRead: WidgetLastRead?, showLogo: Boolean, modifier: GlanceModifier,
+  ) {
     val surah = StaticData.surah(context, lastRead?.surahId ?: 1)
     Column(modifier) {
       Row(GlanceModifier.fillMaxWidth()) {
-        SurahCard(context, surah, 44)
+        SurahCard(context, surah, 44, language)
         if (showLogo) {
           Spacer(GlanceModifier.defaultWeight())
           Logo(14)
         }
       }
       Spacer(GlanceModifier.defaultWeight())
-      Text("${lastRead?.page ?: 1}", style = TextStyle(color = WidgetColors.WHITE, fontSize = 30.sp, fontWeight = FontWeight.Bold))
-      Text(lastRead?.surahName ?: surah?.name ?: "Al-Fatihah", maxLines = 1,
+      Text(WidgetLanguage.number(strings, lastRead?.page ?: 1), style = TextStyle(color = WidgetColors.WHITE, fontSize = 30.sp, fontWeight = FontWeight.Bold))
+      Text(lastRead?.surahName ?: surah?.let { WidgetLanguage.surahName(it, language) } ?: "Al-Fatihah", maxLines = 1,
         style = TextStyle(color = WidgetColors.WHITE, fontSize = 12.sp, fontWeight = FontWeight.Bold))
-      Text(lastRead?.let { "Juz ${it.juz}" } ?: "Start reading", maxLines = 1,
+      Text(
+        lastRead?.let { strings.getString(R.string.bayaan_widget_text_juz, it.juz) } ?: strings.getString(R.string.bayaan_widget_text_start_reading),
+        maxLines = 1,
         style = TextStyle(color = WidgetColors.TERTIARY, fontSize = 11.sp))
     }
   }

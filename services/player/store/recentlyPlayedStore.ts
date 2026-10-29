@@ -3,10 +3,6 @@ import {persist} from 'zustand/middleware';
 import {Reciter, RECITERS} from '@/data/reciterData';
 import {Surah, SURAHS} from '@/data/surahData';
 import {usePlayerStore} from '@/services/player/store/playerStore';
-// @ai Qariah-only: auth-gated QF reading_session sync side-effect.
-// No-op for unauthenticated users (upstream-equivalent behavior).
-// See services/userState/syncBus.ts.
-import {enqueueReadingSessionSync} from '@/services/userState';
 import {guardedJSONStorage} from '@/services/storage/hydrationGuardedStorage';
 
 export interface RecentlyPlayedTrack {
@@ -121,7 +117,7 @@ export const useRecentlyPlayedStore = create<RecentlyPlayedState>()(
           };
         }),
 
-      startNewChain: (reciter, surah, progress, duration, rewayatId) => {
+      startNewChain: (reciter, surah, progress, duration, rewayatId) =>
         set(state => {
           const key = `${reciter.id}:${surah.id}`;
           // Remove any existing entry for this reciter (one card per reciter)
@@ -143,16 +139,7 @@ export const useRecentlyPlayedStore = create<RecentlyPlayedState>()(
             progressMap: {...state.progressMap, [key]: progress},
             durationMap: {...state.durationMap, [key]: duration},
           };
-        });
-        // @ai Qariah-only: explicit user-initiated play → mirror to QF
-        // reading_session if signed in. Auto-advance within the same reciter
-        // does NOT fire this (handled by updateActiveChain / updateProgress).
-        enqueueReadingSessionSync({
-          reciterId: reciter.id,
-          surahNumber: surah.id,
-          ayahNumber: 1,
-        });
-      },
+        }),
 
       startUploadChain: (
         reciter,

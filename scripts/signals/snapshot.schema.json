@@ -394,6 +394,29 @@
                         }
                       }
                     },
+                    "leftDuringSplash": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "installs",
+                          "platform",
+                          "build"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "installs": {
+                            "$ref": "#/$defs/cell"
+                          },
+                          "platform": {
+                            "type": "string"
+                          },
+                          "build": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
                     "crashes": {
                       "anyOf": [
                         {
@@ -641,6 +664,9 @@
                                                 "prevFrozeUsers": {
                                                   "$ref": "#/$defs/cell"
                                                 },
+                                                "backgroundUsers": {
+                                                  "$ref": "#/$defs/cell"
+                                                },
                                                 "verdict": {
                                                   "enum": [
                                                     "BETTER",
@@ -724,6 +750,9 @@
                                                   "$ref": "#/$defs/cell"
                                                 },
                                                 "prevFrozeUsers": {
+                                                  "$ref": "#/$defs/cell"
+                                                },
+                                                "backgroundUsers": {
                                                   "$ref": "#/$defs/cell"
                                                 },
                                                 "verdict": {
@@ -964,6 +993,9 @@
                                                 "prevFrozeUsers": {
                                                   "$ref": "#/$defs/cell"
                                                 },
+                                                "backgroundUsers": {
+                                                  "$ref": "#/$defs/cell"
+                                                },
                                                 "verdict": {
                                                   "enum": [
                                                     "BETTER",
@@ -1047,6 +1079,9 @@
                                                   "$ref": "#/$defs/cell"
                                                 },
                                                 "prevFrozeUsers": {
+                                                  "$ref": "#/$defs/cell"
+                                                },
+                                                "backgroundUsers": {
                                                   "$ref": "#/$defs/cell"
                                                 },
                                                 "verdict": {
@@ -6090,6 +6125,43 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "daily": {
+                      "type": "object",
+                      "required": [
+                        "from",
+                        "to",
+                        "days",
+                        "playEvents",
+                        "estDevices"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "from": {
+                          "$ref": "#/$defs/laDate"
+                        },
+                        "to": {
+                          "$ref": "#/$defs/laDate"
+                        },
+                        "days": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/laDate"
+                          }
+                        },
+                        "playEvents": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/eventCell"
+                          }
+                        },
+                        "estDevices": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/$defs/cell"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -7173,6 +7245,9 @@
                                 "prevFrozeUsers": {
                                   "$ref": "#/$defs/cell"
                                 },
+                                "backgroundUsers": {
+                                  "$ref": "#/$defs/cell"
+                                },
                                 "verdict": {
                                   "enum": [
                                     "BETTER",
@@ -7733,6 +7808,363 @@
                                     "items": {
                                       "$ref": "#/$defs/cell"
                                     }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "ok",
+                  "partial"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "not": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        },
+        "journeyByBuild": {
+          "type": "object",
+          "required": [
+            "status",
+            "source",
+            "ms",
+            "data"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "enum": [
+                "ok",
+                "partial",
+                "pending",
+                "not_configured",
+                "error"
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "error": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "data": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "definitions",
+                    "dataThrough",
+                    "launch",
+                    "productionVersion",
+                    "minInstalls",
+                    "windows"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "definitions": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "dataThrough": {
+                      "$ref": "#/$defs/laDate"
+                    },
+                    "launch": {
+                      "$ref": "#/$defs/laDate"
+                    },
+                    "productionVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "minInstalls": {
+                      "type": "integer"
+                    },
+                    "windows": {
+                      "type": "object",
+                      "required": [
+                        "d30",
+                        "launch"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "d30": {
+                          "type": "object",
+                          "required": [
+                            "from",
+                            "to",
+                            "all",
+                            "rows"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "from": {
+                              "$ref": "#/$defs/laDate"
+                            },
+                            "to": {
+                              "$ref": "#/$defs/laDate"
+                            },
+                            "all": {
+                              "type": "object",
+                              "required": [
+                                "installs",
+                                "iOS",
+                                "Android",
+                                "opened",
+                                "past_loading",
+                                "logged_in",
+                                "started",
+                                "used_it"
+                              ],
+                              "additionalProperties": false,
+                              "properties": {
+                                "installs": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "opened": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "past_loading": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "logged_in": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "started": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "used_it": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "iOS": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "Android": {
+                                  "$ref": "#/$defs/cell"
+                                }
+                              }
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "key",
+                                  "kind",
+                                  "installs",
+                                  "opened",
+                                  "past_loading",
+                                  "logged_in",
+                                  "started",
+                                  "used_it"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "build",
+                                      "beta",
+                                      "other"
+                                    ]
+                                  },
+                                  "platform": {
+                                    "enum": [
+                                      "iOS",
+                                      "Android"
+                                    ]
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  },
+                                  "build": {
+                                    "type": "string"
+                                  },
+                                  "production": {
+                                    "type": "boolean"
+                                  },
+                                  "builds": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "installs": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "opened": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "past_loading": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "logged_in": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "started": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "used_it": {
+                                    "$ref": "#/$defs/cell"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "launch": {
+                          "type": "object",
+                          "required": [
+                            "from",
+                            "to",
+                            "all",
+                            "rows"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "from": {
+                              "$ref": "#/$defs/laDate"
+                            },
+                            "to": {
+                              "$ref": "#/$defs/laDate"
+                            },
+                            "all": {
+                              "type": "object",
+                              "required": [
+                                "installs",
+                                "iOS",
+                                "Android",
+                                "opened",
+                                "past_loading",
+                                "logged_in",
+                                "started",
+                                "used_it"
+                              ],
+                              "additionalProperties": false,
+                              "properties": {
+                                "installs": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "opened": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "past_loading": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "logged_in": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "started": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "used_it": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "iOS": {
+                                  "$ref": "#/$defs/cell"
+                                },
+                                "Android": {
+                                  "$ref": "#/$defs/cell"
+                                }
+                              }
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "key",
+                                  "kind",
+                                  "installs",
+                                  "opened",
+                                  "past_loading",
+                                  "logged_in",
+                                  "started",
+                                  "used_it"
+                                ],
+                                "additionalProperties": false,
+                                "properties": {
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "enum": [
+                                      "build",
+                                      "beta",
+                                      "other"
+                                    ]
+                                  },
+                                  "platform": {
+                                    "enum": [
+                                      "iOS",
+                                      "Android"
+                                    ]
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  },
+                                  "build": {
+                                    "type": "string"
+                                  },
+                                  "production": {
+                                    "type": "boolean"
+                                  },
+                                  "builds": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "installs": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "opened": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "past_loading": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "logged_in": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "started": {
+                                    "$ref": "#/$defs/cell"
+                                  },
+                                  "used_it": {
+                                    "$ref": "#/$defs/cell"
                                   }
                                 }
                               }

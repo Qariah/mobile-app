@@ -14,17 +14,8 @@ import ActionSheet, {
 } from 'react-native-actions-sheet';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
-import type {VerseNote} from '@/types/verse-annotations';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
 import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
-import {useAuthStatus} from '@/services/auth/AuthContext';
-import {
-  pushEditOfUnlinkedNoteToQf,
-  pushLocalNoteToQf,
-  setNotePublishState,
-  syncDeleteToQf,
-} from '@/services/userState/notesSync';
-import * as qfNotes from '@/services/userState/notes';
 import SkiaVersePreview from '@/components/share/SkiaVersePreview';
 // @ai-start
 import {useTranslation} from 'react-i18next';
@@ -44,18 +35,14 @@ import {
 } from '@/components/share/useVerseSelection';
 import {addSelectionNote} from './verse-actions/selectionAnnotations';
 // @ai-end
-// @ai Qariah (TECH_DEBT #297): note analytics, one call per user action.
-import {
-  trackVerseNoteCreated,
-  trackVerseNoteDeleted,
-  versesOfSaved,
-} from '@/services/analytics/verseAnnotationEvents';
+import {useQariahNoteEditor} from '@/components/notes/useQariahNoteEditor';
+import {QariahPublishHint} from '@/components/notes/QariahPublishHint';
 
 // @ai-start
 export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const {t} = useTranslation(['sheets', 'qariah']);
+  const {t} = useTranslation('sheets');
 
   const verseKey = props.payload?.verseKey ?? '';
   const surahNumber = props.payload?.surahNumber ?? 0;
@@ -68,12 +55,9 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
 
   const [noteText, setNoteText] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
-  const [loadedNote, setLoadedNote] = useState<VerseNote | null>(null);
-  const [publish, setPublish] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const authStatus = useAuthStatus();
-  const signedIn = authStatus === 'authenticated';
+  // Qariah: QF note sync and the Reflection state (components/notes).
+  const qariah = useQariahNoteEditor({source: 'VerseNoteSheet'});
+  const {onNoteLoaded} = qariah;
   // @ai-start
   // An existing note opened from the Notes list carries no rewayah in the
   // payload; preview it in the rewayah it was saved in (legacy notes without
@@ -201,109 +185,49 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
         .getNoteById(noteId)
         .then(note => {
           if (note) {
-            setLoadedNote(note);
+            onNoteLoaded(note); // Qariah
             setNoteText(note.content);
             setIsEditMode(true);
             setSavedNoteRewayah(note.rewayahId ?? undefined);
             setSavedNoteKeys(note.verseKeys);
-            // Seed the publish state from the persisted note — a note
-            // with a qfPostId is currently a Reflection.
-            setPublish(!!note.qfPostId);
           }
         })
         .finally(() => setNoteLoaded(true));
       // @ai-end
     }
-  }, [verseKey, noteId]);
+  }, [verseKey, noteId, onNoteLoaded]);
 
   const handleSave = useCallback(async () => {
-    if (!noteText.trim() || saving) return;
-    setSaving(true);
+    if (!noteText.trim()) return;
 
-    // Qariah (Sprint 21 round-5.4): the QF round-trips run in the background
-    // so the sheet closes at once — QF's publish and update endpoints can
-    // take 15-20 seconds. Only the local SQLite writes are awaited.
-    const pushNewNote = (localNote: VerseNote | null) => {
-      if (!signedIn || !localNote) return;
-      pushLocalNoteToQf(localNote, {publish}).catch(err => {
-        if (__DEV__) console.warn('[VerseNoteSheet] QF push failed', err);
-      });
-    };
-    let close = true;
-    try {
-      if (isEditMode && noteId) {
-        const trimmed = noteText.trim();
-        await verseAnnotationService.updateNote(noteId, trimmed);
-
-        if (signedIn && loadedNote?.qfNoteId) {
-          (async () => {
-            try {
-              if (loadedNote.content !== trimmed) {
-                await qfNotes.updateNote(loadedNote.qfNoteId!, {body: trimmed});
-              }
-              await setNotePublishState(
-                {...loadedNote, content: trimmed},
-                publish,
-              );
-            } catch (err) {
-              if (__DEV__)
-                console.warn(
-                  '[VerseNoteSheet] QF body update or publish toggle failed',
-                  err,
-                );
-            }
-          })();
-        } else if (signedIn && loadedNote && !loadedNote.qfNoteId) {
-          // A note made before sign-in, or a reflection from the posts
-          // pull (H3, TECH_DEBT #244). The helper edits the existing
-          // public post instead of making a second one. // @ai
-          (async () => {
-            try {
-              const refreshed =
-                await verseAnnotationService.getNoteById(noteId);
-              if (refreshed) {
-                await pushEditOfUnlinkedNoteToQf(loadedNote, refreshed, {
-                  publish,
-                }); // @ai
-              }
-            } catch (err) {
-              if (__DEV__)
-                console.warn('[VerseNoteSheet] late QF push failed', err);
-            }
-          })();
-        }
-      } else if (isHafsNote || !noteRewayah) {
-        const allKeys = isRange ? verseKeys : [verseKey];
-        const localNote = await verseAnnotationService.addNote(
-          verseKey,
-          surahNumber,
-          ayahNumber,
-          noteText.trim(),
-          isRange ? verseKeys : undefined,
-          rewayah,
-        );
-        const store = useVerseAnnotationsStore.getState();
-        for (const vk of allKeys) {
-          store.addNote(vk, rewayah); // @ai: the rewayah the row is saved in
-        }
-        trackVerseNoteCreated({keys: allKeys, rewayahId: noteRewayah}); // @ai
-        pushNewNote(localNote);
-      } else {
-        // @ai-start
-        // Another rewayah: stored by its verses' Hafs anchors (verse-units
-        // contract section 3), verse_keys = every anchor of a range.
-        const ready = await requireSelection('saved');
-        if (!ready || ready.anchors.length === 0) {
-          close = false;
-          return;
-        }
-        pushNewNote(await addSelectionNote(ready, noteText.trim()));
-        // @ai-end
+    if (isEditMode && noteId) {
+      await verseAnnotationService.updateNote(noteId, noteText.trim());
+      qariah.onNoteUpdated(noteId, noteText.trim());
+    } else if (isHafsNote || !noteRewayah) {
+      const allKeys = isRange ? verseKeys : [verseKey];
+      const localNote = await verseAnnotationService.addNote(
+        verseKey,
+        surahNumber,
+        ayahNumber,
+        noteText.trim(),
+        isRange ? verseKeys : undefined,
+        rewayah,
+      );
+      const store = useVerseAnnotationsStore.getState();
+      for (const vk of allKeys) {
+        store.addNote(vk, rewayah); // @ai: the rewayah the row is saved in
       }
-    } finally {
-      setSaving(false);
-      if (close) SheetManager.hideAll();
+      qariah.onNoteCreated(localNote, {keys: allKeys, rewayahId: noteRewayah});
+    } else {
+      // @ai-start
+      // Another rewayah: stored by its verses' Hafs anchors (verse-units
+      // contract section 3), verse_keys = every anchor of a range.
+      const ready = await requireSelection('saved');
+      if (!ready || ready.anchors.length === 0) return;
+      qariah.onNoteCreated(await addSelectionNote(ready, noteText.trim()));
+      // @ai-end
     }
+    SheetManager.hideAll();
   }, [
     verseKey,
     verseKeys,
@@ -317,33 +241,23 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
     isHafsNote, // @ai
     noteRewayah, // @ai
     requireSelection, // @ai
-    signedIn,
-    loadedNote,
-    publish,
-    saving,
+    qariah, // @ai
   ]);
 
   const handleDelete = useCallback(async () => {
     if (!noteId) return;
-    // Qariah: best-effort QF delete first — the local delete is
-    // authoritative either way.
-    if (loadedNote) {
-      await syncDeleteToQf(loadedNote);
-    }
+    await qariah.beforeDelete(); // Qariah: QF delete first
     await verseAnnotationService.deleteNoteById(noteId);
-    // @ai Qariah (TECH_DEBT #297): the note's own verses, else the payload's.
-    trackVerseNoteDeleted(
-      loadedNote ? versesOfSaved(loadedNote) : {keys: [verseKey]},
-    );
+    qariah.afterDelete(verseKey); // Qariah: TECH_DEBT #297
     const remaining =
       await verseAnnotationService.getNotesCountForVerse(verseKey);
     if (remaining === 0) {
       useVerseAnnotationsStore.getState().removeNote(verseKey);
     }
     SheetManager.hideAll();
-  }, [verseKey, noteId, loadedNote]);
+  }, [verseKey, noteId, qariah]);
 
-  const canSave = noteText.trim().length > 0 && !saving;
+  const canSave = noteText.trim().length > 0 && !qariah.saving;
 
   return (
     <ActionSheet
@@ -392,28 +306,17 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
           autoFocus
         />
 
-        {/* Qariah (Sprint 21 round-4) — the long-press entry point defines
-            the note type. For an existing Reflection a static hint says
-            the save will republish + update QuranReflect. */}
-        {publish && signedIn ? (
-          <View style={styles.publishHint}>
-            <Feather
-              name="users"
-              size={moderateScale(14)}
-              color={theme.colors.textSecondary}
-            />
-            <Text style={styles.publishHintText}>
-              {t('qariah:note.publishingHint')}
-            </Text>
-          </View>
-        ) : null}
+        <QariahPublishHint
+          visible={qariah.publishing}
+          marginBottom={verticalScale(14)}
+        />
 
         <Pressable
           style={[styles.saveButton, !canSave && styles.saveButtonDisabled]}
-          onPress={handleSave}
+          onPress={() => qariah.guardSave(noteText, handleSave)}
           disabled={!canSave}>
           <Feather
-            name={publish && signedIn ? 'users' : 'save'}
+            name={qariah.saveIcon}
             size={moderateScale(18)}
             color={canSave ? theme.colors.text : theme.colors.textSecondary}
           />
@@ -422,16 +325,8 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
               styles.saveButtonText,
               !canSave && styles.saveButtonTextDisabled,
             ]}>
-            {/* @ai Qariah (QF sync): Reflection labels and the saving state. */}
-            {saving
-              ? t('qariah:note.saving')
-              : isEditMode
-                ? publish && signedIn
-                  ? t('qariah:note.updateReflection')
-                  : t('note.update')
-                : publish && signedIn
-                  ? t('qariah:verseActions.publishReflection')
-                  : t('note.save')}
+            {qariah.saveLabel(isEditMode) ??
+              (isEditMode ? t('note.update') : t('note.save'))}
           </Text>
         </Pressable>
 
@@ -482,25 +377,6 @@ const createStyles = (theme: Theme) =>
       borderRadius: moderateScale(12),
       padding: moderateScale(16),
       marginBottom: verticalScale(16),
-    },
-    publishHint: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: moderateScale(8),
-      backgroundColor: Color(theme.colors.text).alpha(0.04).toString(),
-      borderRadius: moderateScale(12),
-      borderWidth: 1,
-      borderColor: Color(theme.colors.text).alpha(0.06).toString(),
-      paddingVertical: moderateScale(10),
-      paddingHorizontal: moderateScale(14),
-      marginBottom: verticalScale(14),
-    },
-    publishHintText: {
-      flex: 1,
-      fontSize: moderateScale(12),
-      lineHeight: moderateScale(17),
-      fontFamily: theme.fonts.regular,
-      color: theme.colors.textSecondary,
     },
     textInput: {
       backgroundColor: theme.colors.card,

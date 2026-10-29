@@ -111,10 +111,7 @@ export function defaultDeps(): CommandDeps {
       // replace the source after we start playing.
       await pendingRestoreLoad();
       const store = usePlayerStore.getState();
-      // @ai Qariah (TECH_DEBT #285): play the source that the player holds.
-      // Android reports isLoaded false while the player buffers, also just
-      // after the restore's seek to the saved position. The reload below then
-      // replaced the held source and started it at the store position.
+      // @ai Qariah (TECH_DEBT #285): play the held source. Android reports isLoaded false while it buffers.
       const current = store.queue.tracks[store.queue.currentIndex];
       if (current?.url && expoAudioService.holdsSource(current.url)) {
         await store.play();

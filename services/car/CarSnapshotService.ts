@@ -30,10 +30,7 @@ import {waitForSessionRestored} from '@/services/car/sessionGate';
 const DEBOUNCE_MS = 2000;
 const MAX_WAIT_MS = 10_000;
 const CONNECTED_REFRESH_MS = 15 * 60 * 1000;
-// @ai Qariah (Sprint 46): the longest the first write waits for the session
-// restore (see startCarSnapshotService). The same as the bridge's
-// SESSION_RESTORE_TIMEOUT_MS, so a restore that never reports does not delay
-// markJsReady() any longer than before.
+// @ai Qariah: the longest the first write waits for the session restore (= SESSION_RESTORE_TIMEOUT_MS).
 const FIRST_WRITE_SESSION_WAIT_MS = 5_000;
 /** How far back "On repeat" looks. */
 const ON_REPEAT_WINDOW_DAYS = 30;
@@ -209,10 +206,7 @@ export interface CarSnapshotService {
  * before loading, load them here; the store subscription rebuilds after.
  */
 function ensureUploadsLoaded(): void {
-  // @ai Qariah (Sprint 46, Pass B review M1): with user uploads off, the
-  // snapshot hides the Uploads row (`uploadsEnabled`), so a load here only
-  // opens the uploads DB at every cold start. That undoes the S38.2 boot skip
-  // (`deferNonCriticalBootServices`, services/qariahInitConfig.ts).
+  // @ai Qariah: with uploads off, a load here only opens the uploads DB at each cold start.
   if (!isFeatureEnabled('userUploads')) return;
   const uploads = useUploadsStore.getState();
   if (!uploads.loading || uploads.isLoading) return;
@@ -284,13 +278,7 @@ export function startCarSnapshotService(): CarSnapshotService {
     }),
     () => appStateSub.remove(),
   ];
-  // @ai Qariah (Sprint 46, Pass B review): the first write waits for the
-  // restored session, the last step of the boot. It reads every playlist's
-  // items and builds a large JSON, which competed with restoreSession() and
-  // the first render at every cold start, with no car connected. The car
-  // bridge already waits for the same session restore before markJsReady(),
-  // so a car start is not slower. The timeout keeps the write if the restore
-  // never reports.
+  // @ai Qariah: the first write waits for the session restore, so it does not slow each cold start.
   const ready = waitForSessionRestored(FIRST_WRITE_SESSION_WAIT_MS)
     .then(() => writeCarSnapshotNow())
     .catch(() => schedule());

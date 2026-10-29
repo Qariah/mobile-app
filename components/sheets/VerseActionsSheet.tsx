@@ -4,7 +4,7 @@ import {
   Text,
   Pressable,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions, // @ai
   BackHandler,
   Platform,
   LayoutAnimation,
@@ -12,9 +12,7 @@ import {
   ActivityIndicator, // @ai
   type StyleProp, // @ai
   type ViewStyle, // @ai
-  Alert,
 } from 'react-native';
-import {useAuthStatus} from '@/services/auth/AuthContext';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
@@ -26,10 +24,6 @@ import ActionSheet, {
 import {Feather, MaterialCommunityIcons} from '@expo/vector-icons';
 import {useVerseSelectionStore} from '@/store/verseSelectionStore';
 import {useMushafVerseSelectionStore} from '@/store/mushafVerseSelectionStore';
-import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
-import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
-import {syncDeleteToQf} from '@/services/userState/notesSync';
-import type {VerseNote} from '@/types/verse-annotations';
 import {qulDataService} from '@/services/mushaf/QulDataService';
 import {useMushafPlayerStore} from '@/store/mushafPlayerStore';
 import {digitalKhattDataService} from '@/services/mushaf/DigitalKhattDataService';
@@ -106,17 +100,14 @@ import {flipX} from '@/utils/rtl';
 // @ai-end
 import {CommunityReflectionsContent} from './verse-actions/CommunityReflectionsContent';
 import {isFeatureEnabled} from '@/config/featureFlags';
-import {
-  trackVerseNoteDeleted,
-  versesOfSaved,
-} from '@/services/analytics/verseAnnotationEvents'; // @ai TECH_DEBT #297
+import {useQariahVerseNotes} from '@/components/notes/useQariahVerseNotes';
+import {QariahVerseNoteRows} from '@/components/notes/QariahVerseNoteRows';
 
 const surahData = require('@/data/surahData.json');
 
 type ActiveScreen =
   | 'highlight'
   | 'note'
-  | 'reflection'
   | 'share'
   | 'similar'
   | 'phrases'
@@ -141,15 +132,6 @@ const SCREEN_TITLE_KEYS = {
   'community-reflections': 'verseActions.communityReflections',
 } as const;
 // @ai-end
-
-// @ai Qariah (Sprint 21 round-3): Personal Notes and Reflections screens.
-// These title keys win over SCREEN_TITLE_KEYS; `t()` resolves them at render.
-const QARIAH_SCREEN_TITLE_KEYS = {
-  note: 'qariah:verseActions.addPersonalNote',
-  reflection: 'qariah:verseActions.publishReflection',
-} as const;
-
-const SHEET_HEIGHT = Dimensions.get('window').height * 0.85;
 
 // Enable LayoutAnimation on Android
 if (
@@ -216,8 +198,9 @@ const pendingStyles = StyleSheet.create({
 
 export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   const {theme} = useTheme();
+  const {height: windowHeight} = useWindowDimensions(); // @ai TECH_DEBT #278
   const styles = createStyles(theme);
-  const {t} = useTranslation(['sheets', 'common', 'qariah']);
+  const {t} = useTranslation(['sheets', 'common']);
   const [activeScreen, setActiveScreenRaw] = useState<ActiveScreen>(null);
 
   const setActiveScreen = useCallback((screen: ActiveScreen) => {
@@ -342,62 +325,6 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   );
   // @ai-end
 
-  // Qariah (Sprint 21 round-3) — Personal Notes (private) and Reflections
-  // (published to QuranReflect) are two entry points on the same note rows,
-  // partitioned by qf_post_id. A single verse's notes are stored at its
-  // anchor (upstream verse units: "S:A", or "S:A:W" for part of a split Hafs
-  // verse) or, for a row saved before verse units, at the payload's Hafs
-  // key. Hafs: both are the verse key.
-  const noteKeys = useMemo(() => {
-    if (isRange || !verseKey) return [];
-    const anchor = readySelection?.anchors[0]?.key;
-    return [...new Set(anchor ? [anchor, verseKey] : [verseKey])];
-  }, [isRange, verseKey, readySelection]);
-  const getVerseNotes = useCallback(async (): Promise<VerseNote[]> => {
-    const lists = await Promise.all(
-      noteKeys.map(key => verseAnnotationService.getNotesForVerse(key)),
-    );
-    const byId = new Map<string, VerseNote>();
-    for (const list of lists) for (const note of list) byId.set(note.id, note);
-    return [...byId.values()];
-  }, [noteKeys]);
-
-  // One-shot fetch at sheet open; the sheet dismisses on save and the next
-  // open re-fetches.
-  const [personalNoteId, setPersonalNoteId] = useState<string | null>(null);
-  const [reflectionNoteId, setReflectionNoteId] = useState<string | null>(null);
-  useEffect(() => {
-    if (noteKeys.length === 0) {
-      setPersonalNoteId(null);
-      setReflectionNoteId(null);
-      return;
-    }
-    let cancelled = false;
-    getVerseNotes()
-      .then(list => {
-        if (cancelled) return;
-        const reflection = list.find(n => n.qfPostId) ?? null;
-        const personal = list.find(n => !n.qfPostId) ?? null;
-        setReflectionNoteId(reflection?.id ?? null);
-        setPersonalNoteId(personal?.id ?? null);
-      })
-      .catch(() => {
-        // A failed read leaves the Add rows; the handlers read again on tap.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [noteKeys, getVerseNotes]);
-  const hasPersonalNote = !!personalNoteId;
-  const hasReflection = !!reflectionNoteId;
-
-  const authStatus = useAuthStatus();
-  const signedIn = authStatus === 'authenticated';
-  // `authStatus` is `'loading'` during the cold-start token refresh; only
-  // the explicit `'unauthenticated'` state triggers the sign-in Alert, so a
-  // `'loading'` tap is a no-op (Sprint 26 PR #42 code review).
-  const authUnsettled = authStatus === 'loading';
-
   const handleToggleBookmark = useCallback(async () => {
     lightHaptics();
     // @ai-start
@@ -445,112 +372,17 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
     // @ai-end
   }, [readySelection, isHighlighted, hideCurrentSheet]);
 
-  // Qariah: open a saved note in the note sheet, named by its own stored
-  // anchors and rewayah (as the Notes collection opens it).
-  const openSavedNote = useCallback(
-    async (note: VerseNote) => {
-      await SheetManager.hide(props.sheetId);
-      SheetManager.show('verse-note', {
-        payload: {
-          verseKey: note.verseKey,
-          surahNumber: note.surahNumber,
-          ayahNumber: note.ayahNumber,
-          verseKeys: note.verseKeys,
-          noteId: note.id,
-          rewayah: note.rewayahId ?? 'hafs',
-        },
-      });
-    },
-    [props.sheetId],
-  );
-
-  /**
-   * Qariah: re-fetch the notes inside the handler (not the effect's state)
-   * so a tap before the lookup resolves never falls through to the Add path
-   * and creates a duplicate local row + QF post (sprint-20 round-2 bug A).
-   */
-  const handlePersonalNote = useCallback(async () => {
-    const personal = (await getVerseNotes()).find(n => !n.qfPostId);
-    if (personal?.id) {
-      await openSavedNote(personal);
-      return;
-    }
+  const handleNote = useCallback(() => {
     setActiveScreen('note');
-  }, [getVerseNotes, openSavedNote, setActiveScreen]);
-
-  const handleReflection = useCallback(async () => {
-    // Reflections publish to QuranReflect under the reader's name, so they
-    // need a Quran Foundation sign-in before the editor opens (Sprint 26).
-    if (authUnsettled) {
-      // Auth still loading — the reader is likely signed in. Bail silently.
-      return;
-    }
-    if (!signedIn) {
-      await SheetManager.hide(props.sheetId);
-      Alert.alert(
-        t('qariah:verseActions.signInToPublishTitle'),
-        t('qariah:verseActions.signInToPublishBody'),
-        [
-          {text: t('common:actions.cancel'), style: 'cancel'},
-          {
-            text: t('qariah:verseActions.signInButton'),
-            onPress: () => router.push('/(d.settings)/sign-in'),
-          },
-        ],
-      );
-      return;
-    }
-    const reflection = (await getVerseNotes()).find(n => n.qfPostId);
-    if (reflection?.id) {
-      await openSavedNote(reflection);
-      return;
-    }
-    setActiveScreen('reflection');
-  }, [
-    authUnsettled,
-    signedIn,
-    getVerseNotes,
-    openSavedNote,
-    props.sheetId,
-    setActiveScreen,
-    t,
-  ]);
-
-  /**
-   * Qariah: delete this verse's Personal Notes (or Reflections), keeping the
-   * other kind. The QF delete goes first so a fresh-install restore does not
-   * pull the note back (sprint-20 round-2 bug B). The store's note mark goes
-   * only when no row remains at a key.
-   */
-  const removeVerseNotes = useCallback(
-    async (published: boolean) => {
-      if (noteKeys.length === 0) return;
-      lightHaptics();
-      const notes = await getVerseNotes();
-      for (const n of notes.filter(note => !!note.qfPostId === published)) {
-        // syncDeleteToQf deletes the QF note, and its QuranReflect post.
-        await syncDeleteToQf(n);
-        await verseAnnotationService.deleteNoteById(n.id);
-        trackVerseNoteDeleted(versesOfSaved(n)); // @ai TECH_DEBT #297
-      }
-      const store = useVerseAnnotationsStore.getState();
-      for (const key of noteKeys) {
-        if ((await verseAnnotationService.getNotesCountForVerse(key)) === 0) {
-          store.removeNote(key);
-        }
-      }
-      await SheetManager.hide(props.sheetId);
-    },
-    [noteKeys, getVerseNotes, props.sheetId],
-  );
-  const handleRemovePersonalNote = useCallback(
-    () => removeVerseNotes(false),
-    [removeVerseNotes],
-  );
-  const handleRemoveReflection = useCallback(
-    () => removeVerseNotes(true),
-    [removeVerseNotes],
-  );
+  }, []);
+  // @ai Qariah: Personal Notes and Reflections (components/notes).
+  const qariahNotes = useQariahVerseNotes({
+    sheetId: props.sheetId,
+    verseKey,
+    isRange,
+    selection: readySelection,
+    openEditor: handleNote,
+  });
 
   // @ai-start
   const handleCopy = useCallback(async () => {
@@ -922,7 +754,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
       id={props.sheetId}
       containerStyle={[
         styles.sheetContainer,
-        activeScreen && {height: SHEET_HEIGHT},
+        activeScreen && {height: windowHeight * 0.85}, // @ai
       ]}
       indicatorStyle={activeScreen ? {height: 0} : styles.indicator}
       gestureEnabled={true}
@@ -952,15 +784,8 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                   style={flipX}
                 />
                 <Text style={styles.backRowText}>
-                  {t(
-                    QARIAH_SCREEN_TITLE_KEYS[
-                      activeScreen as keyof typeof QARIAH_SCREEN_TITLE_KEYS
-                    ] ??
-                      SCREEN_TITLE_KEYS[
-                        activeScreen as keyof typeof SCREEN_TITLE_KEYS
-                      ] ??
-                      'common:actions.back',
-                  )}
+                  {qariahNotes.screenTitle(activeScreen) ??
+                    t(SCREEN_TITLE_KEYS[activeScreen] ?? 'common:actions.back')}
                 </Text>
               </Pressable>
               {(activeScreen === 'translation' ||
@@ -1057,15 +882,13 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                       onDone={handleDismiss}
                     />
                   )}
-                {isFeatureEnabled('verseNotes') &&
-                  (activeScreen === 'note' ||
-                    activeScreen === 'reflection') && (
-                    <NoteContent
-                      selection={readySelection}
-                      defaultPublish={activeScreen === 'reflection'}
-                      onDone={handleDismiss}
-                    />
-                  )}
+                {activeScreen === 'note' && (
+                  <NoteContent
+                    selection={readySelection}
+                    defaultPublish={qariahNotes.editorPublish}
+                    onDone={handleDismiss}
+                  />
+                )}
                 {activeScreen === 'share' && (
                   <ShareContent
                     verseKey={verseKey}
@@ -1191,95 +1014,26 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                   </Pressable>
                 </>
               )}
-              {/* Qariah (Sprint 21 round-3) — Personal Notes (private, not
-                  synced to QuranReflect) and Reflections (published to QF /
-                  QuranReflect) are two entry points on the same note rows,
-                  partitioned by qf_post_id. */}
-              {isFeatureEnabled('verseNotes') && (
-                <>
-                  <View style={styles.divider} />
-                  <Pressable
-                    style={({pressed}) => [
-                      styles.option,
-                      pressed && styles.optionPressed,
-                    ]}
-                    onPress={handlePersonalNote}>
-                    <PageQuillIcon
-                      size={moderateScale(18)}
-                      color={theme.colors.text}
-                    />
-                    <Text style={styles.optionText}>
-                      {hasPersonalNote && !isRange
-                        ? t('qariah:verseActions.editPersonalNote')
-                        : t('qariah:verseActions.addPersonalNote')}
-                    </Text>
-                  </Pressable>
-                  {hasPersonalNote && !isRange ? (
-                    <>
-                      <View style={styles.divider} />
-                      <Pressable
-                        style={({pressed}) => [
-                          styles.option,
-                          pressed && styles.optionPressed,
-                        ]}
-                        onPress={handleRemovePersonalNote}>
-                        <Feather
-                          name="minus-circle"
-                          size={moderateScale(18)}
-                          color={theme.colors.text}
-                        />
-                        <Text style={styles.optionText}>
-                          {t('qariah:verseActions.removePersonalNote')}
-                        </Text>
-                      </Pressable>
-                    </>
-                  ) : null}
-                </>
-              )}
-              {/* Reflection entry — published to QuranReflect on save.
-                  Hidden for ranges (QR API takes a single verseKey). */}
-              {isFeatureEnabled('verseNotes') && !isRange ? (
-                <>
-                  <View style={styles.divider} />
-                  <Pressable
-                    style={({pressed}) => [
-                      styles.option,
-                      pressed && styles.optionPressed,
-                    ]}
-                    onPress={handleReflection}>
-                    <Feather
-                      name="users"
-                      size={moderateScale(18)}
-                      color={theme.colors.text}
-                    />
-                    <Text style={styles.optionText}>
-                      {hasReflection
-                        ? t('qariah:verseActions.editReflection')
-                        : t('qariah:verseActions.publishReflection')}
-                    </Text>
-                  </Pressable>
-                  {hasReflection ? (
-                    <>
-                      <View style={styles.divider} />
-                      <Pressable
-                        style={({pressed}) => [
-                          styles.option,
-                          pressed && styles.optionPressed,
-                        ]}
-                        onPress={handleRemoveReflection}>
-                        <Feather
-                          name="minus-circle"
-                          size={moderateScale(18)}
-                          color={theme.colors.text}
-                        />
-                        <Text style={styles.optionText}>
-                          {t('qariah:verseActions.removeReflection')}
-                        </Text>
-                      </Pressable>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
+              <View style={styles.divider} />
+              <Pressable
+                style={({pressed}) => [
+                  styles.option,
+                  pressed && styles.optionPressed,
+                ]}
+                onPress={qariahNotes.onPersonalNote}>
+                <PageQuillIcon
+                  size={moderateScale(18)}
+                  color={theme.colors.text}
+                />
+                <Text style={styles.optionText}>
+                  {qariahNotes.personalNoteLabel}
+                </Text>
+              </Pressable>
+              <QariahVerseNoteRows
+                notes={qariahNotes}
+                styles={styles}
+                iconColor={theme.colors.text}
+              />
             </View>
 
             {/* EXPLORE */}
@@ -1357,9 +1111,9 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 </>
               ) : null}
               {/* RFC-018 — Community Reflections row. Gated on a fork wiring
-               * branding.communityReflectionsProvider (so Bayaan never shows
-               * it) and single-ayah selection. Same predicate as the inline
-               * slot + settings toggle; no new seam. */}
+                  branding.communityReflectionsProvider (so Bayaan never shows
+                  it) and single-ayah selection. Same predicate as the inline
+                  slot + settings toggle; no new seam. */}
               {branding.communityReflectionsProvider && !isRange ? (
                 <>
                   <View style={styles.divider} />

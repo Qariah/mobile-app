@@ -1,5 +1,11 @@
 import React, {useState} from 'react';
-import {View, Text, Pressable, Dimensions, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+} from 'react-native';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
 import ActionSheet, {
@@ -21,7 +27,8 @@ import {getStyleLabel} from './sheetLabels';
 // @ai-start
 export const RewayatInfoSheet = (props: SheetProps<'rewayat-info'>) => {
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation('sheets');
   const [, setIsExpanded] = useState(false);
 
@@ -113,16 +120,14 @@ export const RewayatInfoSheet = (props: SheetProps<'rewayat-info'>) => {
 };
 // @ai-end
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 // @ai-start
-const createStyles = (theme: Theme) =>
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       borderTopLeftRadius: moderateScale(20),
       borderTopRightRadius: moderateScale(20),
       paddingTop: moderateScale(8),
-      height: SCREEN_HEIGHT * 0.85,
+      height: screenHeight * 0.85,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderLeftWidth: StyleSheet.hairlineWidth,
       borderRightWidth: StyleSheet.hairlineWidth,

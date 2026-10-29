@@ -21,6 +21,16 @@
 // + 2027 (3.2.1, staged). The old card counted the release 3.2.1 only, so it
 // left out the 1165 weekly Android users still on 3.2.0. ACTIVE and USE count
 // every version: a person active on an old build is still active.
+//
+// A build with `anrScore: false` in card.builds still counts for people, the
+// journey and FAILURES, but it stays out of Google's score: the Play ANR rate
+// pooled over the Android codes (anrScoreBuilds). On 2026-10-25 the owner
+// brought back 3.2.0 (1717), first out of the score, then in it.
+//
+// WINDOWS (since 2026-10-24). The journey lines of FAILURES count the last 7
+// days, the crash lines 14 days. FREEZES (ANR) counts cardBuilds and the
+// older builds that still have users (anr-card.mjs weekReleases), because
+// cardBuilds drops the old build when a rollout completes.
 
 export const WIDTH = 44; // the card's phone width
 
@@ -39,7 +49,11 @@ export function cardBuilds(cfg) {
   const listed = cfg && cfg.card && cfg.card.builds;
   if (Array.isArray(listed) && listed.length)
     return listed
-      .map(b => ({platform: b.platform, ...parseRelease(b.release)}))
+      .map(b => ({
+        platform: b.platform,
+        ...parseRelease(b.release),
+        ...(b.anrScore === false ? {anrScore: false} : {}),
+      }))
       .filter(
         b => b.build && (b.platform === 'iOS' || b.platform === 'Android'),
       );
@@ -50,6 +64,10 @@ export function cardBuilds(cfg) {
   if (android) out.push({platform: 'Android', ...android});
   return out;
 }
+
+/** The builds of Google's score (the Play ANR rate): cardBuilds less `anrScore: false`. */
+export const anrScoreBuilds = cfg =>
+  cardBuilds(cfg).filter(b => b.anrScore !== false);
 
 /** One line for each platform: `iOS 1718 (3.2.1)`, `Android 1717 (3.2.0), 2027 (3.2.1)`. */
 export function buildLines(builds) {
@@ -93,6 +111,7 @@ export function renderHeader({
   date,
   weekday,
   windowLabel,
+  windowEnd,
   builds,
   ios,
   android,
@@ -102,6 +121,8 @@ export function renderHeader({
   for (const l of buildLines(builds)) L.push(...wrap(`  ${l}`, WIDTH, '    '));
   L.push('Active and use: all versions');
   L.push('Never counted: lab devices');
+  // Since 2026-10-25 the PostHog numbers end at a fixed time (daily-card.mjs AT).
+  if (windowEnd) L.push(`Counts end ${windowEnd} Los Angeles time`);
   if (ios || android) {
     L.push('', 'Rollout');
     if (ios) L.push(...wrap(`  iOS ${ios}`, WIDTH, '    '));
@@ -136,7 +157,7 @@ export function renderJourney({total, byPlatform, installed, steps}) {
 const cell = (v, w) => String(v == null ? '—' : v).padStart(w);
 
 /**
- * ACTIVE: unique people in the trailing 24 h, 7 days and 30 days, ending now,
+ * ACTIVE: unique people in the trailing 24 h, 7 days and 30 days, ending at the card's window end (11:00 LA),
  * a day ago and two days ago. rows: [{label, dau, wau, mau}] or null.
  */
 export function renderActive(rows) {

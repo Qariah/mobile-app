@@ -10,15 +10,13 @@ import {
 import {useTheme} from '@/hooks/useTheme';
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useLocalSearchParams, useRouter} from 'expo-router';
+import {useRouter} from 'expo-router';
 import {useFocusEffect} from 'expo-router';
 import {moderateScale} from 'react-native-size-matters';
 import {Feather} from '@expo/vector-icons';
 import {ListRenderItem} from 'react-native';
 import {getSurahById} from '@/services/dataService';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
-import {syncDeleteToQf} from '@/services/userState/notesSync';
-import {syncQfPostsToLocal} from '@/services/userState/postsRestore';
 import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
 import {NoteItem} from '@/components/collection/NoteItem';
 import {CollectionStickyHeader} from '@/components/collection/CollectionStickyHeader';
@@ -26,7 +24,6 @@ import {SheetManager} from 'react-native-actions-sheet';
 import Color from 'color';
 import {useCollectionNativeHeader} from '@/hooks/useCollectionNativeHeader';
 import type {VerseNote} from '@/types/verse-annotations';
-import {isFeatureEnabled} from '@/config/featureFlags';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 import i18n from '@/i18n';
@@ -34,11 +31,9 @@ import {getSurahDisplayName} from '@/i18n/format';
 import {flipX} from '@/utils/rtl';
 import {describeSavedVerseNow} from '@/hooks/useSavedVerseDescription';
 import {savedVerseSubtitle} from '@/services/verse-annotations/unitAnnotations';
-import {
-  trackVerseNoteDeleted,
-  versesOfSaved,
-} from '@/services/analytics/verseAnnotationEvents'; // @ai TECH_DEBT #297
 // @ai-end
+import {useQariahNotesView} from '@/components/notes/useQariahNotesView';
+import {afterNoteDelete, beforeNoteDelete} from '@/components/notes/qfNoteSync';
 
 interface NoteData {
   note: VerseNote;
@@ -46,33 +41,20 @@ interface NoteData {
 }
 
 // @ai-start
-// The flag check is in the outer component. The inner component calls its
-// hooks on every render, so the rules of hooks hold (TECH_DEBT #236).
-const NotesScreenContent = () => {
+const NotesScreen = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const {t} = useTranslation(['collection', 'common', 'qariah']);
-
-  // Sprint 21 round-3 — `?type=personal` or `?type=reflection` partitions
-  // the list into the two collection surfaces (Personal Notes vs
-  // Reflections). Omitted/unrecognized → falls back to Personal so the
-  // screen never lands empty by default.
-  const params = useLocalSearchParams<{type?: string}>();
-  const viewMode: 'personal' | 'reflection' =
-    params.type === 'reflection' ? 'reflection' : 'personal';
-  const isReflectionView = viewMode === 'reflection';
-  // @ai Qariah copy (Sprint 21 Personal Notes / Reflections split).
-  const screenTitle = isReflectionView
-    ? t('qariah:notes.reflections')
-    : t('qariah:notes.personalNotes');
+  const {t} = useTranslation(['collection', 'common']);
+  // Qariah: the Personal Notes or Reflections view (components/notes).
+  const {notesView, filterNotes, backfillOnFocus} = useQariahNotesView();
 
   const [notes, setNotes] = useState<NoteData[]>([]);
   const [loading, setLoading] = useState(true);
   const scrollY = useRef(new RNAnimated.Value(0)).current;
 
   useCollectionNativeHeader({
-    title: screenTitle,
+    title: notesView.title,
     scrollY,
     hasContent: notes.length > 0 && !loading,
   });
@@ -80,11 +62,8 @@ const NotesScreenContent = () => {
   const loadNotes = useCallback(async () => {
     try {
       setLoading(true);
-      const allNotes = await verseAnnotationService.getAllNotes();
-      const filtered = allNotes.filter(n =>
-        isReflectionView ? !!n.qfPostId : !n.qfPostId,
-      );
-      const enriched = filtered.map(note => {
+      const allNotes = filterNotes(await verseAnnotationService.getAllNotes());
+      const enriched = allNotes.map(note => {
         const surah = getSurahById(note.surahNumber);
         return {
           note,
@@ -99,48 +78,19 @@ const NotesScreenContent = () => {
     } finally {
       setLoading(false);
     }
-  }, [isReflectionView]);
+  }, [filterNotes]);
 
-  // Sprint 21 round-5.2 — when entering the Reflections view, kick off
-  // a fire-and-forget backfill from `quranReflect.v1.posts.myPosts` so
-  // the collection shows every reflection the user has ever published
-  // (including those from QuranReflect web or other QF-backed surfaces,
-  // not just locally-published ones). The backfill is idempotent —
-  // posts already linked by `qf_post_id` are no-ops, so safe to call
-  // on every focus. We re-run `loadNotes` after the sync resolves so
-  // any newly-inserted/patched rows appear without a manual refresh.
-  // Personal Notes view skips this — it doesn't read QR posts.
   useFocusEffect(
     useCallback(() => {
       loadNotes();
-      if (!isReflectionView) return;
-      let cancelled = false;
-      syncQfPostsToLocal()
-        .then(result => {
-          if (cancelled) return;
-          if (
-            result.kind === 'ok' &&
-            (result.matched > 0 || result.created > 0)
-          ) {
-            loadNotes();
-          }
-        })
-        .catch(err => {
-          if (__DEV__) console.warn('[notes] posts backfill failed', err);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }, [loadNotes, isReflectionView]),
+      return backfillOnFocus(loadNotes); // Qariah: Reflections backfill
+    }, [loadNotes, backfillOnFocus]),
   );
 
   const handleDeleteNote = useCallback(async (note: VerseNote) => {
-    // Best-effort QF delete first; local delete stays authoritative.
-    // Without this, a fresh-install restore pulls back the deleted note
-    // because QF never received the delete (sprint-20 round-2 bug B).
-    await syncDeleteToQf(note);
+    await beforeNoteDelete(note); // Qariah: QF delete first
     await verseAnnotationService.deleteNoteById(note.id);
-    trackVerseNoteDeleted(versesOfSaved(note)); // @ai TECH_DEBT #297
+    afterNoteDelete(note); // Qariah: TECH_DEBT #297
     const remaining = await verseAnnotationService.getNotesCountForVerse(
       note.verseKey,
     );
@@ -151,10 +101,7 @@ const NotesScreenContent = () => {
   }, []);
 
   const handleNotePress = useCallback((item: NoteData) => {
-    // Defer one frame so the row's press-out animation completes before the
-    // sheet mounts. Without this, the gesture-end can fall through onto the
-    // freshly-mounted sheet's backdrop and dismiss it (a sheet that briefly
-    // flashes open then closes is the visible symptom).
+    // Defer one frame: the row's gesture end can otherwise hit the new sheet's backdrop and close it.
     requestAnimationFrame(() => {
       SheetManager.show('verse-note', {
         payload: {
@@ -216,37 +163,26 @@ const NotesScreenContent = () => {
             <View
               style={[styles.heroIconInner, {backgroundColor: heroInnerBg}]}>
               <Feather
-                name={isReflectionView ? 'users' : 'file-text'}
+                name={notesView.icon}
                 size={moderateScale(30)}
                 color={theme.colors.text}
               />
             </View>
           </View>
           <Text style={[styles.headerTitle, {color: theme.colors.text}]}>
-            {screenTitle}
+            {notesView.title}
           </Text>
           <Text
             style={[
               styles.headerSubtitle,
               {color: theme.colors.textSecondary},
             ]}>
-            {isReflectionView
-              ? t('qariah:notes.countReflections', {count: notes.length})
-              : t('notesScreen.count', {count: notes.length})}
+            {notesView.countLabel(notes.length)}
           </Text>
         </View>
       </View>
     );
-  }, [
-    notes.length,
-    insets.top,
-    theme,
-    heroOuterBg,
-    heroInnerBg,
-    isReflectionView,
-    screenTitle,
-    t,
-  ]);
+  }, [notes.length, insets.top, theme, heroOuterBg, heroInnerBg, notesView]);
 
   const renderItem: ListRenderItem<NoteData> = ({item}) => (
     <NoteItem
@@ -315,7 +251,7 @@ const NotesScreenContent = () => {
               />
             </Pressable>
             <Text style={[styles.emptyHeaderTitle, {color: theme.colors.text}]}>
-              {screenTitle}
+              {notesView.title}
             </Text>
             <View style={styles.emptyHeaderBack} />
           </View>
@@ -323,21 +259,17 @@ const NotesScreenContent = () => {
         <View style={styles.emptyContent}>
           <View style={styles.emptyIcon}>
             <Feather
-              name={isReflectionView ? 'users' : 'file-text'}
+              name={notesView.icon}
               size={moderateScale(48)}
               color={theme.colors.textSecondary}
             />
           </View>
           <Text style={[styles.emptyTitle, {color: theme.colors.text}]}>
-            {isReflectionView
-              ? t('qariah:notes.noReflections')
-              : t('qariah:notes.noPersonalNotes')}
+            {notesView.emptyTitle}
           </Text>
           <Text
             style={[styles.emptySubtitle, {color: theme.colors.textSecondary}]}>
-            {isReflectionView
-              ? t('qariah:notes.reflectionsHint')
-              : t('notesScreen.emptySubtitle')}
+            {notesView.emptySubtitle}
           </Text>
         </View>
       </View>
@@ -388,14 +320,11 @@ const NotesScreenContent = () => {
         contentInsetAdjustmentBehavior="automatic"
       />
       {!USE_GLASS && (
-        <CollectionStickyHeader title={screenTitle} scrollY={scrollY} />
+        <CollectionStickyHeader title={notesView.title} scrollY={scrollY} />
       )}
     </View>
   );
 };
-
-const NotesScreen = () =>
-  isFeatureEnabled('verseNotes') ? <NotesScreenContent /> : null;
 // @ai-end
 
 export default NotesScreen;

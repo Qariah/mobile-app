@@ -238,8 +238,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
       </Pressable>
 
       <PillWrapper style={styles.glassButton} {...pillProps}>
-        {/* @ai TECH_DEBT #258: a testID and a label, so the Maestro queue
-         * flow (PLY-06) and a screen reader can find the queue control. */}
+        {/* @ai TECH_DEBT #258: a testID and a label for device tests and screen readers. */}
         <Pressable
           onPress={onQueuePress}
           style={styles.glassButtonInner}

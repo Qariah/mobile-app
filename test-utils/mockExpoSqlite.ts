@@ -3,14 +3,9 @@ import os from 'os';
 import path from 'path';
 import {openAdapterDatabase, type AdapterDatabase} from './sqliteAdapter';
 
-// Qariah (TECH_DEBT #317): the mock makes the folder on first use, and
-// resetDatabases() removes it. Before, each import and each reset left a folder
-// in the temp directory (about 1 GB for each full Jest run). A process 'exit'
-// handler cannot do this job: in a Jest test, `process` is a copy, and its
-// 'exit' event never fires.
+// Qariah (TECH_DEBT #317): make the folder on first use; resetDatabases() removes it.
 let currentDir: string | null = null;
-// True only for a folder that this mock made. A folder that a caller gives to
-// useDatabaseDir() stays with the caller.
+// A folder from useDatabaseDir() stays with the caller.
 let ownsCurrentDir = false;
 const open = new Map<string, AdapterDatabase>();
 
@@ -34,8 +29,7 @@ export function useDatabaseDir(dir: string): void {
   ownsCurrentDir = false;
 }
 
-// Called in beforeEach for isolation; closes handles, removes the directory and
-// starts a new one on the next use.
+// Called in beforeEach for isolation; closes handles and starts a new directory.
 export async function resetDatabases(): Promise<void> {
   for (const db of open.values()) await db.closeAsync();
   open.clear();

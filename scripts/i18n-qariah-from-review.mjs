@@ -115,8 +115,9 @@ const ENGLISH_FIXUPS = {
   },
   'browse.recitersFound': {
     en: {
-      one: '{{count}} reciter found with current filters',
-      other: '{{count}} reciters found with current filters',
+      // #535: the English says "qariah(s)" where it said "reciter(s)".
+      one: '{{count}} qariah found with current filters',
+      other: '{{count}} qariahs found with current filters',
     },
   },
   'reflections.viewMoreA11y': {
@@ -139,9 +140,9 @@ const ENGLISH_FIXUPS = {
   'data.importAdded': {en: '{{reciters}}, {{recitations}}, {{surahs}} added'},
   'v1.skippedNote': {
     en: {
-      one: "Note: {{count}} recitation references a reciter that isn't available in the new app yet — it will be skipped.",
+      one: "Note: {{count}} recitation references a qariah that isn't available in the new app yet — it will be skipped.",
       other:
-        "Note: {{count}} recitations reference a reciter that isn't available in the new app yet — these will be skipped.",
+        "Note: {{count}} recitations reference a qariah that isn't available in the new app yet — these will be skipped.",
     },
   },
   'support.emailUsBody': {en: 'Please reach us at {{email}}'},
@@ -173,12 +174,18 @@ const RENAMED_UPSTREAM_KEYS = {
  * Upstream keys whose English i18n/overrides/en.json replaces with Qariah's
  * wording. The Arabic follows the Qariah wording too: it is the generated
  * Arabic of the qariah key whose English is the same (the script fails when
- * the two English values differ).
+ * the two English values differ). When the upstream value takes {{appName}},
+ * the override has {{appName}} where the qariah text names the app.
  */
 const ENGLISH_OVERRIDE_TWINS = {
+  'common:tabs.home': 'qariah:tabs.listen',
+  'common:tabs.surahs': 'qariah:tabs.mushaf',
   'home:home.exploreByRewayah': 'qariah:homeRows.rewayat',
   'settings:index.items.github.description': 'qariah:settings.githubDesc',
   'collection:notesScreen.emptySubtitle': 'qariah:notes.personalHint',
+  'settings:about.alhamdulillahBody': 'qariah:about.alhamdulillahBody',
+  'settings:about.missionBody': 'qariah:about.missionBody',
+  'settings:about.commitmentBody': 'qariah:about.commitmentBody',
 };
 
 /** README decision 1: "تطبيق قارئة" ("the Qariah app") inside a sentence. */
@@ -580,6 +587,9 @@ function buildArabicOverrides(rows, qariahAr, qariahEn) {
   // qariah key with the same English.
   const englishOverrides = flatten(readJson(OUT_EN_OVERRIDES));
   const qariahEnFlat = flatten(qariahEn);
+  // The app name as the qariah texts write it (review pack row 3).
+  const enAppName = qariahEnFlat['brand.sidebar'];
+  const arAppName = qariahFlat['brand.sidebar'];
   for (const [upstreamKey, qariahKey] of Object.entries(
     ENGLISH_OVERRIDE_TWINS,
   )) {
@@ -591,15 +601,33 @@ function buildArabicOverrides(rows, qariahAr, qariahEn) {
         `${upstreamKey} is not in ${path.relative(REPO_ROOT, OUT_EN_OVERRIDES)}`,
       );
     }
-    if (englishOverride !== qariahEnFlat[twinKey]) {
+    // @ai When the upstream value takes {{appName}} and the qariah text names
+    // the app ("Qariah"; "تطبيق قارئة" in Arabic), the override puts the
+    // placeholder back in place of the name. The caller passes
+    // {appName: branding.appName}, and the qariahAppName post-processor gives
+    // the Arabic name, so the text on screen is the qariah text.
+    const twinEnglish = qariahEnFlat[twinKey] ?? '';
+    const brandTwin =
+      upstreamFlat('en', ns)[key]?.includes('{{appName}}') &&
+      !twinEnglish.includes('{{appName}}');
+    const expectedEnglish = brandTwin
+      ? twinEnglish.split(enAppName).join('{{appName}}')
+      : twinEnglish;
+    if (englishOverride !== expectedEnglish) {
       fail(
-        `${upstreamKey} says "${englishOverride}" in English, ${qariahKey} "${qariahEnFlat[twinKey]}"`,
+        `${upstreamKey} says "${englishOverride}" in English, ${qariahKey} "${expectedEnglish}"`,
       );
     }
     if (flatten(overrides[ns] ?? {})[key] !== undefined) {
       fail(`${upstreamKey} has a section U row and a twin`);
     }
-    const arabic = qariahArabic(qariahFlat, twinKey);
+    const twinArabic = qariahArabic(qariahFlat, twinKey);
+    const arabic =
+      brandTwin && typeof twinArabic === 'string'
+        ? twinArabic
+            .split(`${APP_WORD} ${arAppName}`)
+            .join(`${APP_WORD} {{appName}}`)
+        : twinArabic;
     if (typeof arabic !== 'string' || !(key in upstreamFlat('ar', ns))) {
       fail(`${upstreamKey}: the twin must be one string upstream has`);
     }

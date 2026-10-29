@@ -30,6 +30,7 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useTranslation} from 'react-i18next';
 import {flipX} from '@/utils/rtl';
 // @ai-end
+import {useQariahNoteEntries} from '@/components/notes/useQariahNoteEntries';
 
 interface CategoryItem {
   id: string;
@@ -48,7 +49,7 @@ export default function CollectionScreen() {
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
   const router = useRouter();
-  const {t} = useTranslation(['collection', 'common', 'qariah']);
+  const {t} = useTranslation(['collection', 'common']);
   const {lovedTracks} = useLoved();
   const {favoriteReciters} = useFavoriteReciters();
   const downloads = useDownloads();
@@ -56,8 +57,8 @@ export default function CollectionScreen() {
   const {totalCount: uploadsTotalCount} = useUploadsStore();
 
   const [bookmarkCount, setBookmarkCount] = useState(0);
-  const [personalNoteCount, setPersonalNoteCount] = useState(0);
-  const [reflectionCount, setReflectionCount] = useState(0);
+  // Qariah: Personal Notes and Reflections cards (components/notes).
+  const {noteEntries, countNotes} = useQariahNoteEntries();
 
   useFocusEffect(
     useCallback(() => {
@@ -67,22 +68,9 @@ export default function CollectionScreen() {
         .catch(() => {});
       verseAnnotationService
         .getAllNotes()
-        .then(n => {
-          // Sprint 21 round-3 — split count by Personal vs Reflection.
-          // Reflections are notes synced to QF with a published post id;
-          // everything else is a Personal Note (including signed-out
-          // local-only entries).
-          let reflections = 0;
-          let personals = 0;
-          for (const note of n) {
-            if (note.qfPostId) reflections += 1;
-            else personals += 1;
-          }
-          setPersonalNoteCount(personals);
-          setReflectionCount(reflections);
-        })
+        .then(n => countNotes(n))
         .catch(() => {});
-    }, []),
+    }, [countNotes]),
   );
 
   const handleAddPress = useCallback(() => {
@@ -141,37 +129,7 @@ export default function CollectionScreen() {
       emptyText: t('collectionScreen.empty.bookmarks'),
       route: '/collection/bookmarks',
     },
-    ...(isFeatureEnabled('verseNotes')
-      ? [
-          {
-            id: 'personal-notes',
-            // @ai Qariah copy (Sprint 21 split).
-            label: t('qariah:notes.personalNotes'),
-            icon: (
-              <Feather
-                name="file-text"
-                size={moderateScale(22)}
-                color="#3B82F6"
-              />
-            ),
-            color: '#3B82F6',
-            count: personalNoteCount,
-            emptyText: t('qariah:notes.noPersonalNotes'),
-            route: '/collection/notes?type=personal',
-          },
-          {
-            id: 'reflections',
-            label: t('qariah:notes.reflections'),
-            icon: (
-              <Feather name="users" size={moderateScale(22)} color="#5645a1" />
-            ),
-            color: '#5645a1',
-            count: reflectionCount,
-            emptyText: t('qariah:notes.noReflections'),
-            route: '/collection/notes?type=reflection',
-          },
-        ]
-      : []),
+    ...noteEntries,
     ...(isFeatureEnabled('userUploads')
       ? [
           {

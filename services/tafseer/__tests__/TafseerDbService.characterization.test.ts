@@ -15,8 +15,7 @@ interface BundledRow {
 type Service = typeof import('../TafseerDbService').tafseerDbService;
 type MockModule = typeof import('@/test-utils/mockExpoSqlite');
 
-// Qariah (TECH_DEBT #317): each isolated registry has its own sqlite mock with
-// its own folder. afterEach resets them, and a reset removes the folder.
+// Qariah (TECH_DEBT #317): afterEach resets each isolated sqlite mock, which removes its folder.
 const isolatedMocks: MockModule[] = [];
 
 function freshService(): Service {

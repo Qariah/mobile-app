@@ -3,6 +3,7 @@ package expo.modules.bayaanwidgets.ayahoftheday
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,11 +33,13 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import expo.modules.bayaanwidgets.AppBrand
 import expo.modules.bayaanwidgets.ArabicBitmap
 import expo.modules.bayaanwidgets.GlanceState
+import expo.modules.bayaanwidgets.R
+import expo.modules.bayaanwidgets.SnapshotModels
 import expo.modules.bayaanwidgets.StaticAyah
 import expo.modules.bayaanwidgets.StaticData
+import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.WidgetText
 import expo.modules.bayaanwidgets.ui.ArabicText
 import expo.modules.bayaanwidgets.ui.Logo
@@ -56,41 +59,54 @@ class AyahOfTheDayWidget : GlanceAppWidget() {
     val stored = GlanceState.stored(context, GlanceState.appWidgetId(context, id))
     provideContent {
       // Read state so a midnight push recomposes; the ayah itself depends only on today's date.
-      GlanceState.current(currentState(), stored)
-      Content(context, StaticData.ayahOfTheDay(context, System.currentTimeMillis(), TimeZone.getDefault()))
+      val inputs = GlanceState.current(currentState(), stored)
+      // @ai Qariah (TECH_DEBT #357): the text follows the app language.
+      val language = remember(inputs.snapshotJson) {
+        WidgetLanguage.resolve(context, inputs.snapshotJson?.let { SnapshotModels.decode(it) }?.language)
+      }
+      val strings = remember(language) { WidgetLanguage.context(context, language) }
+      Content(context, strings, language, StaticData.ayahOfTheDay(context, System.currentTimeMillis(), TimeZone.getDefault()))
     }
   }
 
   @Composable
-  private fun Content(context: Context, ayah: StaticAyah?) {
+  private fun Content(context: Context, strings: Context, language: String?, ayah: StaticAyah?) {
     val size = LocalSize.current
     val root = GlanceModifier.fillMaxSize().background(WidgetColors.BACKGROUND).cornerRadius(20.dp)
     if (ayah == null) {
       Box(root, contentAlignment = Alignment.Center) {
-        Text("Open ${AppBrand.name(context)}", style = TextStyle(color = WidgetColors.WHITE, fontWeight = FontWeight.Medium))
+        Text(strings.getString(R.string.bayaan_widget_text_open_app, WidgetLanguage.appName(strings)), style = TextStyle(color = WidgetColors.WHITE, fontWeight = FontWeight.Medium))
       }
       return
     }
     val open = appLink(context, "quran/${ayah.surahId}?ayah=${ayah.ayah}")
     val listen = commandAction(context, playTrackCommand(ayah.surahId, null, null, ayah.ayah), "ayah/${ayah.key}")
     val width = size.width.value
+    // @ai Qariah (TECH_DEBT #357): readers of Arabic see no English translation, as in the app.
+    val showTranslation = !WidgetLanguage.arabicContent(language)
+    val reference = reference(context, strings, language, ayah)
     when {
       size.height >= WidgetSizes.LARGE.height -> Column(root.padding(16.dp).clickable(open)) {
-        Header(ayah, listen)
+        Header(strings, reference, listen)
         Spacer(GlanceModifier.defaultWeight())
         ArabicText(context, ayah.arabic, ArabicBitmap.QURAN_FONT, width - 32, 130f, 32f, 14f, 6, center = true)
-        Spacer(GlanceModifier.height(12.dp))
-        Text(ayah.translation, maxLines = 5, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 14.sp))
+        if (showTranslation) {
+          Spacer(GlanceModifier.height(12.dp))
+          Text(ayah.translation, maxLines = 5, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 14.sp))
+        }
         Spacer(GlanceModifier.defaultWeight())
       }
       size.width >= WidgetSizes.MEDIUM.width -> Column(root.padding(14.dp).clickable(open)) {
-        Header(ayah, listen)
+        Header(strings, reference, listen)
         Spacer(GlanceModifier.height(6.dp))
         // A 2-row widget is often taller than the 110 dp bucket; the TALL buckets give the ayah that room.
-        val arabicHeight = maxOf(44f, size.height.value - MEDIUM_CHROME_DP)
+        val chrome = if (showTranslation) MEDIUM_CHROME_DP else MEDIUM_CHROME_DP - MEDIUM_TRANSLATION_DP
+        val arabicHeight = maxOf(44f, size.height.value - chrome)
         ArabicText(context, ayah.arabic, ArabicBitmap.QURAN_FONT, width - 28, arabicHeight, 24f, 12f, 3, center = true)
-        Spacer(GlanceModifier.height(4.dp))
-        Text(ayah.translation, maxLines = 2, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 12.sp))
+        if (showTranslation) {
+          Spacer(GlanceModifier.height(4.dp))
+          Text(ayah.translation, maxLines = 2, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 12.sp))
+        }
       }
       else -> Column(root.padding(12.dp).clickable(open), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(GlanceModifier.fillMaxWidth()) {
@@ -104,12 +120,19 @@ class AyahOfTheDayWidget : GlanceAppWidget() {
     }
   }
 
+  /** "Hud 11:6": the surah name and the verse key, in the app language and its digits. */
+  private fun reference(context: Context, strings: Context, language: String?, ayah: StaticAyah): String {
+    val name = StaticData.surah(context, ayah.surahId)?.let { WidgetLanguage.surahName(it, language) } ?: ayah.surahName
+    val key = "${WidgetLanguage.number(strings, ayah.surahId)}:${WidgetLanguage.number(strings, ayah.ayah)}"
+    return WidgetText.reference(name, key)
+  }
+
   @Composable
-  private fun Header(ayah: StaticAyah, listen: Action) {
+  private fun Header(strings: Context, reference: String, listen: Action) {
     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-      RoundButton(android.R.drawable.ic_media_play, "Listen", listen)
+      RoundButton(android.R.drawable.ic_media_play, strings.getString(R.string.bayaan_widget_text_listen), listen)
       Spacer(GlanceModifier.width(8.dp))
-      Text(WidgetText.reference(ayah.surahName, ayah.key), maxLines = 1,
+      Text(reference, maxLines = 1,
         style = TextStyle(color = WidgetColors.TERTIARY, fontSize = 12.sp, fontWeight = FontWeight.Bold))
       Spacer(GlanceModifier.defaultWeight())
       Logo(14)
@@ -121,5 +144,7 @@ class AyahOfTheDayWidget : GlanceAppWidget() {
     val MEDIUM_TALL = DpSize(250.dp, 180.dp)
     /** Padding, header, spacers and a two-line translation around the medium ayah. */
     const val MEDIUM_CHROME_DP = 104f
+    /** The two-line translation and its spacer, left out for readers of Arabic. */
+    const val MEDIUM_TRANSLATION_DP = 36f
   }
 }

@@ -4,7 +4,11 @@ import android.content.Context
 import org.json.JSONArray
 import java.util.TimeZone
 
-data class StaticSurah(val id: Int, val name: String, val translatedName: String, val glyph: String, val artworkFile: String)
+data class StaticSurah(
+  val id: Int, val name: String, val translatedName: String, val glyph: String, val artworkFile: String,
+  // @ai Qariah (TECH_DEBT #357): the Arabic name (WidgetLanguage.surahName).
+  val nameArabic: String? = null,
+)
 data class StaticAyah(val key: String, val surahId: Int, val ayah: Int, val surahName: String, val arabic: String, val translation: String)
 
 /** surahs.json and ayat.json from assets/widgets (scripts/generate-widget-data.ts). */
@@ -16,7 +20,10 @@ object StaticData {
     val arr = JSONArray(json)
     (0 until arr.length()).map { i ->
       arr.getJSONObject(i).let {
-        StaticSurah(it.getInt("id"), it.getString("name"), it.getString("translatedName"), it.getString("glyph"), it.getString("artworkFile"))
+        StaticSurah(
+          it.getInt("id"), it.getString("name"), it.getString("translatedName"), it.getString("glyph"), it.getString("artworkFile"),
+          it.optString("nameArabic").takeIf { name -> name.isNotEmpty() },
+        )
       }
     }
   } catch (e: Exception) { emptyList() }

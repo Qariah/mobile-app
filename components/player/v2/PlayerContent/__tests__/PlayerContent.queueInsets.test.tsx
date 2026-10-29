@@ -86,17 +86,24 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
+const mockPanCalls: Record<string, unknown[][]> = {};
+
 jest.mock('react-native-gesture-handler', () => {
-  const chain: Record<string, () => unknown> = {};
+  const chain: Record<string, (...args: unknown[]) => unknown> = {};
   for (const name of [
     'onStart',
     'onChange',
     'onEnd',
     'onFinalize',
     'shouldCancelWhenOutside',
+    'activeOffsetY',
+    'failOffsetX',
     'runOnJS',
   ]) {
-    chain[name] = () => chain;
+    chain[name] = (...args: unknown[]) => {
+      (mockPanCalls[name] ??= []).push(args);
+      return chain;
+    };
   }
   return {
     Gesture: {Pan: () => chain},
@@ -352,5 +359,15 @@ describe('PlayerContent — the queue insets (TECH_DEBT #295, #307)', () => {
     expect(props.contentPaddingTop).toBe(
       mockInsets.top + moderateScale(4) + 70,
     );
+  });
+});
+
+// @ai Qariah (TECH_DEBT #380): the sheet pan of the top bar and the controls card starts only on a
+// vertical move, so a side-to-side drag on the progress bar seeks on Android.
+describe('PlayerContent — the sheet pan offsets (TECH_DEBT #380)', () => {
+  it('moves the sheet only on a vertical drag', () => {
+    renderPlayerContent();
+    expect(mockPanCalls.activeOffsetY).toContainEqual([[-10, 10]]);
+    expect(mockPanCalls.failOffsetX).toContainEqual([[-10, 10]]);
   });
 });

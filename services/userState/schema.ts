@@ -107,7 +107,6 @@ export type FavoriteReciter = z.infer<typeof FavoriteReciterSchema>;
 export type FavoriteSurah = z.infer<typeof FavoriteSurahSchema>;
 export type FavoriteRecitation = z.infer<typeof FavoriteRecitationSchema>;
 export type LastPlayed = z.infer<typeof LastPlayedSchema>;
-export type RecentlyPlayedItem = z.infer<typeof RecentlyPlayedItemSchema>;
 export type Preferences = z.infer<typeof PreferencesSchema>;
 
 /** Construct an empty canonical state for a fresh user. */

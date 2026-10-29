@@ -44,6 +44,8 @@ struct StaticSurah: Codable, Hashable {
   let translatedName: String
   let glyph: String
   let artworkFile: String
+  // @ai Qariah (TECH_DEBT #357): the Arabic name (WidgetLanguage.surahName).
+  var nameArabic: String? = nil
 }
 
 struct StaticAyah: Codable, Hashable {

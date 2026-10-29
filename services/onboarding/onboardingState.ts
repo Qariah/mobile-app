@@ -10,7 +10,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import branding from '@/config/branding';
 
-const KEY = `${branding.storageKeyPrefix}:onboarded`;
+// `@qariah:onboarded`, the key every shipped build used (upstream's `@${appSlug}`
+// pattern, as in utils/reviewUtils.ts). Do not change it: users would see
+// onboarding again.
+const KEY = `@${branding.appSlug}:onboarded`;
 
 export async function isOnboarded(): Promise<boolean> {
   try {

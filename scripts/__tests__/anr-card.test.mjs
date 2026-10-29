@@ -16,9 +16,11 @@ import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
+  BACKGROUND_QUERY,
   buildOfRelease,
   compareVersions,
   fetchPlayAnr,
+  FREEZE_QUERY,
   fetchSentryWeek,
   freezeOptions,
   freezeVerdict,
@@ -31,6 +33,7 @@ import {
   scorePct,
   UNAVAILABLE,
   v2VersionCodes,
+  weekReleases,
   weekWindows,
 } from '../lib/anr-card.mjs';
 
@@ -311,6 +314,23 @@ describe('renderAnrCard (FREEZES (ANR), 44 columns)', () => {
     assert.equal(lines[1], 'A/B check: no data');
     assert.ok(!text({play, sentry: {week: week()}}).includes('A/B check'));
   });
+  it('prints the background ANRs on their own line, not in the share', () => {
+    const w = week();
+    w.android.backgroundUsers = 9;
+    const lines = renderAnrCard({play, sentry: {week: w}});
+    assert.equal(lines[1], 'Android  30 of 707 users froze (4.2%)');
+    assert.equal(lines[3], '         + 9 froze in background');
+    w.android.backgroundUsers = 3;
+    assert.equal(
+      renderAnrCard({play, sentry: {week: w}})[3],
+      '         + fewer than 5 froze in background',
+    );
+    w.android.backgroundUsers = 0;
+    assert.doesNotMatch(
+      renderAnrCard({play, sentry: {week: w}}).join('\n'),
+      /background/,
+    );
+  });
   it('prints `unavailable` on its own line, never 0', () => {
     const none = text({play: null, sentry: null, appStore: null});
     assert.equal(
@@ -532,6 +552,7 @@ describe('fetchSentryWeek', () => {
       android: {
         users: 1496,
         frozeUsers: 15,
+        backgroundUsers: 15,
         prevUsers: 1472,
         prevFrozeUsers: 17,
         verdict: 'SAME',
@@ -559,7 +580,7 @@ describe('fetchSentryWeek', () => {
     );
     assert.match(
       iosFreeze.searchParams.get('query'),
-      /error\.type:\["App Hanging",WatchdogTermination\] release:\["com\.qariah\.app@3\.2\.1\+1718"\]/,
+      /error\.type:\["App Hanging",WatchdogTermination\] !device\.simulator:True release:\["com\.qariah\.app@3\.2\.1\+1718"\]/,
     );
     const androidFreeze = seen.find(u =>
       (u.searchParams.get('query') || '').includes('ApplicationNotResponding'),
@@ -574,6 +595,47 @@ describe('fetchSentryWeek', () => {
     );
     assert.ok(
       seen.some(u => u.searchParams.get('end') === '2026-10-13T00:00:00'),
+    );
+  });
+  it('with the platform map, also counts the older builds that still have users', async () => {
+    // 2026-10-23: card.builds named only 2027 after the rollout completed,
+    // while 1717 still had users. The week compares the same population.
+    const seen = stub();
+    const w = await fetchSentryWeek({
+      token: 't',
+      org: 'o',
+      builds: builds.filter(b => b.build !== '1717'),
+      platformOf: new Map([
+        ['2027', 'Android'],
+        ['1717', 'Android'],
+        ['1718', 'iPhone'],
+      ]),
+      now,
+    });
+    assert.deepEqual(
+      w.android.byBuild.map(b => b.build),
+      ['2027', '1717'],
+    );
+    assert.deepEqual(
+      w.ios.byBuild.map(b => b.build),
+      ['1718'],
+    );
+    const androidFreeze = seen.find(u =>
+      (u.searchParams.get('query') || '').includes('ApplicationNotResponding'),
+    );
+    assert.match(
+      androidFreeze.searchParams.get('query'),
+      /release:\["com\.qariah\.app@3\.2\.1\+2027","com\.qariah\.app@3\.2\.0\+1717"\]/,
+    );
+    // The discovery request covers both weeks.
+    assert.ok(
+      seen.some(
+        u =>
+          u.pathname.endsWith('/sessions/') &&
+          u.searchParams.get('groupBy') === 'release' &&
+          u.searchParams.get('start') === '2026-10-06T00:00:00' &&
+          u.searchParams.get('end') === '2026-10-20T00:00:00',
+      ),
     );
   });
   it('a failed request makes each platform unavailable, never a zero', async () => {
@@ -630,6 +692,79 @@ describe('fetchSentryWeek', () => {
     assert.deepEqual(missedDays(daily, win), []);
     delete daily['2026-10-12'];
     assert.deepEqual(missedDays(daily, win), ['2026-10-12']);
+  });
+});
+
+describe('the freeze terms (2026-10-24 root cause)', () => {
+  it('Android counts only the ANRs that the user saw; no emulator counts', () => {
+    assert.match(FREEZE_QUERY.android, /!error\.value:"Background ANR"/);
+    assert.match(
+      BACKGROUND_QUERY.android,
+      /(^| )error\.value:"Background ANR"/,
+    );
+    // Sentry matches the value case-sensitively: `true` finds nothing.
+    for (const q of [...Object.values(FREEZE_QUERY), BACKGROUND_QUERY.android])
+      assert.match(q, /!device\.simulator:True\b/);
+    assert.equal(BACKGROUND_QUERY.ios, undefined);
+  });
+});
+
+describe('weekReleases', () => {
+  const R = b => `com.qariah.app@3.2.${b > 2000 ? 1 : 0}+${b}`;
+  const platformOf = new Map([
+    ['2027', 'Android'],
+    ['1717', 'Android'],
+    ['1705', 'Android'],
+    ['3506', 'Android'],
+    ['1718', 'iPhone'],
+    ['1713', 'iPhone'],
+  ]);
+  const sessionReleases = [2027, 1717, 1705, 3506, 1718, 1713, 999].map(R);
+  const android = [{platform: 'Android', version: '3.2.1', build: '2027'}];
+  it('adds the older builds of the platform that still have users', () => {
+    assert.deepEqual(
+      weekReleases({
+        bs: android,
+        sessionReleases,
+        platformOf,
+        label: 'Android',
+      }),
+      [R(2027), R(1717), R(1705)],
+    );
+  });
+  it('leaves out a newer build (a beta), another platform and an unknown build', () => {
+    const rs = weekReleases({
+      bs: android,
+      sessionReleases,
+      platformOf,
+      label: 'Android',
+    });
+    assert.ok(!rs.includes(R(3506)));
+    assert.ok(!rs.includes(R(1718)));
+    assert.ok(!rs.includes(R(999)));
+  });
+  it('leaves out a release of another package', () => {
+    assert.deepEqual(
+      weekReleases({
+        bs: android,
+        sessionReleases: ['com.qariah.app.beta@3.2.0+1717'],
+        platformOf,
+        label: 'Android',
+      }),
+      [R(2027)],
+    );
+  });
+  it('counts only the card builds without the platform map', () => {
+    assert.deepEqual(
+      weekReleases({bs: android, sessionReleases, label: 'Android'}),
+      [R(2027)],
+    );
+  });
+  it('is empty for a platform with no production build', () => {
+    assert.deepEqual(
+      weekReleases({bs: [], sessionReleases, platformOf, label: 'iOS'}),
+      [],
+    );
   });
 });
 

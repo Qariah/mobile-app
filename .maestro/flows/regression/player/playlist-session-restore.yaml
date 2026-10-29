@@ -27,7 +27,7 @@ tags:
 
 # 2. Make a playlist with one surah (Hud, A'tii Qah Suhaimi).
 - tapOn: '.*Listen'
-- tapOn: 'Reciters'
+- tapOn: '(Qariahs|Reciters)'  # the Browse by tile; "Reciters" before #535
 # The reciter grid is in name order, so this reciter is the first cell. iOS merges
 # the Browse All grid into one a11y element (no per-card label, no search-field
 # placeholder), so the flow taps the first cell by point and then checks the name.

@@ -11,7 +11,7 @@
  * replaces the library resource of the same name and language (RFC-021
  * seam), so the upstream module stays as it is.
  *
- * Why not Expo's `locales` (app.config.ts), which writes app_name: the app
+ * Why not Expo's `locales` (app.config.js), which writes app_name: the app
  * module has no default (values/) text for most of these names, because the
  * library holds it. Android lint reads one module at a time, and its
  * ExtraTranslation check (fatal in lintVitalRelease) calls a translation

@@ -15,7 +15,7 @@
  *     is in the widget extension and in the app (the App Intents), so one
  *     entry serves both. The script owns every "ar" localization in it; the
  *     "en" entries (the Qariah wording of upstream keys) stay as they are.
- *   - i18n/native/ar.json: the Expo `locales` file (app.config.ts). At
+ *   - i18n/native/ar.json: the Expo `locales` file (app.config.js). At
  *     prebuild, Expo writes its `ios` values into
  *     ios/Qariah/Supporting/ar.lproj/InfoPlist.strings and its `android`
  *     values into android/app/src/main/res/values-b+ar/strings.xml: the
@@ -114,11 +114,20 @@ const ROWS = {
   ],
   11: [{widget: ['bayaan_widget_continue_listening_desc']}],
   12: [{catalog: ['Pick up where you left off.']}],
+  // Sprint 51 (TECH_DEBT #357): the bayaan_widget_text_* resources are the
+  // text inside the Android widgets, which WidgetLanguage.kt reads in the app
+  // language.
+  // ContinueListeningViews.swift reads the side title as a key since Sprint 51.
   13: [
-    {part: 0, skip: 'ContinueListeningViews.swift passes a String, not a key'},
-    {part: 1, skip: 'ContinueListeningViews.swift passes a String, not a key'},
+    {part: 0, catalog: ['Up next'], widget: ['bayaan_widget_text_up_next']},
+    {part: 1, catalog: ['Recent'], widget: ['bayaan_widget_text_recent']},
   ],
-  14: [{catalog: ['Start listening']}],
+  14: [
+    {
+      catalog: ['Start listening'],
+      widget: ['bayaan_widget_text_start_listening'],
+    },
+  ],
   15: [
     {
       catalog: ['Continue Reading'],
@@ -132,17 +141,27 @@ const ROWS = {
     },
   ],
   17: [
-    // The standalone "Juz {n}" is a String in ContinueReadingWidget.swift
-    // (`detail`); the Lock Screen line "<surah> · Juz {n}" is a key.
+    // The standalone "Juz {n}" (ContinueReadingWidget.swift `detail`) is a
+    // key since Sprint 51; so is the Lock Screen line "<surah> · Juz {n}".
+    {part: 0, catalog: ['Juz %lld'], placeholders: {n: '%lld'}},
     {
       part: 0,
       catalog: ['%@ · Juz %lld'],
       template: '%@ · {}',
       placeholders: {n: '%lld'},
     },
+    {part: 0, widget: ['bayaan_widget_text_juz'], placeholders: {n: '%1$d'}},
     {part: 1, catalog: ['Page %lld'], placeholders: {n: '%lld'}},
-    {part: 2, catalog: ['Start reading']},
-    {part: 3, catalog: ['Continue reading']},
+    {
+      part: 2,
+      catalog: ['Start reading'],
+      widget: ['bayaan_widget_text_start_reading'],
+    },
+    {
+      part: 3,
+      catalog: ['Continue reading'],
+      widget: ['bayaan_widget_text_continue_reading'],
+    },
   ],
   18: [{catalog: ['Quick Surah'], widget: ['bayaan_widget_quick_surah_label']}],
   19: [
@@ -164,11 +183,23 @@ const ROWS = {
     // The App Intents parameter summary and the accessibility label.
     {part: 0, catalog: ['Play ${surah}'], placeholders: {surah: '${surah}'}},
     {part: 0, catalog: ['Play %@'], placeholders: {surah: '%@'}},
-    {part: 1, skip: 'QuickSurahWidget.swift passes a String, not a key'},
+    {
+      part: 0,
+      widget: ['bayaan_widget_text_play_item'],
+      placeholders: {surah: '%1$s'},
+    },
+    {part: 1, skip: 'iOS: QuickSurahWidget.swift passes a String, not a key'},
+    {part: 1, widget: ['bayaan_widget_text_default_reciter']},
     {
       part: 2,
       catalog: ['Open %@ to set up'],
       placeholders: {app: '%@'},
+      namesApp: true,
+    },
+    {
+      part: 2,
+      widget: ['bayaan_widget_text_open_app_to_set_up'],
+      placeholders: {app: '%1$s'},
       namesApp: true,
     },
   ],
@@ -179,7 +210,14 @@ const ROWS = {
       widget: ['bayaan_widget_ayah_desc'],
     },
   ],
-  24: [{catalog: ['Open %@'], placeholders: {app: '%@'}, namesApp: true}],
+  24: [
+    {catalog: ['Open %@'], placeholders: {app: '%@'}, namesApp: true},
+    {
+      widget: ['bayaan_widget_text_open_app'],
+      placeholders: {app: '%1$s'},
+      namesApp: true,
+    },
+  ],
   25: [
     {part: 0, catalog: ['Play or Pause']},
     {part: 1, catalog: ['Play or pause your recitation.']},
@@ -207,8 +245,8 @@ const ROWS = {
     {part: 2, skip: 'Entities.swift passes a String, not a key'},
   ],
   29: [
-    {part: 0, catalog: ['Play']},
-    {part: 1, catalog: ['Pause']},
+    {part: 0, catalog: ['Play'], widget: ['bayaan_widget_text_play']},
+    {part: 1, catalog: ['Pause'], widget: ['bayaan_widget_text_pause']},
     {
       part: 2,
       catalog: ['Ayah %lld of %lld'],

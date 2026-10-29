@@ -13,10 +13,17 @@ import {
   buildRecitationCandidates,
   continueListeningCandidate,
   continueListeningTrigger,
+  CATALOG_NOTICE_HOLD_CAP_DAYS,
+  KAHF_JS_WEEKDAY,
+  continueNoticeTime,
+  daysBetweenLocalDays,
   heldBackKeys,
+  holdCapReached,
+  isKahfDay,
   kahfFridayCandidate,
   localDay,
   pickNotification,
+  scheduledNoticeOnDay,
   type PickNotificationInput,
 } from '../scheduler';
 import {
@@ -432,6 +439,129 @@ describe('pickNotification', () => {
 
   it('nothing when there is no candidate', () => {
     expect(pickNotification(input({candidates: []}))).toBeNull();
+  });
+});
+
+describe('one notice a day in total (TECH_DEBT #328)', () => {
+  // Friday 2026-10-23; Thursday 2026-10-22; Saturday 2026-10-24.
+  const FRIDAY_0700 = new Date(2026, 9, 23, 7, 0);
+  const FRIDAY_2000 = new Date(2026, 9, 23, 20, 0);
+  const THURSDAY = new Date(2026, 9, 22, 12, 0);
+  const DAY = 24 * 60 * 60_000;
+
+  it('the Al-Kahf day is the weekday of KAHF_FRIDAY_TRIGGER (expo 6 = JS 5, Friday)', () => {
+    expect(KAHF_FRIDAY_TRIGGER).toMatchObject({kind: 'weekly', weekday: 6});
+    expect(KAHF_JS_WEEKDAY).toBe(5);
+    expect(isKahfDay(FRIDAY_0700)).toBe(true);
+    expect(isKahfDay(THURSDAY)).toBe(false);
+  });
+
+  it('a Friday with Al-Kahf on is taken, before and after 09:00', () => {
+    for (const now of [FRIDAY_0700, FRIDAY_2000]) {
+      expect(
+        scheduledNoticeOnDay({now, kahfFridayOn: true, continueNoticeDays: []}),
+      ).toBe(true);
+    }
+  });
+
+  it('a Friday with Al-Kahf off is free', () => {
+    expect(
+      scheduledNoticeOnDay({
+        now: FRIDAY_0700,
+        kahfFridayOn: false,
+        continueNoticeDays: [],
+      }),
+    ).toBe(false);
+  });
+
+  it('the day of a "continue listening" notice is taken', () => {
+    expect(
+      scheduledNoticeOnDay({
+        now: THURSDAY,
+        kahfFridayOn: true,
+        continueNoticeDays: ['2026-10-22'],
+      }),
+    ).toBe(true);
+    expect(
+      scheduledNoticeOnDay({
+        now: THURSDAY,
+        kahfFridayOn: true,
+        continueNoticeDays: ['2026-10-21', '2026-10-25'],
+      }),
+    ).toBe(false);
+  });
+
+  it('pickNotification posts nothing on a day with a scheduled notice; the keys wait', () => {
+    const recitation = fakeCandidate('new_recitation', 'new', ['k-n']);
+    const input: PickNotificationInput = {
+      candidates: [recitation],
+      prefs: {...DEFAULT_NOTIFICATION_TYPE_PREFS},
+      permissionGranted: true,
+      holdout: false,
+      todayLocal: '2026-10-23',
+      lastNotifiedDay: '2026-10-22',
+      scheduledNoticeToday: true,
+    };
+    expect(pickNotification(input)).toBeNull();
+    expect(heldBackKeys(input, null)).toEqual(['k-n']);
+    expect(pickNotification({...input, scheduledNoticeToday: false})).toBe(
+      recitation,
+    );
+  });
+
+  it('continueNoticeTime moves a Friday notice to Saturday, at the same local time', () => {
+    const rules = {kahfFridayOn: true, lastNotifiedDay: null};
+    const moved = new Date(continueNoticeTime(FRIDAY_2000.getTime(), rules));
+    expect(localDay(moved)).toBe('2026-10-24');
+    expect(moved.getHours()).toBe(20);
+    expect(moved.getMinutes()).toBe(0);
+    // A second call keeps the time.
+    expect(continueNoticeTime(moved.getTime(), rules)).toBe(moved.getTime());
+  });
+
+  it('continueNoticeTime keeps a Friday notice when Al-Kahf is off', () => {
+    const at = FRIDAY_2000.getTime();
+    expect(
+      continueNoticeTime(at, {kahfFridayOn: false, lastNotifiedDay: null}),
+    ).toBe(at);
+  });
+
+  it("continueNoticeTime moves off the day of the app's notice, and then off a Friday", () => {
+    const at = THURSDAY.getTime();
+    expect(
+      continueNoticeTime(at, {
+        kahfFridayOn: false,
+        lastNotifiedDay: '2026-10-22',
+      }),
+    ).toBe(at + DAY);
+    expect(
+      localDay(
+        new Date(
+          continueNoticeTime(at, {
+            kahfFridayOn: true,
+            lastNotifiedDay: '2026-10-22',
+          }),
+        ),
+      ),
+    ).toBe('2026-10-24');
+  });
+
+  it('daysBetweenLocalDays counts calendar days, also across summer time', () => {
+    expect(daysBetweenLocalDays('2026-10-23', '2026-10-30')).toBe(7);
+    expect(daysBetweenLocalDays('2026-10-23', '2026-10-23')).toBe(0);
+    // A month end and the end of summer time in Europe (2026-10-25).
+    expect(daysBetweenLocalDays('2026-10-24', '2026-11-02')).toBe(9);
+    expect(daysBetweenLocalDays('2026-10-30', '2026-10-23')).toBe(-7);
+    expect(daysBetweenLocalDays('bad', '2026-10-23')).toBeNull();
+  });
+
+  it('holdCapReached: from CATALOG_NOTICE_HOLD_CAP_DAYS (7) days after the first hold', () => {
+    expect(CATALOG_NOTICE_HOLD_CAP_DAYS).toBe(7);
+    expect(holdCapReached(null, '2026-10-30')).toBe(false);
+    expect(holdCapReached('2026-10-23', '2026-10-29')).toBe(false);
+    expect(holdCapReached('2026-10-23', '2026-10-30')).toBe(true);
+    expect(holdCapReached('2026-10-23', '2026-11-06')).toBe(true);
+    expect(holdCapReached('not a day', '2026-10-30')).toBe(false);
   });
 });
 

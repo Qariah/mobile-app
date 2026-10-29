@@ -111,8 +111,7 @@ interface Spread {
 }
 
 const SPREAD_COUNT = Math.ceil(TOTAL_PAGES / 2);
-// @ai Qariah (TECH_DEBT #315): the pagers follow the native layout direction
-// (./pagerDirection.ts), not the app language.
+// @ai Qariah (TECH_DEBT #315): the pagers follow the native layout direction, not the app language.
 const PAGER_DIRECTION = pagerDirectionProps();
 
 function pageToSpreadIndex(page: number): number {
@@ -221,14 +220,7 @@ const DKPageViewBase: React.FC<{
   // with all four corners rounded instead. `facingPages` is still the source
   // of truth: once we add the real two-page spread, that path will use the
   // asymmetric decoration on each half of the spread.
-  // `scrollContainerHeight` is set by exactly one branch — phone landscape.
-  // Before #349 that branch always had `pageWidth === screenWidth`, so this
-  // flag was always false there; now that the page is inset by the cutout it
-  // would flip TRUE on a notched iPhone and silently change three things at
-  // once (fully-rounded edge decoration, the symmetric card-background branch,
-  // and `effectiveMarginLeft` going undefined so `SkiaPage` drops its
-  // page-parity margin alternation). None of that is what #349 asks for, so
-  // keep phone landscape on the book-edge look it already had.
+  // Phone landscape (`scrollContainerHeight`) keeps the book-edge look, though its page is inset (#349).
   const useSymmetricEdges = usesSymmetricPageEdges(metrics, isBookLayout); // @ai
 
   // In fullscreen mode, use symmetric padding; in book mode the content sits
@@ -246,8 +238,7 @@ const DKPageViewBase: React.FC<{
       ? contentMarginLeft + 8
       : metrics.paddingHorizontal + 8;
 
-  // Both label offsets come from `constants.ts` so the #475 regression test can
-  // assert them against the gutters that produce them.
+  // The label offsets live in constants.ts, so the #475 test asserts them against the gutters.
   const {labelTop, pageNumberBottom} = getPageLabelOffsets(metrics, {
     isBookLayout,
     insetTop: insets.top,
@@ -304,13 +295,6 @@ const DKPageViewBase: React.FC<{
         </>
       )}
       {isQCF ? (
-        // DO NOT DROP (#364, #358) — QCFPage must receive the SAME `metrics.*`
-        // props AND the same `centerShortPages` as the SkiaPage branch below. This bug was born as drift between the
-        // two branches: SkiaPage gained the props upstream and QCFPage did not,
-        // so QCF silently rendered at the import-time portrait constants. A
-        // wholesale upstream take of this file is the known way to lose these
-        // lines again (see ReciterProfile.tsx). `main.metrics-parity.test.ts`
-        // guards it.
         <QCFPage
           metrics={metrics} // @ai
           pageNumber={pageNumber}
@@ -320,15 +304,7 @@ const DKPageViewBase: React.FC<{
           onReady={handleReady} // @ai
           onDraw={handleDraw} // @ai
           onTap={onTap}
-          screenWidth={metrics.pageWidth}
-          screenHeight={metrics.screenHeight}
-          contentWidth={metrics.contentWidth}
-          contentHeight={metrics.contentHeight}
-          baseLineHeight={metrics.baseLineHeight}
-          paddingHorizontal={metrics.paddingHorizontal}
-          paddingTop={metrics.paddingTop}
-          // #358 — same reason as the SkiaPage branch below; both renderers
-          // must agree (the 2026-09-07 review caught QCF missing it).
+          // DO NOT DROP (#358): the same value as the SkiaPage branch below (main.metrics-parity.test.ts).
           centerShortPages={!metrics.scrollContainerHeight}
         />
       ) : (
@@ -347,10 +323,7 @@ const DKPageViewBase: React.FC<{
           baseLineHeight={metrics.baseLineHeight}
           paddingHorizontal={metrics.paddingHorizontal}
           paddingTop={metrics.paddingTop}
-          // #358 — phone landscape wraps the page in a ScrollView that is
-          // much shorter than the page. Centering pages 1-2 inside the full
-          // (tall) content box would put the whole block below the fold at
-          // scroll offset 0, so the page reads as blank.
+          // #358: centring pages 1-2 in the tall phone-landscape page puts them below the fold.
           centerShortPages={!metrics.scrollContainerHeight}
         />
       )}
@@ -407,10 +380,7 @@ const DKPageViewBase: React.FC<{
   );
 };
 // @ai-end
-// @ai-start — #272: the page view renders again only when a prop, its state,
-// or a store or context that it reads changes. So each commit of it is a
-// possible new picture, and the rotation stage counts it as a draw
-// (pageDrawReport.ts). A render of the list alone does not redraw the page.
+// @ai-start — #272: memo, so each commit is a new picture that the rotation stage counts as a draw.
 const DKPageView = React.memo(DKPageViewBase);
 // @ai-end
 
@@ -453,23 +423,8 @@ const DKSpreadView: React.FC<{
   const spreadBg = isBookLayout ? edgeBg : cardColor;
   const rotationStage = useMushafRotationStage(); // @ai
 
-  // Phone landscape: scrollable page, offset past the cutout (#349).
-  //
-  // On a notched / Dynamic Island iPhone `pageWidth` is narrower than
-  // `screenWidth` by the left+right cutout insets, and `pageOffsetX` is the
-  // LEFT one. Pad by it so the page occupies exactly the safe span
-  // `[pageOffsetX, pageOffsetX + pageWidth]`.
-  //
-  // UIKit reports those insets symmetrically in landscape, so on real hardware
-  // this is bit-for-bit what `alignItems:'center'` produced. The explicit
-  // padding is used anyway because it stays correct if the two are ever
-  // unequal, where centring would place the page at `(left + right) / 2`.
-  //
-  // The `inverted` FlatList applies `scaleX: -1` to both the scroll view and
-  // each cell, so within a cell left is still physically left.
-  //
-  // Wherever there is no cutout (portrait, Android, non-notched hardware, and
-  // every non-iOS platform) `pageOffsetX` is 0 and this is a no-op.
+  // Phone landscape: scrollable page, padded past the left cutout inset `pageOffsetX` (#349).
+  // The `inverted` FlatList flips the scroll view and each cell, so left is still physically left.
   if (metrics.scrollContainerHeight) {
     return (
       <ScrollView
@@ -624,12 +579,7 @@ export default function MushafViewer({
   pageNumber: initialPage,
   initialSurahId,
 }: MushafViewerProps) {
-  // QARIAHV2-C — Samsung/OnePlus/Xiaomi OEM battery managers kill the audio
-  // foreground service + destroy the Activity while backgrounded, so the
-  // unmount-time `deactivateKeepAwake` rejects with "current activity is no
-  // longer available" and surfaces as a Sentry error. `suppressDeactivateWarnings`
-  // is expo-keep-awake's sanctioned guard (wraps the deactivate in `.catch`),
-  // turning the benign cleanup-on-a-dead-Activity rejection into a no-op.
+  // QARIAHV2-C: an OEM can destroy the Activity in the background; ignore the benign deactivate rejection.
   useKeepAwake(undefined, {suppressDeactivateWarnings: true});
   const {t} = useTranslation(['reader', 'common', 'qariah']);
   const [currentPage, setCurrentPage] = useState(initialPage);
@@ -710,10 +660,7 @@ export default function MushafViewer({
   // fresh at `initialScrollIndex = currentPage` and never inherits the stale
   // offset. Keyed on orientation (not raw dimensions) so the on-screen keyboard
   // shrinking the height never remounts the reader.
-  // @ai — the lists now remount on `listKey` (below, readerListKey.ts): the
-  // item width and shape. A window resize that keeps the orientation (iPad
-  // Split View and Stage Manager, Android free-form) then re-anchors too
-  // (#275). `orientationKey` still starts a turn of the rotation stage.
+  // @ai — the lists remount on `listKey` (readerListKey.ts, #275); `orientationKey` starts a rotation turn.
   const orientationKey = windowWidth > windowHeight ? 'landscape' : 'portrait';
 
   // Measured size of the FlatList container. Using `useWindowDimensions()`
@@ -985,8 +932,7 @@ export default function MushafViewer({
           <Pressable
             onPress={handleSharePage}
             hitSlop={8}
-            // @ai Qariah (Sprint 46, #259): the iOS 26 header buttons had no
-            // label, so VoiceOver and the regression flows could not find them.
+            // @ai Qariah (#259): a label, so VoiceOver and the regression flows find the iOS 26 header buttons.
             accessibilityRole="button"
             accessibilityLabel={t('qariah:a11y.sharePage')}>
             <Feather
@@ -1154,8 +1100,7 @@ export default function MushafViewer({
     const {targetSurahId} = useMushafNavigationStore.getState(); // @ai
     if (targetPage) {
       navigateToPage(targetPage);
-      // @ai Qariah (Sprint 47 Task 10): a surah link names its surah on a
-      // page that two surahs share, as at mount; a page link changes nothing.
+      // @ai Qariah: a surah link names its surah on a page that two surahs share, as at mount.
       if (targetSurahId)
         setAskedSurah({surahId: targetSurahId, page: targetPage});
       if (targetVerseKey) {

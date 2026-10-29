@@ -1,30 +1,16 @@
-/**
- * Qariah v2 — Branding type declarations.
- *
- * Extends upstream's `Branding` interface (RFC-007 onward) with Qariah-specific
- * fields. Upstream's shape is preserved verbatim so call-site changes drop in
- * cleanly on weekly sync. Everything else (urls.github, assets,
- * storageKeyPrefix, associatedDomain and others) is a Qariah-only extension.
- *
- * Values live in `branding.js` (CJS, runtime-loadable from app.config.ts).
- * This file gives TypeScript callers literal-narrow types.
- */
-
 import type {ComponentType} from 'react';
+import type {ImageSourcePropType} from 'react-native';
 import type {Track} from '@/types/audio';
 import type {TranslationProvider} from '@/types/TranslationProvider';
 import type {TafsirProvider} from '@/types/TafsirProvider';
 import type {CommunityReflectionsProvider} from '@/types/CommunityReflection';
 import type {AyahTimestamp} from '@/types/timestamps';
 
-/** Catalog source config (upstream RFC-007 shape, with Qariah `liveUrl` extension). */
+/** Catalog source config for the active branding. */
 export interface BrandingCatalogConfig {
-  /** Where the active catalog comes from at runtime. */
   source: 'bundled' | 'remote';
   /** Path to bundled JSON catalog file; undefined = use data/reciters-fallback.json. */
   fallbackPath?: string;
-  /** Qariah extension: live-update URL when source = 'remote'. */
-  liveUrl?: string;
 }
 
 /**
@@ -34,12 +20,8 @@ export interface BrandingCatalogConfig {
  * Forks select which rows to show and in what order by listing ids in
  * `Branding.homeRowConfig`. Unknown ids are ignored (forward-compat for forks
  * that haven't been updated when a new row is added upstream).
- *
- * Qariah extends the upstream base set (12 ids, PR #260) with 9 fork-only ids
- * covering its curated catalog surfaces.
  */
 export type HomeRowId =
-  // Upstream base 12 (PR #260)
   | 'continue-listening'
   | 'new-to-quran'
   | 'favorites'
@@ -52,17 +34,12 @@ export type HomeRowId =
   | 'memorization'
   | 'rewayat'
   | 'collection'
-  // Qariah extensions — additive only; Qariah relabels 'rewayat' in the title
-  // string rather than introducing a separate id.
+  // @ai Qariah rows (additive).
   | 'country'
-  | 'translations'
   | 'honored'
   | 'paradise'
-  | 'newly-added'
   | 'newly-added-recitations'
-  | 'full-recording'
-  | 'trending'
-  | 'most-played';
+  | 'full-recording';
 
 /** Per-row toggle for the Listen-tab home rows. */
 export interface HomeRow {
@@ -148,28 +125,6 @@ export interface Branding {
    * always the source of truth on cold-start.
    */
   catalogVersionEndpoint?: string;
-  /**
-   * Sprint 28 — asset access gating. When `enabled`, audio + reciter-photo
-   * URLs whose host is `legacyHost` are rewritten to `host` (a media-proxy
-   * Worker fronting the private asset bucket) at catalog load time + on the
-   * audio URL builder.
-   *
-   * Env-driven (no storage origins in source): real values in `.env.local`,
-   * placeholders in `.env.example`. Undefined / `enabled: false` / missing
-   * `host`/`legacyHost` (default) → URLs pass through unchanged (byte-identical
-   * to pre-Sprint-28 behavior). Bayaan ships undefined.
-   *
-   * The live catalog's `server`/`image_url` fields are the primary migration
-   * lever for already-installed builds; this seam covers new builds without a
-   * catalog write and is the Tier-2 HMAC injection point.
-   */
-  audioStreamProxy?: {
-    enabled: boolean;
-    /** Proxy Worker host, e.g. `media.cdn.example.com`. Undefined → rewrite is a no-op. */
-    host?: string;
-    /** Legacy public storage host to rewrite from, e.g. `cdn.example.com`. Undefined → no-op. */
-    legacyHost?: string;
-  };
   /**
    * RFC-008 — optional component that replaces the Listen-tab top
    * region (the default `RecitersHero`). Forks return a React
@@ -314,15 +269,27 @@ export interface Branding {
    * Field absent from `config/branding.js` → consumer applies
    * `?? 'gorhom'` at the call site, byte-equivalent to today's behavior.
    *
+   * Applies identically on iOS and Android — forks don't need
+   * platform-conditional branding. A future strategy (e.g.
+   * `'gesture-handler-v3'`) is an additive change to this union.
+   *
    * See docs/rfcs/014-player-scroll-strategy-seam.md.
    */
   playerMushafScrollBehavior?: 'gorhom' | 'native';
   /**
    * RFC-015 — base URL for ayah-timestamp JSONs served from a fork's
-   * R2 bucket (or any CDN with the same `{base}/{rewayatId}/{NNN}.json`
-   * layout `TimestampFetchService` constructs). Field absent → consumer
-   * applies `?? 'https://cdn.thebayaan.com/timestamps'`. No trailing
-   * slash; consumer composes `${timestampCdnBase}/${rewayatId}/${paddedSurah}.json`.
+   * R2 bucket (or any CDN with the same
+   * `{base}/{rewayatId}/{NNN}.json` layout `TimestampFetchService`
+   * constructs).
+   *
+   * Field absent → consumer applies `?? 'https://cdn.thebayaan.com/timestamps'`
+   * at the call site → byte-equivalent to today's behavior.
+   *
+   * Forks set this to their own mirror's base when the `has_timestamps`
+   * flag is true for any reciter in their catalog and the timestamp
+   * JSONs live somewhere other than the Bayaan production CDN. No
+   * trailing slash; consumer composes
+   * `${timestampCdnBase}/${rewayatId}/${paddedSurah}.json`.
    *
    * See docs/rfcs/015-timestamp-cdn-seam.md.
    */
@@ -390,6 +357,30 @@ export interface Branding {
    * See docs/rfcs/019-timestamp-local-provider.md.
    */
   timestampLocalSurahList?: (rewayatId: string) => number[] | null;
+  /**
+   * @ai Qariah (TECH_DEBT #355): proposed upstream seam, no RFC yet.
+   *
+   * Optional brand mark at the top of the tablet sidebar
+   * (`components/tablet/TabletSidebar.tsx`), shown at 40 x 40 with
+   * `resizeMode="contain"`. `light` shows on the light theme, `dark` on the
+   * dark theme (`dark` absent → `light`).
+   *
+   * Field absent → the default `LogoIcon` SVG, byte-equivalent to today's
+   * behavior. Bayaan ships this unset.
+   *
+   * A fork sets it with a getter that `require()`s its images on access:
+   * the `app.config.js` Node eval cannot `require()` an image.
+   */
+  sidebarLogo?: {
+    light: ImageSourcePropType;
+    dark?: ImageSourcePropType;
+  };
+}
+
+/** Qariah's catalog config: upstream's fields plus the live catalog URL. */
+export interface QariahBrandingCatalogConfig extends BrandingCatalogConfig {
+  /** Live catalog URL (`EXPO_PUBLIC_CATALOG_URL`); see services/dataService.ts. */
+  liveUrl?: string;
 }
 
 /** Qariah-specific extensions on top of upstream's Branding interface. */
@@ -398,22 +389,24 @@ export interface QariahBranding extends Branding {
   appSlug: 'qariah';
   urlScheme: 'qariah';
   bundleId: {ios: 'com.qariah.app'; android: 'com.qariah.app'};
+  catalog: QariahBrandingCatalogConfig;
+
+  /** Rewrites audio and photo URLs on `legacyHost` to the media-proxy `host`. Off leaves URLs unchanged. */
+  audioStreamProxy?: {
+    enabled: boolean;
+    /** Proxy Worker host, e.g. `media.cdn.example.com`. Undefined → rewrite is a no-op. */
+    host?: string;
+    /** Legacy public storage host to rewrite from, e.g. `cdn.example.com`. Undefined → no-op. */
+    legacyHost?: string;
+  };
 
   /** Universal-link host. Set when DNS + apple-app-site-association are wired. */
   associatedDomain: string | undefined;
 
-  /**
-   * User-facing support contact email. Settings → Support / Feature
-   * Request fire `mailto:<supportEmail>` intents pointed here.
-   */
+  /** Support email for the Settings `mailto:` links. */
   supportEmail: string;
 
-  /**
-   * Apple App Store numeric ID for this app's listing (the `id######`
-   * segment of the App Store URL). Drives the "Write a Review" deep link.
-   * Qariah-only for now; multi-tenant XF candidate (companion to Bayaan
-   * #271 which lifted PLAY_STORE_ID / RATED_KEY to branding.appSlug).
-   */
+  /** App Store numeric id (the `id######` segment) for the "Write a Review" link. */
   appStoreId: string;
 
   /** Extra URLs beyond upstream's flat support/terms/privacy/share fields. */
@@ -421,12 +414,8 @@ export interface QariahBranding extends Branding {
     readonly github: string;
   };
 
-  /** AsyncStorage key prefix for user-data keys. */
-  storageKeyPrefix: string;
-
   assets: {
     readonly appIcon: {
-      readonly iosLegacy: string;
       readonly ios: {
         readonly dark: string;
         readonly light: string;
@@ -446,40 +435,22 @@ export interface QariahBranding extends Branding {
     };
   };
 
-  /** Sprint 8 — pre-aggregated stats served as static JSON from R2. */
-  stats: {
-    readonly topRecitersUrl: string;
-  };
-
-  /**
-   * Sprint 16 RFC-010 (drafted upstream as a Branding field; lives on
-   * QariahBranding while the upstream RFC is in review). Points at a small
-   * JSON containing `{version: number, url?: string}` — version is a
-   * monotonically incrementing counter (catalog mutations), url is an
-   * immutable per-version snapshot. Polled on cold-start + AppState
-   * 'active'; triggers a catalog refetch when server > last-seen.
-   */
-  catalogVersionEndpoint?: string;
-
-  /**
-   * Sprint 23 RFC-011 (drafted upstream as a `Branding` field via
-   * doc-PR thebayaan/Bayaan#264; lives on QariahBranding while the
-   * upstream code-PR is in review). Maximum number of recent reading
-   * positions the Surahs-tab "Continue Reading" hero shows. `1` (or
-   * omitted) preserves Bayaan's single-card behavior; values > 1 render
-   * a horizontal carousel of the last N stopping points. Clamped to
-   * [1, 10] at read time. Lifts to upstream `Branding` once the
-   * RFC-011 code-PR merges, retiring this fork-only declaration.
-   */
+  /** RFC-011: the number of "Continue Reading" hero cards (1 = one card). Clamped to [1, 10] at read time. */
   continueReadingHistorySize?: number;
 
-  // RFC-014 (playerMushafScrollBehavior) + RFC-015 (timestampCdnBase) lifted
-  // to upstream `Branding` via PRs #285 / #286 (absorbed Sprint 27). Both
-  // declarations retired here; values still set in `branding.js`.
+  /**
+   * The tap on a surah row of a `surah-only` system playlist (#555). `'play'` (upstream) plays the
+   * playlist from that surah with the suggested reciter; `'browse-reciters'` opens the reciter list
+   * of the surah. Absent → `'play'`. Upstream-shaped: it moves to `Branding` if upstream adopts it.
+   */
+  systemPlaylistSurahPress?: 'play' | 'browse-reciters';
 
-  // RFC-018 (communityReflectionsProvider, ayahCommunityReflectionsComponent)
-  // lifted to upstream `Branding` via Bayaan #306 (absorbed Sprint 45 Pass A).
-  // The Sprint 27 fork-only declaration is retired; values set in `branding.js`.
+  /**
+   * GitHub #557: when the queue ends (no repeat), play the next surah by the same reciter and rewayah,
+   * skipping surahs it does not have, and stop after its last surah. Absent or false: the player stops
+   * at the end of the queue (upstream's behavior). Upstream candidate (a `Branding` field, default off).
+   */
+  continueToNextSurah?: boolean;
 }
 
 declare const branding: QariahBranding;

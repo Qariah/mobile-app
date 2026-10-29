@@ -31,12 +31,8 @@ import * as Font from 'expo-font';
 // Qariah: the Qariah-only imports (TECH_DEBT #243).
 import * as Sentry from '@sentry/react-native';
 import {raceInitTimeout, INIT_TIMED_OUT} from '@/services/initTimeout';
-import {applyQariahInitConfig} from '@/services/qariahInitConfig';
 
-// Qariah (#53): splash-blocking init budgets. Generous vs the measured healthy
-// path (the slowest service, the bundled Tafseer/translation DB import, runs
-// ~1.4s on a Pixel 3 release build — Sprint 30) but finite, so a wedged SQLite
-// open / IO stall degrades the boot instead of holding the splash forever.
+// Qariah (#53): finite init budgets, so a wedged SQLite open degrades the boot instead of holding the splash.
 const CRITICAL_SERVICE_TIMEOUT_MS = 10000;
 const NON_CRITICAL_BATCH_TIMEOUT_MS = 10000;
 
@@ -78,16 +74,7 @@ class AppInitializer {
   private initPromise: Promise<void> | null = null;
   private initialized = false;
   private services: ServiceInitializer[] = [];
-  // Sprint 34 (S34.1) — REPORT-ONLY cold-start init timing. Records each
-  // service's completion ms + the set still in-flight, so the slow-cold-start
-  // watchdog (services/qariahBoot.ts) and the batch-timeout capture can name the slow
-  // service(s) in the field instead of an opaque `non-critical-batch`. Field
-  // evidence (Sentry boot_step=catalog-ready 95%) localized the cold-start
-  // hangs to this method but couldn't decompose the parallel batch; this probe
-  // closes that gap so a future sprint builds the right lever (likely lazy-open
-  // the off-Listen-path feature DBs) with data. NO behavior change.
-  // See planning/v1-v2-fleet-compatibility-analysis-2026-06-12.md.
-  // review-by: 2027-01-15 (TECH_DEBT #234) — remove if nobody reads the `slow_init_service` tag
+  // REPORT-ONLY init timing that names the slow service. review-by: 2027-01-15 (TECH_DEBT #234).
   private completedTimings: Array<{name: string; ms: number}> = [];
   private inFlight = new Set<string>();
 
@@ -130,15 +117,8 @@ class AppInitializer {
         const critical = this.services.filter(s => s.critical);
         const nonCritical = this.services.filter(s => !s.critical);
 
-        // Run critical services sequentially (order matters).
-        // Qariah (#53): each await is BOUNDED. Every captured field boot-hang
-        // (Sentry QARIAHV2-G/-N, OnePlus 8 Pro + Xiaomi, builds 1277-1293)
-        // wedged inside this method while the splash was held — an unbounded
-        // critical init must never be able to hold the splash forever. On
-        // timeout we log + breadcrumb and CONTINUE degraded; the service's
-        // promise is not cancelled, so if it settles late its work still
-        // lands. The per-service breadcrumb means the next field stall names
-        // the exact service instead of the whole method.
+        // Run critical services sequentially (order matters)
+        // Qariah (#53): each await is bounded; on a timeout the boot continues degraded.
         for (const service of critical) {
           const serviceStartTime = Date.now();
           console.log(`[AppInitializer] Initializing ${service.name}...`);
@@ -171,10 +151,8 @@ class AppInitializer {
           );
         }
 
-        // Run non-critical services in parallel.
-        // Qariah (#53): bounded as a batch. `Promise.allSettled` absorbs
-        // rejections but NOT hangs — one never-settling non-critical service
-        // used to hold the splash forever, which contradicts "non-critical".
+        // Run non-critical services in parallel
+        // Qariah (#53): bounded as a batch: `Promise.allSettled` absorbs rejections but NOT hangs.
         if (nonCritical.length > 0) {
           console.log(
             `[AppInitializer] Running ${nonCritical.length} non-critical services in parallel...`,
@@ -197,10 +175,7 @@ class AppInitializer {
                     `[AppInitializer] ✓ ${service.name} initialized (${serviceTime}ms)`,
                   );
                 } finally {
-                  // S34.1 — record completion ms (success OR throw) + clear
-                  // in-flight, so a watchdog firing mid-batch names the slow
-                  // service via what's still in-flight. allSettled still sees
-                  // the rejection (re-thrown after finally) — behavior intact.
+                  // Record the time on success OR throw; allSettled still sees the rejection.
                   this.inFlight.delete(service.name);
                   this.completedTimings.push({
                     name: service.name,
@@ -216,8 +191,7 @@ class AppInitializer {
             console.warn(
               `[AppInitializer] ⏱ non-critical batch exceeded ${NON_CRITICAL_BATCH_TIMEOUT_MS}ms — continuing boot degraded (#53)`,
             );
-            // S34.1 — decompose the opaque `non-critical-batch` timeout: the
-            // still-in-flight services at the 10s mark are the culprits.
+            // The services still in flight at the timeout are the culprits.
             const snap = this.getInitSnapshot();
             Sentry.captureMessage('app-init-service-timeout', {
               level: 'warning',
@@ -245,9 +219,7 @@ class AppInitializer {
         }
 
         this.initialized = true;
-        // @ai Qariah (Sprint 46, Pass B review): the car integration is
-        // optional. A synchronous throw from its setup must not fail the boot
-        // of a phone that never connects a car.
+        // @ai Qariah: a throw from the optional car integration must not fail the boot.
         try {
           startCarIntegration();
         } catch (error) {
@@ -297,13 +269,7 @@ class AppInitializer {
     return this.services;
   }
 
-  /**
-   * Sprint 34 (S34.1) — REPORT-ONLY snapshot of cold-start init progress, read
-   * by the slow-cold-start watchdog (services/qariahBoot.ts) when it fires so the
-   * field event names the slow service(s). `completed` = finished services +
-   * their ms (slowest-first); `inFlight` = started-but-not-done at read time
-   * (the likely culprits when the watchdog trips mid-batch). No behavior change.
-   */
+  /** REPORT-ONLY init progress for the slow-cold-start watchdog: `completed` slowest first, and `inFlight`. */
   getInitSnapshot(): {
     completed: Array<{name: string; ms: number}>;
     inFlight: string[];
@@ -314,19 +280,12 @@ class AppInitializer {
     };
   }
 
-  /**
-   * @ai Qariah (TECH_DEBT #243) — remove a registered service by name. The
-   * other services keep their order. Used by services/qariahInitConfig.ts, so
-   * the upstream registerService() blocks below stay byte-identical.
-   */
+  /** @ai Qariah (TECH_DEBT #243) — remove a registered service by name (services/qariahInitConfig.ts). */
   unregisterService(name: string): void {
     this.services = this.services.filter(s => s.name !== name);
   }
 
-  /**
-   * @ai Qariah (TECH_DEBT #243) — replace the initialize() of a registered
-   * service. The service keeps its name, priority, critical flag and slot.
-   */
+  /** @ai Qariah (TECH_DEBT #243) — replace the initialize() of a registered service; it keeps its slot. */
   replaceServiceInitializer(
     name: string,
     initialize: () => Promise<void>,
@@ -612,11 +571,3 @@ appInitializer.registerService({
     useFavoriteRecitersStore.getState();
   },
 });
-
-// ============================================================================
-// QARIAH (TECH_DEBT #243)
-// Qariah's skips and overrides of the registrations above, in one place. It
-// runs at module load, after every upstream registration and before anything
-// can call initialize(). Details: services/qariahInitConfig.ts.
-// ============================================================================
-applyQariahInitConfig(appInitializer);

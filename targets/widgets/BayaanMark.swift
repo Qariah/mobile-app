@@ -31,7 +31,7 @@ struct BayaanMark: Shape {
 /// see RFC-021. Without one, the vector BayaanMark is drawn.
 struct BayaanLogo: View {
   var size: CGFloat = 16
-  private static let brandMark = UIImage(named: "BrandMark")
+  private static let hasBrandMark = UIImage(named: "BrandMark") != nil
 
   var body: some View {
     mark
@@ -40,8 +40,12 @@ struct BayaanLogo: View {
   }
 
   @ViewBuilder private var mark: some View {
-    if let image = Self.brandMark {
-      Image(uiImage: image)
+    if Self.hasBrandMark {
+      // @ai Qariah (TECH_DEBT #353): draw the asset by name, not as a UIImage. WidgetKit archives a UIImage
+      // as a bitmap at the image's own size (a 600 x 500 pt SVG is 1800 x 1500 px
+      // at 3x). That is over the image limit of a small or medium widget, so the
+      // whole widget showed a grey placeholder. A named asset draws at the frame size.
+      Image("BrandMark")
         .renderingMode(.template)
         .resizable()
         .scaledToFit()

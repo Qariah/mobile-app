@@ -28,7 +28,7 @@ tags:
 # 1. Make a playlist with one surah (Hud, A'tii Qah Suhaimi). Same steps as
 #    player/playlist-session-restore.yaml, which passes on both platforms.
 - tapOn: '.*Listen'
-- tapOn: 'Reciters'
+- tapOn: '(Qariahs|Reciters)'  # the Browse by tile; "Reciters" before #535
 - tapOn:
     point: 17%,35%
 - extendedWaitUntil:

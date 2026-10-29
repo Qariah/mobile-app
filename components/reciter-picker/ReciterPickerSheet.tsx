@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Platform,
   Pressable,
-  Dimensions,
+  useWindowDimensions,
   type ListRenderItemInfo,
 } from 'react-native';
 import {moderateScale} from 'react-native-size-matters';
@@ -59,7 +59,11 @@ export function ReciterPickerSheet({
   onDone,
 }: ReciterPickerSheetProps): React.ReactElement {
   const {theme} = useTheme();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const {height: screenHeight} = useWindowDimensions(); // @ai TECH_DEBT #278
+  const styles = useMemo(
+    () => createStyles(theme, screenHeight),
+    [theme, screenHeight],
+  );
   const {t} = useTranslation(['sheets', 'common']);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -186,16 +190,15 @@ export function ReciterPickerSheet({
   );
 }
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
-const createStyles = (theme: Theme) =>
+// @ai TECH_DEBT #278: screenHeight is the live window height.
+const createStyles = (theme: Theme, screenHeight: number) =>
   StyleSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
       borderTopLeftRadius: moderateScale(20),
       borderTopRightRadius: moderateScale(20),
       paddingTop: moderateScale(8),
-      height: SCREEN_HEIGHT * 0.85,
+      height: screenHeight * 0.85,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderLeftWidth: StyleSheet.hairlineWidth,
       borderRightWidth: StyleSheet.hairlineWidth,

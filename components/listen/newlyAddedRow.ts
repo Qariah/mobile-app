@@ -4,7 +4,7 @@ import {
   getNewlyAddedRecitations,
   newlyAddedCutoff,
   type NewlyAddedRecitation,
-} from '@/data/reciterCollections';
+} from '@/data/qariahReciterCollections';
 import type {Reciter} from '@/data/reciterData';
 
 /** The row shows the recitations of the last 30 days… */

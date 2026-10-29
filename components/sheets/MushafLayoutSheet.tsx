@@ -3,7 +3,7 @@ import {
   View,
   Text,
   Pressable,
-  Dimensions,
+  useWindowDimensions,
   StyleSheet,
   LayoutAnimation,
 } from 'react-native';
@@ -20,14 +20,13 @@ import {useTranslation} from 'react-i18next';
 import {flipX} from '@/utils/rtl';
 // @ai-end
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 type ActiveScreen = 'theme' | null;
 
 // @ai-start
 export const MushafLayoutSheet = (props: SheetProps<'mushaf-layout'>) => {
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation(['sheets', 'common']);
   const [activeScreen, setActiveScreenRaw] = useState<ActiveScreen>(null);
 
@@ -99,7 +98,8 @@ export const MushafLayoutSheet = (props: SheetProps<'mushaf-layout'>) => {
 };
 // @ai-end
 
-const createStyles = (theme: Theme) =>
+// @ai TECH_DEBT #278: screenHeight is the live window height.
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
@@ -110,7 +110,7 @@ const createStyles = (theme: Theme) =>
       borderRightWidth: StyleSheet.hairlineWidth,
       borderColor: Color(theme.colors.text).alpha(0.08).toString(),
       paddingTop: moderateScale(8),
-      height: SCREEN_HEIGHT * 0.82,
+      height: screenHeight * 0.82,
     },
     indicator: {
       backgroundColor: Color(theme.colors.text).alpha(0.3).toString(),

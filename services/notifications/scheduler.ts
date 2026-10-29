@@ -2,6 +2,7 @@
 // Qariah (Sprint 48, S48.6): which notification to send, and the candidates.
 import type {Reciter} from '@/data/reciterData';
 import {listRecitations, type RecitationEntry} from './catalogDiff';
+import {localDay} from './localDay';
 import type {
   NotificationCandidate,
   NotificationTextKey,
@@ -50,7 +51,108 @@ export const CONTINUE_LISTENING_EARLIEST_HOUR = 9;
 export const CONTINUE_LISTENING_LATE_PLAY_HOUR = 21;
 export const CONTINUE_LISTENING_LATE_NOTICE_HOUR = 20;
 
-export {localDay} from './localDay';
+export {localDay};
+
+// ---------------------------------------------------------------------------
+// One notice a day in total (TECH_DEBT #328)
+//
+// The app posts the catalog types (`pickNotification`), and the OS fires the
+// two scheduled types: the Al-Kahf reminder each Friday at 09:00, and
+// "continue listening" at its time. A day is taken when the app posted a
+// notice that day (`lastNotifiedDay`), or when a scheduled notice falls on it.
+// - The app posts nothing on a taken day (`scheduledNoticeOnDay`); the
+//   recitations come again at the next check. After
+//   `CATALOG_NOTICE_HOLD_CAP_DAYS` of waits, they post on a taken day too.
+// - "Continue listening" moves to the next day, at the same local time, when
+//   its day is a Friday with the Al-Kahf reminder on, or the day of the app's
+//   notice (`continueNoticeTime`). The Al-Kahf reminder never moves: it is the
+//   reminder of that day.
+
+/** `Date#getDay()` of the Al-Kahf reminder: Friday (expo weekday 6 is Friday). */
+export const KAHF_JS_WEEKDAY = 5;
+
+/** The local day of `date` is a Friday, the day of the Al-Kahf reminder. */
+export function isKahfDay(date: Date | number): boolean {
+  return new Date(date).getDay() === KAHF_JS_WEEKDAY;
+}
+
+export interface ScheduledNoticeDayInput {
+  /** A time in the day to check (the check uses its local day). */
+  now: Date;
+  /** The Al-Kahf toggle is on (the reminder is scheduled with the permission). */
+  kahfFridayOn: boolean;
+  /**
+   * The local days (`YYYY-MM-DD`) of the "continue listening" notices: the
+   * pending one and the last one that fired (`continueListeningStore.ts`).
+   */
+  continueNoticeDays: readonly string[];
+}
+
+/** An OS-scheduled notice falls on the local day of `now`, before or after `now`. */
+export function scheduledNoticeOnDay(input: ScheduledNoticeDayInput): boolean {
+  if (input.kahfFridayOn && isKahfDay(input.now)) return true;
+  return input.continueNoticeDays.includes(localDay(input.now));
+}
+
+/**
+ * A catalog notice that taken days have held back for this many days or more
+ * posts on a taken day too (review of Sprint 51, Lane N). Without the cap, a
+ * user who opens the app only on Fridays, with Al-Kahf on, never gets one.
+ * The app still posts at most one notice that day (`lastNotifiedDay`).
+ */
+export const CATALOG_NOTICE_HOLD_CAP_DAYS = 7;
+
+const LOCAL_DAY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** The calendar days from the local day `from` to `to` (`YYYY-MM-DD`), or null. */
+export function daysBetweenLocalDays(from: string, to: string): number | null {
+  const a = LOCAL_DAY_PATTERN.exec(from);
+  const b = LOCAL_DAY_PATTERN.exec(to);
+  if (!a || !b) return null;
+  // Noon, so that a change to or from summer time does not change the count.
+  const start = new Date(+a[1], +a[2] - 1, +a[3], 12).getTime();
+  const end = new Date(+b[1], +b[2] - 1, +b[3], 12).getTime();
+  return Math.round((end - start) / (24 * 60 * 60_000));
+}
+
+/** The catalog notice first held back on `heldSince` has waited long enough. */
+export function holdCapReached(
+  heldSince: string | null,
+  todayLocal: string,
+): boolean {
+  if (heldSince === null) return false;
+  const days = daysBetweenLocalDays(heldSince, todayLocal);
+  return days !== null && days >= CATALOG_NOTICE_HOLD_CAP_DAYS;
+}
+
+export interface ContinueNoticeDayRules {
+  kahfFridayOn: boolean;
+  /** The day of the app's last notice (`useNotificationPrefsStore`). */
+  lastNotifiedDay: string | null;
+}
+
+/**
+ * The time of a "continue listening" notice that is due at `fireAt`, moved
+ * one calendar day later (the same local time) while its day is taken: a
+ * Friday with the Al-Kahf reminder on, or the day of the app's last notice.
+ * A time on a free day stays as it is, so a second call gives the same time.
+ */
+export function continueNoticeTime(
+  fireAt: number,
+  rules: ContinueNoticeDayRules,
+): number {
+  const at = new Date(fireAt);
+  // A Friday and the day of the app's notice can be next to each other: two
+  // moves at most. The limit only guards the loop.
+  for (let moves = 0; moves < 7; moves += 1) {
+    const taken =
+      (rules.kahfFridayOn && isKahfDay(at)) ||
+      localDay(at) === rules.lastNotifiedDay;
+    if (!taken) break;
+    at.setDate(at.getDate() + 1);
+  }
+  return at.getTime();
+}
 
 export interface PickNotificationInput {
   candidates: readonly NotificationCandidate[];
@@ -65,12 +167,20 @@ export interface PickNotificationInput {
   todayLocal: string;
   /** The day of the last posted notice (`useNotificationPrefsStore`). */
   lastNotifiedDay: string | null;
+  /**
+   * An OS-scheduled notice (the Friday Al-Kahf reminder, "continue
+   * listening") falls on today, before or after now (`scheduledNoticeOnDay`).
+   * Then today has its one notice (TECH_DEBT #328).
+   */
+  scheduledNoticeToday?: boolean;
 }
 
 /**
  * At most ONE candidate for the day: the first candidate of the first type in
  * `NOTIFICATION_PRIORITY` whose toggle is on. Nothing for a holdout user,
- * without permission, or when a notice already went out today. Among
+ * without permission, when a notice already went out today, or when an
+ * OS-scheduled notice falls on today (TECH_DEBT #328: the posted types wait
+ * for the next check; `heldBackKeys` keeps their recitations). Among
  * candidates of one type, the first one wins (the builders put the newest
  * first).
  */
@@ -80,6 +190,7 @@ export function pickNotification(
   const {candidates, prefs, permissionGranted, holdout} = input;
   if (holdout || !permissionGranted) return null;
   if (input.lastNotifiedDay === input.todayLocal) return null;
+  if (input.scheduledNoticeToday === true) return null;
   for (const type of NOTIFICATION_PRIORITY) {
     // Strict: a missing value is OFF.
     if (prefs[type] !== true) continue;

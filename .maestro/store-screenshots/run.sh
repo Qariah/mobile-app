@@ -49,7 +49,7 @@ else
   L=(
     L_TABBAR='Tab Bar' L_LISTEN='.*Listen' L_MUSHAF_TAB='.*Mushaf' L_COLLECTION='.*Collection'
     L_SETTINGS='.*Settings' L_SEARCH='.*Search' L_TABS_MIN='Listen|Mushaf|Settings'
-    L_BACK='Back' L_CANCEL='Cancel' L_SEARCH_BOX='Search surahs or reciters' L_RECITERS='Reciters'
+    L_BACK='Back' L_CANCEL='Cancel' L_SEARCH_BOX='Search surahs or qariahs' L_RECITERS='Qariahs'
     L_ASC='.*Asc' L_JUZ='.*JUZ.*' L_PAUSE='Pause'
     L_MUSHAF_SETTINGS='Mushaf Settings.*' L_VIEW_MUSHAF='Mushaf' L_VIEW_LIST='List'
     L_SHEET_OPEN='VIEW TYPE|DIVINE NAMES|Tajweed Coloring'

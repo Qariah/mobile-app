@@ -4,7 +4,11 @@
 // does not save) → post → record today.
 import type {Reciter, Rewayat} from '@/data/reciterData';
 import {whatsNewCandidate} from '../announcement';
-import {runCatalogCheck, type CatalogCheckDeps} from '../catalogCheck';
+import {
+  CATALOG_NOTICE_HELD_SINCE_KEY,
+  runCatalogCheck,
+  type CatalogCheckDeps,
+} from '../catalogCheck';
 import {
   CATALOG_SNAPSHOT_KEY,
   createCatalogSnapshotStore,
@@ -135,6 +139,7 @@ function device(
       holdout: false,
       notifier,
       snapshotStore: createCatalogSnapshotStore(storage),
+      heldSinceStorage: storage,
       prefs,
       now,
       ...extra,
@@ -453,5 +458,119 @@ describe('runCatalogCheck', () => {
       });
     });
     expect(result?.status).toBe('first_check');
+  });
+});
+
+describe('one notice a day in total (TECH_DEBT #328)', () => {
+  // Friday 2026-10-23: the Al-Kahf reminder fires at 09:00.
+  const FRIDAY_0700 = new Date(2026, 9, 23, 7, 0);
+  const FRIDAY_1500 = new Date(2026, 9, 23, 15, 0);
+  const SATURDAY = new Date(2026, 9, 24, 10, 0);
+  // Wednesday and Thursday after DAY1.
+  const DAY3 = new Date(2026, 9, 22, 10, 0);
+  const WITH_NEW = [...BASE, reciter('new', [3])];
+  const noContinue = {continueNoticeDays: () => []};
+
+  it('a Friday with Al-Kahf on: the new recitation waits, and Saturday posts it', async () => {
+    const d = await deviceWithBaseline();
+    for (const now of [FRIDAY_0700, FRIDAY_1500]) {
+      const result = await d.check(WITH_NEW, now, noContinue);
+      expect(result.status).toBe('not_posted');
+      expect(result.heldBackKeys).toHaveLength(1);
+    }
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+    expect(d.prefs.markNotifiedToday).not.toHaveBeenCalled();
+
+    const saturday = await d.check(WITH_NEW, SATURDAY, noContinue);
+    expect(saturday.status).toBe('posted');
+    expect(saturday.posted?.type).toBe('new_recitation');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('a Friday with Al-Kahf off posts the new recitation', async () => {
+    const d = await deviceWithBaseline({prefs: {kahf_friday: false}});
+    const result = await d.check(WITH_NEW, FRIDAY_1500, noContinue);
+    expect(result.status).toBe('posted');
+  });
+
+  it('the "what is new" notice waits on a Friday too', async () => {
+    const d = await deviceWithBaseline();
+    const result = await d.check(BASE, FRIDAY_1500, {
+      ...noContinue,
+      reciters: null,
+      extraCandidates: [whatsNewCandidate('2026-10-sprint48')],
+    });
+    expect(result.status).toBe('nothing_new');
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+  });
+
+  it('the day of a "continue listening" notice: nothing posts; the next day posts', async () => {
+    const d = await deviceWithBaseline();
+    const continueDays = {continueNoticeDays: () => ['2026-10-21']};
+    const taken = await d.check(WITH_NEW, DAY2, continueDays);
+    expect(taken.status).toBe('not_posted');
+    const next = await d.check(WITH_NEW, DAY3, continueDays);
+    expect(next.status).toBe('posted');
+  });
+
+  describe('the cap of a held catalog notice (CATALOG_NOTICE_HOLD_CAP_DAYS)', () => {
+    const NEXT_FRIDAY = new Date(2026, 9, 30, 15, 0);
+    const heldSince = (d: ReturnType<typeof device>) =>
+      d.storage.data.get(CATALOG_NOTICE_HELD_SINCE_KEY);
+
+    it('held Friday after Friday: it posts on the second Friday', async () => {
+      const d = await deviceWithBaseline();
+      const first = await d.check(WITH_NEW, FRIDAY_1500, noContinue);
+      expect(first.status).toBe('not_posted');
+      expect(heldSince(d)).toBe('2026-10-23');
+
+      const second = await d.check(WITH_NEW, NEXT_FRIDAY, noContinue);
+      expect(second.status).toBe('posted');
+      expect(second.posted?.type).toBe('new_recitation');
+      expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+      // The post ends the wait.
+      expect(heldSince(d)).toBeUndefined();
+    });
+
+    it('a second hold keeps the first day', async () => {
+      const d = await deviceWithBaseline();
+      await d.check(WITH_NEW, FRIDAY_0700, noContinue);
+      // The same Friday, later: still held, and the day stays the first one.
+      await d.check(WITH_NEW, FRIDAY_1500, noContinue);
+      // Six days later (a Thursday with a "continue listening" notice): held.
+      const thursday = new Date(2026, 9, 29, 15, 0);
+      const sixDays = await d.check(WITH_NEW, thursday, {
+        continueNoticeDays: () => ['2026-10-29'],
+      });
+      expect(sixDays.status).toBe('not_posted');
+      expect(heldSince(d)).toBe('2026-10-23');
+    });
+
+    it('the cap still posts at most one app notice that day', async () => {
+      const d = await deviceWithBaseline();
+      await d.check(WITH_NEW, FRIDAY_1500, noContinue);
+      d.prefs.state.lastNotifiedDay = '2026-10-30';
+      const second = await d.check(WITH_NEW, NEXT_FRIDAY, noContinue);
+      expect(second.status).toBe('not_posted');
+      expect(d.notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('a recitation that arrives on a Thursday, and the app opens on Saturday: it posts on Saturday, as before', async () => {
+      const d = await deviceWithBaseline();
+      const saturday = await d.check(WITH_NEW, SATURDAY, noContinue);
+      expect(saturday.status).toBe('posted');
+      expect(heldSince(d)).toBeUndefined();
+    });
+
+    it('a check with nothing held back removes the day', async () => {
+      const d = await deviceWithBaseline();
+      await d.check(WITH_NEW, FRIDAY_1500, noContinue);
+      expect(heldSince(d)).toBe('2026-10-23');
+      // The user turned the type off: nothing waits now.
+      d.prefs.state.new_recitation = false;
+      const off = await d.check(WITH_NEW, SATURDAY, noContinue);
+      expect(off.heldBackKeys).toEqual([]);
+      expect(heldSince(d)).toBeUndefined();
+    });
   });
 });

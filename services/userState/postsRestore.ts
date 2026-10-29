@@ -37,6 +37,7 @@
 
 import {getQfSdk} from '@/services/auth/sdkClient';
 import {withQfCall} from './qfErrors';
+import {unwrapQfList} from './qfResponse'; // @ai
 import * as Auth from '@/services/auth/qfOAuth';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
 import {useVerseAnnotationsStore} from '@/store/verseAnnotationsStore';
@@ -71,12 +72,7 @@ interface PostsListResponse {
 }
 
 function unwrapPostsList(res: unknown): QrPost[] {
-  if (Array.isArray(res)) return res as QrPost[];
-  if (res && typeof res === 'object') {
-    const r = res as PostsListResponse;
-    return r.data ?? r.posts ?? [];
-  }
-  return [];
+  return unwrapQfList<QrPost>(res, ['data', 'posts']);
 }
 
 function readPages(res: unknown): number {

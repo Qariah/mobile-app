@@ -17,8 +17,11 @@
 //   node scripts/signals/check.mjs --date=2026-10-19 [--file=<snapshot.json>] [--upload] [--allow-missing]
 //   node scripts/signals/check.mjs --streak [--days=30]
 //
-// The card runs about 40 minutes after the snapshot and counts trailing
-// windows, so a value matches when |snapshot − card| <= max(5, 3% of card).
+// A value matches when |snapshot − card| <= max(5, 3% of card). Since
+// 2026-10-25 the card and the snapshot's card section end their windows at
+// the same instant (11:00 LA, asOf) and count the events received by then, so
+// they give the same numbers whatever the run times; the tolerance only
+// matters for the older cards, whose windows ended at run time.
 // A snapshot "<5" matches a card value from 1 to 4.
 //
 // Exit 1 when the snapshot is missing or fails its checks. A mismatch or a

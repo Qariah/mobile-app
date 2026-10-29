@@ -191,9 +191,7 @@ it('shows the error once a load in progress fails', () => {
   expect(texts()[0]).toBe("Couldn't load the mushaf");
 });
 
-// @ai The DK service can become ready with no preload-state change (the
-// preload settled first, or a DK init started elsewhere). The screen must
-// re-render on the DK cache signal, not wait for a preload notify.
+// @ai The DK service can become ready with no preload-state change: re-render on the DK cache signal.
 it('shows the mushaf when the text service becomes ready on its own', () => {
   mockPreload.state = 'ready';
   render();

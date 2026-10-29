@@ -12,9 +12,13 @@
 //                     distinct session users of the same releases in the same
 //                     days, and the same for the 7 days before, with a fixed
 //                     verdict (freezeVerdict). The releases are the
-//                     production builds (active-rollout.json card.builds).
-//                     Android freeze = ApplicationNotResponding; iOS freeze =
-//                     "App Hanging" or WatchdogTermination. fetchSentryWeek.
+//                     production builds (active-rollout.json card.builds)
+//                     and the older builds that still have users
+//                     (weekReleases, since 2026-10-24). Android freeze =
+//                     ApplicationNotResponding seen by the user (a
+//                     "Background ANR" prints on its own line); iOS freeze =
+//                     "App Hanging" or WatchdogTermination. No emulator or
+//                     simulator counts. fetchSentryWeek.
 //   Google's score    Play, Android only: the user-perceived ANR rate over 7
 //                     days, against Google's 0.47% limit. fetchPlayAnr.
 //
@@ -308,6 +312,14 @@ export function renderAnrCard(
     }
     L.push(...wrapTo(`${head}${countLine(p)}`, pad));
     L.push(...wrapTo(`${pad}${weekBeforeLine(p)}`, pad));
+    // The ANRs that the user did not see: not in the share or the verdict.
+    if (p.backgroundUsers > 0)
+      L.push(
+        ...wrapTo(
+          `${pad}+ ${isSmall(p.backgroundUsers) ? 'fewer than 5' : p.backgroundUsers} froze in background`,
+          pad,
+        ),
+      );
     if (staged && (p.byBuild || []).length >= 2)
       L.push(...wrapTo(`  ${byBuildLine(p.byBuild)}`, '  '));
   };
@@ -568,11 +580,60 @@ export async function fetchSentryAnr({
 
 // --- Sentry: users who froze in the last 7 days -------------------------------
 
-// Each platform's freeze, as a Sentry search term.
+// Emulators and simulators are not users. One Android emulator on a Mac sent 8
+// "users" to production Sentry on 2026-10-21 (QARIAHV2-43): each clear of the
+// app data made Sentry report the same old ANR again for a new user. The value
+// is case-sensitive: `device.simulator:true` matches nothing.
+const NOT_SIMULATOR = '!device.simulator:True';
+
+// Each platform's freeze, as a Sentry search term. Android counts only the
+// ANRs that the user saw: a "Background ANR" happens while the app is not on
+// the screen, and Google's 0.47% limit leaves it out too (2026-10-24 root
+// cause, planning/android-anr-boot-stall-rca-2026-10-24.md).
 export const FREEZE_QUERY = {
-  android: 'error.type:ApplicationNotResponding',
-  ios: 'error.type:["App Hanging",WatchdogTermination]',
+  android: `error.type:ApplicationNotResponding !error.value:"Background ANR" ${NOT_SIMULATOR}`,
+  ios: `error.type:["App Hanging",WatchdogTermination] ${NOT_SIMULATOR}`,
 };
+
+// The freezes that the user did not see, this week only. The card prints them
+// on a line of their own; they are not in the share or the verdict.
+export const BACKGROUND_QUERY = {
+  android: `error.type:ApplicationNotResponding error.value:"Background ANR" ${NOT_SIMULATOR}`,
+};
+
+/**
+ * The releases that FREEZES (ANR) counts for one platform: the production
+ * builds of card.builds, and every OLDER build of the same platform that had
+ * session users in the two weeks. When a rollout completes, card.builds names
+ * only the new build, but the users who did not update yet stay on the old
+ * one. With the new build alone, the card compared its first week (a few
+ * early updaters) with its second week and printed WORSE while the platform
+ * got better: on 2026-10-23, 2027 alone went from 1 to 10 users, and 1717 +
+ * 2027 went from 21 to 14 users.
+ *   bs               the card builds of the platform [{version, build}]
+ *   sessionReleases  the releases with session users in the two weeks
+ *   platformOf       Map<build, 'iPhone'|'Android'> (daily-card.mjs
+ *                    collectAnr). Without it, only the card builds count.
+ *   label            'iOS' | 'Android'
+ * → release names, newest build first. A newer build (a beta) stays out, and
+ *   so does a build whose platform is not known.
+ */
+export function weekReleases({bs, sessionReleases = [], platformOf, label}) {
+  if (!bs.length) return [];
+  const newest = Math.max(...bs.map(b => Number(b.build)));
+  const want = label === 'iOS' ? 'iPhone' : 'Android';
+  const min = label === 'Android' ? V2_MIN_VERSION_CODE : 0;
+  const older = platformOf
+    ? sessionReleases.filter(r => {
+        if (!String(r).startsWith('com.qariah.app@')) return false;
+        const b = Number(buildOfRelease(r));
+        return b >= min && b < newest && platformOf.get(String(b)) === want;
+      })
+    : [];
+  return [...new Set([...bs.map(releaseOf), ...older])].sort(
+    (a, b) => Number(buildOfRelease(b)) - Number(buildOfRelease(a)),
+  );
+}
 
 // Why a platform is unavailable (week.<platform> = {unavailable: true,
 // reason}). The signals snapshot keeps only these fixed texts.
@@ -624,26 +685,34 @@ export function missedDays(daily, win) {
  * Users who froze, for each platform, in the last 7 complete UTC days and the
  * 7 days before (planning/signals-anr-listens-design.md, section 1 and the
  * decisions G-C1, G-C5, G-C6, G-M1).
- *   builds  the production builds, [{platform: 'iOS'|'Android', version,
- *           build}] (scripts/lib/card-layout.mjs cardBuilds)
+ *   builds      the production builds, [{platform: 'iOS'|'Android', version,
+ *               build}] (scripts/lib/card-layout.mjs cardBuilds)
+ *   platformOf  Map<build, 'iPhone'|'Android'> (daily-card.mjs collectAnr):
+ *               lets the week also count the older builds that still have
+ *               users (weekReleases). Without it, only `builds` count.
  * Each count is ONE distinct-user count over the whole window and all the
- * production releases of the platform (the union), never a sum of days or of
+ * counted releases of the platform (the union), never a sum of days or of
  * releases: a user who updated from 1717 to 2027 in the week is one user.
- * Production environment only.
+ * Production environment only; emulators and simulators are left out of the
+ * freeze counts (not out of the session users: Sentry sessions carry no
+ * device).
  * → {from, to, prevFrom, prevTo, android, ios}. A platform with no production
  *   build is null. Else {users, frozeUsers, prevUsers, prevFrozeUsers,
  *   verdict, byBuild: [{build, users, frozeUsers}]} (byBuild = this week,
- *   newest build first), or {unavailable: true, reason} when a request
- *   failed, when Sentry missed a day of the two weeks, or when a week has no
- *   session users. null without a token.
- * Requests: 1 for the observed days, 1 for the build sessions, then 5 for
- * each platform (one platform at a time).
+ *   newest build first; Android also has backgroundUsers, this week), or
+ *   {unavailable: true, reason} when a request failed, when Sentry missed a
+ *   day of the two weeks, or when a week has no session users. null without
+ *   a token.
+ * Requests: 1 for the observed days, 1 for the releases with users in the
+ * two weeks, 1 for the build sessions, then 5 for each platform (one platform
+ * at a time) and 1 more for the Android background ANRs.
  */
 export async function fetchSentryWeek({
   token,
   org,
   host = 'https://sentry.io',
   builds,
+  platformOf,
   now = new Date(),
 }) {
   if (!token) return null;
@@ -687,10 +756,11 @@ export async function fetchSentryWeek({
     );
     const missed = missedDays(daily, win);
 
-    // Distinct users with the freeze, all the releases together.
-    const frozeUsers = async (p, rs, s) => {
+    // Distinct users with the freeze (a FREEZE_QUERY or BACKGROUND_QUERY
+    // term), all the releases together.
+    const frozeUsers = async (term, rs, s) => {
       const j = await get(
-        `events/?field=${USERS}&dataset=errors&${BASE}&query=${enc(`${FREEZE_QUERY[p]} ${inReleases(rs)}`)}&${s}`,
+        `events/?field=${USERS}&dataset=errors&${BASE}&query=${enc(`${term} ${inReleases(rs)}`)}&${s}`,
       );
       return Number(j?.data?.[0]?.['count_unique(user)']) || 0;
     };
@@ -702,11 +772,35 @@ export async function fetchSentryWeek({
       return Number(j?.groups?.[0]?.totals?.['count_unique(user)']) || 0;
     };
 
-    // Session users of each release, this week.
-    const sessByRelease = new Map();
-    if (all.length) {
+    // The releases with session users in the two weeks, for weekReleases.
+    let sessionReleases = [];
+    if (platformOf && all.length) {
       const j = await get(
-        `sessions/?field=${USERS}&groupBy=release&${BASE}&query=${enc(inReleases(all.map(b => b.release)))}&${thisWeek}&interval=1d`,
+        `sessions/?field=${USERS}&groupBy=release&${BASE}&${span(win.prevFrom, win.to)}&interval=1d&per_page=100&orderBy=-${USERS}`,
+      );
+      sessionReleases = (j?.groups || [])
+        .filter(g => Number(g.totals?.['count_unique(user)']) > 0)
+        .map(g => g.by?.release)
+        .filter(Boolean);
+    }
+    const counted = Object.fromEntries(
+      ['Android', 'iOS'].map(label => [
+        label,
+        weekReleases({
+          bs: ofPlatform(label),
+          sessionReleases,
+          platformOf,
+          label,
+        }),
+      ]),
+    );
+
+    // Session users of each counted release, this week.
+    const sessByRelease = new Map();
+    const countedAll = [...counted.Android, ...counted.iOS];
+    if (countedAll.length) {
+      const j = await get(
+        `sessions/?field=${USERS}&groupBy=release&${BASE}&query=${enc(inReleases(countedAll))}&${thisWeek}&interval=1d`,
       );
       for (const g of j?.groups || [])
         sessByRelease.set(
@@ -719,19 +813,23 @@ export async function fetchSentryWeek({
       const bs = ofPlatform(label);
       if (!bs.length) return null;
       if (missed.length) return down(UNAVAILABLE.missed);
-      const rs = bs.map(b => b.release);
+      const rs = counted[label];
       const [users, froze, prevUsers, prevFroze, byRelease] = await Promise.all(
         [
           sessionUsers(rs, thisWeek),
-          frozeUsers(p, rs, thisWeek),
+          frozeUsers(FREEZE_QUERY[p], rs, thisWeek),
           sessionUsers(rs, prevWeek),
-          frozeUsers(p, rs, prevWeek),
+          frozeUsers(FREEZE_QUERY[p], rs, prevWeek),
           get(
             `events/?field=release&field=${USERS}&dataset=errors&${BASE}&query=${enc(`${FREEZE_QUERY[p]} ${inReleases(rs)}`)}&${thisWeek}`,
           ),
         ],
       );
       if (!users || !prevUsers) return down(UNAVAILABLE.noUsers);
+      // After the 5 above, so that no more than 5 requests run together.
+      const background = BACKGROUND_QUERY[p]
+        ? {backgroundUsers: await frozeUsers(BACKGROUND_QUERY[p], rs, thisWeek)}
+        : {};
       const frozeOf = new Map(
         (byRelease?.data || []).map(r => [
           r.release,
@@ -746,11 +844,12 @@ export async function fetchSentryWeek({
       };
       return {
         ...counts,
+        ...background,
         verdict: freezeVerdict(counts),
-        byBuild: bs.map(b => ({
-          build: String(b.build),
-          users: sessByRelease.get(b.release) || 0,
-          frozeUsers: frozeOf.get(b.release) || 0,
+        byBuild: rs.map(r => ({
+          build: String(buildOfRelease(r)),
+          users: sessByRelease.get(r) || 0,
+          frozeUsers: frozeOf.get(r) || 0,
         })),
       };
     };

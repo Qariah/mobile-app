@@ -14,8 +14,8 @@
 // services/car (index) and CarSnapshotService. Every other module is mocked
 // at its boundary and writes its call into `mockCalls`.
 // services/__tests__/qariahInitConfig.test.ts pins the AppInitializer list.
-// Upstream's AppInitializer.characterization.test.ts runs with upstream's flag
-// values (test-utils/upstreamBootFeatureFlags.ts).
+// Upstream's AppInitializer.characterization.test.ts pins upstream's list:
+// AppInitializer.ts alone applies no Qariah skip (qariahBootStarted() does).
 
 const mockCalls: string[] = [];
 /** The font keys of each Font.loadAsync call, in call order. */
@@ -71,6 +71,20 @@ jest.mock('@/config/featureFlags', () => {
         : actual.isFeatureEnabled(flag),
   };
 });
+jest.mock('@/config/qariahFeatureFlags', () => {
+  const actual = jest.requireActual<
+    typeof import('@/config/qariahFeatureFlags')
+  >('@/config/qariahFeatureFlags');
+  return {
+    ...actual,
+    isQariahFeatureEnabled: (
+      flag: keyof typeof actual.qariahFeatureFlags,
+    ): boolean =>
+      flag in mockFlagOverrides
+        ? mockFlagOverrides[flag]
+        : actual.isQariahFeatureEnabled(flag),
+  };
+});
 
 // ── appBoot.ts and qariahBoot.ts boundaries ─────────────────────────────────
 jest.mock('@sentry/react-native', () => mockSentry);
@@ -103,6 +117,10 @@ jest.mock('@/services/diagnostics/diagnostics', () => ({
 }));
 jest.mock('@/services/audio/ExpoAudioService', () => ({
   expoAudioService: {initialize: mockAsync('expoAudio.initialize')},
+}));
+// @ai TECH_DEBT #287: Sentry for a car-first process.
+jest.mock('@/services/diagnostics/sentryInit', () => ({
+  initSentryForCarRoot: () => mockRecord('sentry.carRootInit'),
 }));
 jest.mock('@/services/dataService', () => ({
   getAllReciters: mockAsync('catalog.getAllReciters'),
@@ -355,9 +373,14 @@ describe('Qariah boot (characterization, shipping flags)', () => {
     const {featureFlags} = jest.requireActual<
       typeof import('@/config/featureFlags')
     >('@/config/featureFlags');
+    const {qariahFeatureFlags} = jest.requireActual<
+      typeof import('@/config/qariahFeatureFlags')
+    >('@/config/qariahFeatureFlags');
     expect(featureFlags).toMatchObject({
       adhkar: false,
       userUploads: false,
+    });
+    expect(qariahFeatureFlags).toMatchObject({
       deferMushafPreload: true,
       deferNonCriticalBootServices: true,
       lazyOpenFeatureDbs: true,
@@ -681,17 +704,45 @@ describe('the boot sentinel and the Android Auto root (Sprint 46 review)', () =>
     mockCalls.filter(call => call.startsWith('sentinel.'));
 
   it('writes no sentinel when the car root boots first', async () => {
-    const {boot, qariah} = freshPair();
-    qariah.markCarRootBoot();
-    await boot();
+    const {boot} = freshPair();
+    await boot('car');
     await settle();
     expect(sentinelCalls()).toEqual([]);
   });
 
-  it('keeps the phone sentinel when the car root mounts during a phone boot', async () => {
-    const {boot, qariah} = freshPair();
+  // @ai TECH_DEBT #287: a car-first process never loads app/_layout.tsx.
+  it('a car-first boot inits Sentry first, once', async () => {
+    const {boot} = freshPair();
+    await boot('car');
+    await boot('car'); // The same runtime: the boot runs once.
+    await settle();
+    expect(mockCalls.filter(c => c === 'sentry.carRootInit')).toHaveLength(1);
+    expect(mockCalls[0]).toBe('sentry.carRootInit');
+  });
+
+  it('(safety) a phone boot does not init Sentry here (app/_layout.tsx does), also when the car root mounts during it', async () => {
+    const {boot} = freshPair();
     const running = boot();
-    qariah.markCarRootBoot();
+    void boot('car');
+    await running;
+    await settle();
+    expect(mockCalls).not.toContain('sentry.carRootInit');
+  });
+
+  it('(safety) a throw in the car Sentry init does not stop the car boot', async () => {
+    mockThrowAt.add('sentry.carRootInit');
+    const {boot} = freshPair();
+    await boot('car');
+    await settle();
+    expect(mockCalls).toContain('sentry.carRootInit');
+    expect(mockCalls).toContain('restoreSession');
+  });
+
+  it('keeps the phone sentinel when the car root mounts during a phone boot', async () => {
+    const {boot} = freshPair();
+    const running = boot();
+    // The car root reuses the running phone boot.
+    void boot('car');
     await running;
     await settle();
     expect(sentinelCalls()[0]).toBe('sentinel.started 3.2.2 (2620)');

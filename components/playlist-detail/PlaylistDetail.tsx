@@ -15,6 +15,7 @@ import {Reciter} from '@/data/reciterData';
 import {Surah} from '@/data/surahData';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {createTrack, createUserUploadTrack} from '@/utils/track';
+import {markPlaylistTracks} from '@/services/player/utils/queueSource'; // @ai Qariah (PLY-13)
 import {useUploadsStore} from '@/store/uploadsStore';
 import {moderateScale} from 'react-native-size-matters';
 import {Feather} from '@expo/vector-icons';
@@ -173,7 +174,7 @@ const PlaylistDetail: React.FC<PlaylistDetailProps> = ({id}) => {
           ...validTracks.slice(0, selectedIndex),
         ];
 
-        await updateQueue(reorderedTracks, 0);
+        await updateQueue(markPlaylistTracks(reorderedTracks), 0); // @ai Qariah (PLY-13)
         await play();
       } catch (error) {
         console.error('Error playing track:', error);
@@ -220,7 +221,7 @@ const PlaylistDetail: React.FC<PlaylistDetailProps> = ({id}) => {
 
       if (validTracks.length === 0) return;
 
-      await updateQueue(validTracks, 0);
+      await updateQueue(markPlaylistTracks(validTracks), 0); // @ai Qariah (PLY-13)
       await play();
     } catch (error) {
       console.error('Error playing all tracks:', error);
@@ -253,7 +254,7 @@ const PlaylistDetail: React.FC<PlaylistDetailProps> = ({id}) => {
 
       if (validTracks.length > 0) {
         const shuffledTracks = [...validTracks].sort(() => Math.random() - 0.5);
-        await updateQueue(shuffledTracks, 0);
+        await updateQueue(markPlaylistTracks(shuffledTracks), 0); // @ai Qariah (PLY-13)
         await play();
       }
     } catch (error) {

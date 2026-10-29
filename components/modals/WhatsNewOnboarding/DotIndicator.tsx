@@ -59,12 +59,7 @@ const DOT_SIZE_ACTIVE = moderateScale(20);
 const DOT_PADDING_VERTICAL = moderateScale(16);
 const DOT_GAP = moderateScale(6);
 
-/**
- * Total laid-out height of the indicator row. Exported so the modal can
- * reserve exactly this much space for it and never let the card's content
- * spill past the rounded edge. (Qariah #351; the dots only shrink, so the
- * full-size height stays the upper bound.)
- */
+/** Full height of the indicator row; the modal reserves it, so the content stays in the card (#351). */
 export const DOT_INDICATOR_HEIGHT =
   DOT_SIZE_INACTIVE + DOT_PADDING_VERTICAL * 2;
 

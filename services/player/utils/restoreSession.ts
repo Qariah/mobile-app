@@ -2,6 +2,7 @@ import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStor
 import {
   usePlayerStore,
   currentPlayOpId,
+  setTrackUrlResolver, // @ai TECH_DEBT #276
 } from '@/services/player/store/playerStore';
 import {
   getAvailableSurahsForRewayat,
@@ -16,6 +17,7 @@ import {Track} from '@/types/audio';
 import {useUploadsStore} from '@/store/uploadsStore';
 import {createUserUploadTrack} from '@/utils/track';
 import * as FileSystem from 'expo-file-system/legacy';
+import {File} from 'expo-file-system'; // @ai TECH_DEBT #276: the synchronous file check
 import {resolveFilePath} from '@/services/downloadService';
 import {hasCarReplacedQueue} from '@/services/car/sessionGate';
 
@@ -61,9 +63,7 @@ function waitForPlayerStoreHydration(timeoutMs = 3000): Promise<void> {
  * Phase 1: Populates the player store queue and playback state from
  * persisted recentTracks[0]. This makes the floating player render
  * immediately showing the last track. Does NOT load audio.
- * @ai The persisted playerStore queue comes first (restorePersistedQueue,
- * TECH_DEBT #271). recentTracks[0] rebuilds the queue only when no queue
- * was saved.
+ * @ai The persisted queue comes first; recentTracks[0] is the fallback (TECH_DEBT #271).
  *
  * Phase 2: Loads the audio source and seeks to the saved position
  * so that tapping play works. Run this after app is ready.
@@ -81,19 +81,13 @@ export async function restoreSession(): Promise<void> {
     // A car request (CarPlay / Android Auto) already replaced the queue.
     if (hasCarReplacedQueue()) return;
 
-    // @ai The saved queue is the session (TECH_DEBT #271). The mini player
-    // already shows its current track, and every play writes it: a playlist,
-    // the downloads list, a surah link, a reciter profile, an upload. The
-    // recent tracks miss some of these plays, and they keep one card for
-    // each reciter, so a rebuild from them can show another track or turn a
-    // playlist into a reciter's full surah list.
+    // @ai The saved queue is the session: the recent tracks miss plays and keep one per reciter (TECH_DEBT #271).
     if (persistedTrack?.url) {
       await restorePersistedQueue();
       return;
     }
 
-    // @ai No saved queue (a new device, an import, Settings -> Clear cache):
-    // rebuild the queue from the most recent track.
+    // @ai No saved queue: rebuild it from the most recent track.
     const recentTracks = useRecentlyPlayedStore.getState().recentTracks;
     if (recentTracks.length === 0) return;
 
@@ -209,14 +203,8 @@ export async function restoreSession(): Promise<void> {
 
 // @ai-start
 /**
- * Restores the persisted playerStore queue as the session (TECH_DEBT #271).
- *
- * The store hydrates this queue before the restore runs, and the mini player
- * shows its current track at once. The restore must load a source for that
- * track. If it does not, a tap on Play shows Pause and no audio plays.
- *
- * It keeps the queue, its order and its current track, and loads that track
- * at the saved position (at 0 when the saved position is at the end).
+ * Restores the persisted queue and loads its current track at the saved position (TECH_DEBT #271).
+ * Without the load, a tap on Play shows Pause and no audio plays.
  */
 async function restorePersistedQueue(): Promise<void> {
   const {tracks, currentIndex} = usePlayerStore.getState().queue;
@@ -270,15 +258,8 @@ function isLocalFile(url: string): boolean {
 }
 
 /**
- * A playable URL for the restored current track.
- * - An upload: the file of its recitation, when the recitation still exists.
- * - A local file (a download): the same file in the current app container
- *   (iOS can move the container on an update), when the file exists. The
- *   download record is not used: it can be missing (the download store has
- *   not hydrated) or keyed by another rewayah ('' for some download paths).
- * - Otherwise, or when the file is gone: the URL that the play paths build
- *   (generateSmartAudioUrl). When the reciter or the rewayah is not in the
- *   catalog, the track keeps its URL.
+ * A playable URL for the restored track: the upload's file, the download in the current app container
+ * (iOS can move it on an update; do not use the download record), else generateSmartAudioUrl.
  */
 async function withPlayableUrl(track: Track): Promise<Track> {
   try {
@@ -308,20 +289,56 @@ async function withPlayableUrl(track: Track): Promise<Track> {
   }
 }
 
-/**
- * The other queue tracks keep their URLs. Only a download path moves to the
- * current app container. A file check for each track would slow the splash.
- */
+/** Moves only a download path to the current app container (no file check: it would slow the splash). */
 function withCurrentContainer(track: Track): Track {
   return !track.isUserUpload && isLocalFile(track.url)
     ? {...track, url: resolveFilePath(track.url)}
     : track;
 }
 
+/** A synchronous file check (one stat). An error, or no answer, keeps the file: the load decides. */
+function fileExistsNow(uri: string): boolean {
+  try {
+    return new File(uri).exists !== false;
+  } catch {
+    return true;
+  }
+}
+
 /**
- * The title, artist and artwork in the current language and catalog, as the
- * recent-track path builds them. An upload keeps its own labels.
+ * TECH_DEBT #276: the URL to load for a queued track, when it loads (playerStore.loadTrackAtIndex).
+ * The other restored tracks get only withCurrentContainer() at the restore, so a download deleted after
+ * the play, or a stream host that the catalog retired, failed when the queue reached it. Same order as
+ * withPlayableUrl: the upload's file, a download whose file exists, else generateSmartAudioUrl. Null
+ * keeps the queued URL. Synchronous on purpose: see setTrackUrlResolver.
  */
+export function playableUrlAtLoad(track: Track): string | null {
+  try {
+    if (track.isUserUpload) {
+      const recitation = useUploadsStore
+        .getState()
+        .recitations.find(r => r.id === track.userRecitationId);
+      return recitation ? createUserUploadTrack(recitation).url : null;
+    }
+    if (isLocalFile(track.url)) {
+      const local = resolveFilePath(track.url);
+      if (fileExistsNow(local)) return local;
+    }
+    const reciter = getReciterByIdSync(track.reciterId);
+    if (!reciter || !track.surahId) return null;
+    // Without a rewayah id, only a reciter with one rewayah: never switch the rewayah.
+    if (!track.rewayatId && reciter.rewayat.length !== 1) return null;
+    return generateSmartAudioUrl(reciter, track.surahId, track.rewayatId);
+  } catch {
+    // generateAudioUrl() throws when the rewayah is not in the catalog.
+    return null;
+  }
+}
+
+// Optional call: suites that mock the player store leave it out.
+setTrackUrlResolver?.(playableUrlAtLoad);
+
+/** The title, artist and artwork in the current language and catalog. An upload keeps its labels. */
 function withCurrentLabels(track: Track): Track {
   if (track.isUserUpload) return track;
   const reciter = getReciterByIdSync(track.reciterId);
@@ -341,18 +358,8 @@ function withCurrentLabels(track: Track): Track {
 // @ai-end
 
 /**
- * @ai True while the restore still owns the player. Two conditions:
- * - the queue's current track is still the restored track, and
- * - the ExpoAudioService load generation is still `expectedGeneration`.
- *
- * loadTrack() can wait for the player on a cold start
- * (planning/boot-restore-player-order-plan.md). A user pick in that window
- * starts a newer load, and Settings -> Clear cache runs cleanup(). Both move
- * the generation. The generation check is necessary because the user can
- * pick the SAME surah: the URL check alone then stays true, and the restore
- * would seek the user's track. The check uses the generation, not the store
- * playback state, because the provider can set 'buffering' during a normal
- * restore load, and a state check would then skip a real resume.
+ * @ai True while the queue still shows the restored track AND the load generation is unchanged.
+ * The URL alone is not enough: the user can pick the SAME surah while loadTrack() waits.
  */
 function restoreStillOwnsPlayer(
   url: string,
@@ -369,20 +376,10 @@ function restoreStillOwnsPlayer(
 let restoreLoad: Promise<void> | null = null;
 
 // @ai-start TECH_DEBT #285
-/**
- * The restore's load and seek, while they run. The loaded source reports
- * position 0 until the seek to the saved position lands. ExpoAudioProvider
- * saves the reported position, so it could save that 0 as the session
- * position. When the app then stopped, the next restore (for example a tap
- * on the widget's Play) started the track at 0:00.
- */
+/** The restore's load and seek: until the seek lands, the reported position 0 must not be saved. */
 let restoreSeek: {url: string; opId: number; generation: number} | null = null;
 
-/**
- * True while the restore loads its track and seeks to the saved position,
- * and still owns the player. Newer work (a play, a cleanup()) ends it at
- * once. ExpoAudioProvider does not save a reported position while it is true.
- */
+/** True while the restore seeks and still owns the player: ExpoAudioProvider saves no position then. */
 export function isRestoreSeekPending(): boolean {
   if (!restoreSeek) return false;
   const {url, opId, generation} = restoreSeek;
@@ -403,16 +400,14 @@ export function pendingRestoreLoad(): Promise<void> {
  * Loads the audio source and seeks to position. Runs after store is populated.
  * Skips the load and seek once a newer play claimed a playOpId, so it cannot
  * replace or rewind a source that play started. Exported for tests.
- * @ai Qariah also skips them when the restore no longer owns the player
- * (restoreStillOwnsPlayer above, TECH_DEBT #218).
+ * @ai It also skips them when the restore no longer owns the player (TECH_DEBT #218).
  */
 export function loadAudioInBackground(
   url: string,
   startPosition: number,
 ): void {
   const opId = currentPlayOpId();
-  // @ai The load generation when the restore scheduled its load. A load or a
-  // cleanup() after this point belongs to newer work.
+  // @ai A load or cleanup() after this generation belongs to newer work.
   const scheduledGeneration = expoAudioService.getLoadGeneration();
   let settle: () => void = () => undefined;
   const load = new Promise<void>(resolve => {
@@ -426,16 +421,14 @@ export function loadAudioInBackground(
   // Use setTimeout to defer off the critical startup path
   setTimeout(async () => {
     try {
-      // @ai Inside the try, so the finally below settles pendingRestoreLoad()
-      // (upstream returned before the try, and left it pending).
+      // @ai Inside the try, so the finally settles pendingRestoreLoad().
       if (hasCarReplacedQueue()) return;
       // Newer work started before the timer fired: do not start a load.
       if (currentPlayOpId() !== opId) return;
       if (!restoreStillOwnsPlayer(url, scheduledGeneration)) return;
       await expoAudioService.loadTrack(url);
       if (currentPlayOpId() !== opId) return;
-      // @ai loadTrack() increments the generation once. Any other change means
-      // newer work started during the load: do not seek over it.
+      // @ai loadTrack() adds one to the generation; any other change is newer work: do not seek.
       if (!restoreStillOwnsPlayer(url, scheduledGeneration + 1)) return;
       if (startPosition > 0 && !hasCarReplacedQueue()) {
         await expoAudioService.seekTo(startPosition);

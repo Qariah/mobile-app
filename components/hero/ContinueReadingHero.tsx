@@ -56,11 +56,7 @@ export function ContinueReadingHero({
     [],
   );
 
-  // Sprint 23 (S23.3) RFC-011 — when `branding.continueReadingHistorySize`
-  // is > 1 AND we actually have reading history, delegate to the multi-
-  // card carousel. When history is empty the carousel would render
-  // nothing useful, so we fall through to the single-hero "Surah of the
-  // Day" branch below. (Was the `qariahRecentPagesCarousel` boolean flag.)
+  // RFC-011: a history size above 1 with reading history shows the carousel; else the single hero below.
   const historySize = resolveContinueReadingHistorySize();
   if (historySize > 1 && lastReadPage !== null) {
     return (

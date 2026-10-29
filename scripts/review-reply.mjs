@@ -34,6 +34,7 @@
 import {appendFileSync, mkdirSync, readFileSync} from 'node:fs';
 import {ANDROID_PACKAGE_NAME} from './lib/app-ids.mjs';
 import {ascJwt, ascPost} from './lib/asc-client.mjs';
+import {draftTextOf, hasLink} from './lib/reply-draft-text.mjs';
 import {getPlayAccessToken} from './lib/google-play-auth.mjs';
 import {
   addIssueLabels,
@@ -139,7 +140,7 @@ function draft() {
     throw new Error(
       `draft is ${text.length} chars; ${platform} allows ${limit}`,
     );
-  if (/https?:\/\//i.test(text)) throw new Error('no links in a store reply');
+  if (hasLink(text)) throw new Error('no links in a store reply');
   const comment = `${MARK}\n**Reply draft** — ${platform}, ${text.length}/${limit} chars. Edit this comment to change the wording; \`post\` reads the latest draft. Posting needs the owner's go from the daily card.\n\n${text}`;
   if (DRY) {
     console.log(
@@ -206,14 +207,9 @@ async function post() {
     (c.body || '').includes(MARK),
   );
   if (!drafts.length) throw new Error(`#${n} has no ${MARK} comment`);
-  const latest = drafts[drafts.length - 1].body;
-  const text = latest
-    .split('\n')
-    .slice(1)
-    .join('\n')
-    .replace(/^\*\*Reply draft\*\*[^\n]*\n\n?/, '')
-    .trim();
+  const text = draftTextOf(drafts[drafts.length - 1].body);
   if (!text) throw new Error('draft comment has no text');
+  if (hasLink(text)) throw new Error('no links in a store reply');
   if (text.length > LIMITS[platform])
     throw new Error(
       `draft is ${text.length} chars; ${platform} allows ${LIMITS[platform]}`,

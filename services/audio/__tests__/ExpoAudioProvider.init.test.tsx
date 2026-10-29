@@ -97,6 +97,12 @@ jest.mock('@/services/diagnostics/playbackSentinel', () => ({
 jest.mock('@/store/backgroundPlaybackStore', () => ({
   useBackgroundPlaybackStore: {getState: () => ({})},
 }));
+// The Qariah playback observers (C5, PLY-S6) have their own suite
+// (services/diagnostics/__tests__/playbackObserver.test.tsx).
+const mockObserver = jest.fn();
+jest.mock('@/services/diagnostics/playbackObserver', () => ({
+  usePlaybackObserver: (...args: unknown[]) => mockObserver(...args),
+}));
 
 import {ExpoAudioProvider} from '../ExpoAudioProvider';
 
@@ -131,6 +137,21 @@ describe('ExpoAudioProvider player injection (review L3)', () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+
+  it('hands its player and status to the Qariah playback observer (C5)', async () => {
+    mockService.initialize.mockResolvedValueOnce(undefined);
+    render(
+      <ExpoAudioProvider>
+        <View />
+      </ExpoAudioProvider>,
+    );
+    await act(() => Promise.resolve());
+
+    expect(mockObserver).toHaveBeenCalledWith(
+      mockPlayer,
+      expect.objectContaining({isLoaded: false, playing: false}),
+    );
   });
 
   it('(safety) sets the player after a successful initialize()', async () => {

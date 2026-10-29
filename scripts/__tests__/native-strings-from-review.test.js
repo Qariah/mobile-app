@@ -71,8 +71,8 @@ describe('native Arabic strings', () => {
     expect(locale.android.app_name).toBe(APP_NAME);
   });
 
-  it('app.config.ts gives the Arabic files to Expo and the plugin', () => {
-    const config = readFileSync(path.join(ROOT, 'app.config.ts'), 'utf8');
+  it('app.config.js gives the Arabic files to Expo and the plugin', () => {
+    const config = readFileSync(path.join(ROOT, 'app.config.js'), 'utf8');
     expect(config).toMatch(/locales:\s*{\s*ar:\s*'\.\/i18n\/native\/ar\.json'/);
     expect(config).toContain("'./withQariahNativeStrings.js'");
   });

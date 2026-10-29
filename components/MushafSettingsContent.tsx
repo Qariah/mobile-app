@@ -70,6 +70,7 @@ import {
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
 import {localizeDigits} from '@/i18n/format';
+import {ArabicOnlySwitch} from '@/components/mushaf/ArabicOnlySwitch'; // Qariah (#680)
 // @ai-end
 
 // --- Pre-cache Translation/Transliteration Data --- //
@@ -561,6 +562,9 @@ interface MushafSettingsContentProps {
 }
 
 // @ai-start
+// @ai Qariah (#234): show the Arabic size and the text-aid controls in page view too.
+const ALWAYS_SHOW_TEXT_CONTROLS = true;
+
 export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
   containerStyle,
   showTitle = true,
@@ -728,6 +732,12 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
       )}
       {/* @ai-start */}
       <RewayahFallbackBanner />
+      {/* @ai Qariah (#680): one clear switch for the Arabic text alone, first in the sheet. */}
+      <ArabicOnlySwitch
+        context={context}
+        styles={styles}
+        trackColor={trackColor}
+      />
       {/* @ai-end */}
 
       {/* VIEW TYPE Section (hidden from player context) */}
@@ -940,8 +950,7 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{checked: wbwShowTranslation}}
-          // @ai TECH_DEBT #316: on iOS the checkbox had no label of its own
-          // (VoiceOver read only "checkbox"). Use the visible title.
+          // @ai TECH_DEBT #316: give VoiceOver the visible title, not only "checkbox".
           accessibilityLabel={t('mushafSettings.translation')}
           style={({pressed}) => [
             styles.settingRow,
@@ -982,100 +991,95 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
         </Pressable>
       </View>
 
-      {/* Arabic Font Size + Translation / Transliteration toggles.
-          Always rendered — previously gated on
-          `context !== 'mushaf' || viewMode === 'list'`, which hid this
-          entire section when the settings sheet was opened from the Mushaf
-          tab in page-view mode. Users could not find the Translation or
-          Transliteration toggles from that entry point (#234). The controls
-          are still only *effective* in list-view, but they need to be
-          discoverable here so users can configure them and then switch view.
-          The standalone Settings → Mushaf Settings screen (no context prop)
-          has never had this restriction. */}
-      <>
-        <View style={styles.card}>
-          <FontSizeControl
-            label={t('mushafSettings.arabicFontSize')}
-            currentActualSize={arabicFontSize}
-            onChange={setArabicFontSize}
-            theme={theme}
-            styles={styles}
-            processedSampleSegments={flatVerseSegments}
-            sampleFontFamily={'Uthmani'}
-            showTajweed={showTajweed}
-            skiaFontMgr={fontMgr}
-            skiaFontFamily={dkFontFamily}
-            skiaVerseKey={verseKey}
-            skiaIndexedTajweedData={indexedTajweedData}
-            skiaArabicTextWeight={arabicTextWeight}
-            showAllahNameHighlight={showAllahNameHighlight}
-            allahNameHighlightColor={allahNameHighlightHex}
-          />
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.optionRow}>
-            <Text style={styles.optionLabel}>
-              {t('mushafSettings.transliteration')}
-            </Text>
-            <Switch
-              trackColor={trackColor}
-              thumbColor="#FFFFFF"
-              ios_backgroundColor={trackColor.false}
-              onValueChange={toggleTransliteration}
-              value={showTransliteration}
-              style={styles.switchStyle}
+      {/* Translation/Transliteration Section (shown in player context OR list view mode) */}
+      {(ALWAYS_SHOW_TEXT_CONTROLS ||
+        context !== 'mushaf' ||
+        viewMode === 'list') && (
+        <>
+          <View style={styles.card}>
+            <FontSizeControl
+              label={t('mushafSettings.arabicFontSize')}
+              currentActualSize={arabicFontSize}
+              onChange={setArabicFontSize}
+              theme={theme}
+              styles={styles}
+              processedSampleSegments={flatVerseSegments}
+              sampleFontFamily={'Uthmani'}
+              showTajweed={showTajweed}
+              skiaFontMgr={fontMgr}
+              skiaFontFamily={dkFontFamily}
+              skiaVerseKey={verseKey}
+              skiaIndexedTajweedData={indexedTajweedData}
+              skiaArabicTextWeight={arabicTextWeight}
+              showAllahNameHighlight={showAllahNameHighlight}
+              allahNameHighlightColor={allahNameHighlightHex}
             />
           </View>
-          {showTransliteration && (
-            <>
-              <View style={styles.divider} />
-              <FontSizeControl
-                label={t('mushafSettings.fontSize')}
-                currentActualSize={transliterationFontSize}
-                onChange={setTransliterationFontSize}
-                theme={theme}
-                styles={styles}
-                sampleText={actualTransliterationText}
-                sampleFontFamily="Manrope-Regular"
-              />
-            </>
-          )}
-        </View>
 
-        <View style={styles.card}>
-          <View style={styles.optionRow}>
-            <Text style={styles.optionLabel}>
-              {t('mushafSettings.translation')}
-            </Text>
-            <Switch
-              trackColor={trackColor}
-              thumbColor="#FFFFFF"
-              ios_backgroundColor={trackColor.false}
-              onValueChange={toggleTranslation}
-              value={showTranslation}
-              style={styles.switchStyle}
-            />
-          </View>
-          <Text style={styles.helperText}>
-            {t('mushafSettings.translationSource')}
-          </Text>
-          {showTranslation && (
-            <>
-              <View style={styles.divider} />
-              <FontSizeControl
-                label={t('mushafSettings.fontSize')}
-                currentActualSize={translationFontSize}
-                onChange={setTranslationFontSize}
-                theme={theme}
-                styles={styles}
-                sampleText={actualTranslationText}
-                sampleFontFamily="Manrope-Regular"
+          <View style={styles.card}>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>
+                {t('mushafSettings.transliteration')}
+              </Text>
+              <Switch
+                trackColor={trackColor}
+                thumbColor="#FFFFFF"
+                ios_backgroundColor={trackColor.false}
+                onValueChange={toggleTransliteration}
+                value={showTransliteration}
+                style={styles.switchStyle}
               />
-            </>
-          )}
-        </View>
-      </>
+            </View>
+            {showTransliteration && (
+              <>
+                <View style={styles.divider} />
+                <FontSizeControl
+                  label={t('mushafSettings.fontSize')}
+                  currentActualSize={transliterationFontSize}
+                  onChange={setTransliterationFontSize}
+                  theme={theme}
+                  styles={styles}
+                  sampleText={actualTransliterationText}
+                  sampleFontFamily="Manrope-Regular"
+                />
+              </>
+            )}
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.optionRow}>
+              <Text style={styles.optionLabel}>
+                {t('mushafSettings.translation')}
+              </Text>
+              <Switch
+                trackColor={trackColor}
+                thumbColor="#FFFFFF"
+                ios_backgroundColor={trackColor.false}
+                onValueChange={toggleTranslation}
+                value={showTranslation}
+                style={styles.switchStyle}
+              />
+            </View>
+            <Text style={styles.helperText}>
+              {t('mushafSettings.translationSource')}
+            </Text>
+            {showTranslation && (
+              <>
+                <View style={styles.divider} />
+                <FontSizeControl
+                  label={t('mushafSettings.fontSize')}
+                  currentActualSize={translationFontSize}
+                  onChange={setTranslationFontSize}
+                  theme={theme}
+                  styles={styles}
+                  sampleText={actualTranslationText}
+                  sampleFontFamily="Manrope-Regular"
+                />
+              </>
+            )}
+          </View>
+        </>
+      )}
 
       {/* TEXT THICKNESS Section */}
       <Text style={styles.sectionHeader}>
@@ -1142,11 +1146,11 @@ export const MushafSettingsContent: React.FC<MushafSettingsContentProps> = ({
       </View>
 
       {/* RFC-018 — COMMUNITY REFLECTIONS toggle. Gated on BOTH the provider and
-       * the inline render slot: the helper text promises the under-each-ayah
-       * display, which only `ayahCommunityReflectionsComponent` provides. A
-       * fork that ships only a provider (action-sheet surface, no inline slot)
-       * gets no toggle whose description does nothing; Bayaan wires neither,
-       * so it shows no orphan toggle. */}
+          the inline render slot: the helper text promises the under-each-ayah
+          display, which only `ayahCommunityReflectionsComponent` provides. A
+          fork that ships only a provider (action-sheet surface, no inline slot)
+          gets no toggle whose description does nothing; Bayaan wires neither,
+          so it shows no orphan toggle. */}
       {branding.communityReflectionsProvider != null &&
         branding.ayahCommunityReflectionsComponent != null && (
           <View style={styles.card}>

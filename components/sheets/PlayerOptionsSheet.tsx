@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   useWindowDimensions,
-  Dimensions,
 } from 'react-native';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
@@ -51,8 +50,6 @@ import {
 // Import surah info data
 const surahInfo = require('@/data/surahInfo.json');
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
-
 const renderHtmlDefaultProps: Partial<RenderHTMLProps> = {
   enableExperimentalMarginCollapsing: true,
   enableExperimentalGhostLinesPrevention: true,
@@ -75,9 +72,9 @@ const renderHtmlDefaultProps: Partial<RenderHTMLProps> = {
 // @ai-start
 export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const {width, height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation(['sheets', 'common']);
-  const {width} = useWindowDimensions();
   const [showSurahInfo, setShowSurahInfo] = useState(false);
 
   // Extract payload
@@ -559,7 +556,8 @@ export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
 };
 // @ai-end
 
-const createStyles = (theme: Theme) =>
+// @ai TECH_DEBT #278: screenHeight is the live window height.
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
@@ -572,7 +570,7 @@ const createStyles = (theme: Theme) =>
       paddingTop: moderateScale(8),
     },
     sheetContainerExpanded: {
-      height: SCREEN_HEIGHT * 0.85,
+      height: screenHeight * 0.85,
     },
     indicator: {
       backgroundColor: Color(theme.colors.text).alpha(0.3).toString(),

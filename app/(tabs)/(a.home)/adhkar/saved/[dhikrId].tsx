@@ -6,14 +6,7 @@ import React, {
   useMemo,
   useLayoutEffect,
 } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  Dimensions,
-  ViewToken,
-  type ListRenderItemInfo,
-} from 'react-native';
+import {View, Text, FlatList, Dimensions, ViewToken} from 'react-native';
 import {
   useLocalSearchParams,
   useRouter,
@@ -324,7 +317,7 @@ const SavedDhikrReaderScreen: React.FC = () => {
   );
 
   const renderItem = useCallback(
-    ({item}: ListRenderItemInfo<Dhikr>) => {
+    ({item}: {item: Dhikr}) => {
       return (
         <DhikrPage
           dhikr={item}

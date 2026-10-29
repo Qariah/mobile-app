@@ -190,6 +190,17 @@ describe('buildCatalog', () => {
     ]);
     expect(catalog.adhkar).toBe(TASBEEH_ADHKAR);
   });
+
+  // @ai Qariah (TECH_DEBT #357): reciter names follow the app language.
+  it('names the reciters in the app language', () => {
+    const withArabic = {...reciter('r1', 'Alafasi'), name_arabic: 'AR Alafasi'};
+    expect(buildCatalog([withArabic], [], 'ar').reciters[0]?.name).toBe(
+      'AR Alafasi',
+    );
+    expect(buildCatalog([withArabic], [], 'en').reciters[0]?.name).toBe(
+      'Alafasi',
+    );
+  });
 });
 
 describe('buildTasbeehEntries', () => {

@@ -311,16 +311,13 @@ const SkiaLine: React.FC<SkiaLineProps> = ({
   // runs with the prior `paragraphs` value, so the set being rendered this
   // frame is never disposed early.
   //
-  // The dispose is DEFERRED behind a worklets UI-queue barrier. A direct
-  // dispose frees a paragraph that a queued Skia draw still holds, and the UI
-  // thread then aborts the app. See `utils/skiaDeferredDispose.ts` and GH #458.
-  //
   // Evict the parent's hit-test map entry in the SAME synchronous cleanup,
-  // BEFORE the dispose is scheduled, so the map never points at freed native
-  // memory. The recompute-to-new-paragraph path re-registers via
-  // `onParagraphReady` immediately after this cleanup; the recompute-to-null
-  // and unmount paths leave the entry evicted (the cases the parent's
-  // pageNumber-only clear misses).
+  // BEFORE disposing, so the map never points at freed native memory. The
+  // recompute-to-new-paragraph path re-registers via `onParagraphReady`
+  // immediately after this cleanup; the recompute-to-null and unmount paths
+  // leave the entry evicted (the cases the parent's pageNumber-only clear
+  // misses).
+  // The dispose is DEFERRED: a queued Skia draw can still hold the paragraph (GH #458).
   useEffect(() => {
     return () => {
       if (paragraphs) {

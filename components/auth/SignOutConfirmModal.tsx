@@ -11,7 +11,7 @@
 import React from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {moderateScale} from 'react-native-size-matters';
-import BottomSheetModal from '@/components/BottomSheetModal';
+import BottomSheetModal from '@/components/auth/QariahBottomSheetModal';
 import {useTheme} from '@/hooks/useTheme';
 import {useBottomInset} from '@/hooks/useBottomInset';
 import {useTranslation} from 'react-i18next';

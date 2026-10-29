@@ -327,8 +327,7 @@ describe('golden database generation', () => {
     }
     // Close every handle (checkpoints WAL), then copy the files out.
     if (sqliteForCopy) await sqliteForCopy.closeOpenDatabases();
-    // Qariah (TECH_DEBT #317): resetDatabases() removes the folder, so it runs
-    // after the copy at the end of the test.
+    // Qariah (TECH_DEBT #317): resetDatabases() removes the folder, so it runs after the copy.
     await closeOpenDatabases();
 
     const out = process.env.GOLDEN_OUT;

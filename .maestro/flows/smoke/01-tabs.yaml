@@ -14,7 +14,7 @@ tags:
 - tapOn: "Collection"
 - tapOn: "Settings"
 # a Settings content row (proves the Settings screen rendered, not just its tab label)
-- assertVisible: "Default Reciter.*"   # iOS joins the row title + subtitle into one label
+- assertVisible: "Default (Qariah|Reciter).*"   # iOS joins the row title + subtitle into one label; "Reciter" before #535
 - tapOn: ".*Listen"
 - assertVisible: "Browse by"
 - tapOn: "Search"

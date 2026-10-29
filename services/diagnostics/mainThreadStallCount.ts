@@ -34,6 +34,8 @@
 // dropped together with its `cold_start_began` event, so the rate is not
 // biased. Never throws.
 
+import {analyticsStore, __resetAnalyticsStoreForTests} from './analyticsStore';
+
 interface RecordStore {
   getString(key: string): string | undefined;
   set(key: string, value: string): void;
@@ -48,21 +50,12 @@ export interface MainThreadStallRecord {
 const CURRENT_KEY = 'diag:main-thread-stalls:current';
 const PENDING_KEY = 'diag:main-thread-stalls:pending';
 
-// undefined = not tried yet; null = cannot persist (fail closed).
-let _store: RecordStore | null | undefined;
+// The 'analytics' MMKV store, opened lazily and guarded (`analyticsStore.ts`;
+// its lazy `require` keeps react-native-mmkv out of the Jest suites that
+// import diagnostics.ts). The key prefix keeps this record apart from the
+// memory probe. null = cannot persist (fail closed).
 function store(): RecordStore | null {
-  if (_store !== undefined) return _store;
-  try {
-    // Lazy: diagnostics.ts is imported by many Jest suites, and
-    // react-native-mmkv cannot load in Jest. Same 'analytics' store as the
-    // memory probe; the key prefix keeps them apart.
-    const {createMMKV} =
-      require('react-native-mmkv') as typeof import('react-native-mmkv');
-    _store = createMMKV({id: 'analytics'}) as unknown as RecordStore;
-  } catch {
-    _store = null;
-  }
-  return _store;
+  return analyticsStore() as unknown as RecordStore | null;
 }
 
 /** The build number from the build-time manifest, the same source as the
@@ -149,6 +142,6 @@ export function takePreviousProcessStallRecord(): MainThreadStallRecord | null {
 /** Test seam — forget the handle and the per-process state (a new process).
  *  Stored records stay. */
 export function __resetMainThreadStallCountForTests(): void {
-  _store = undefined;
+  __resetAnalyticsStoreForTests();
   movedThisProcess = false;
 }

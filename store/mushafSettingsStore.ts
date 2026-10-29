@@ -496,9 +496,7 @@ export const useMushafSettingsStore = create<MushafSettingsState>()(
         }
         if (version < 17) {
           // RFC-018 — new opt-in inline community reflections, default off.
-          // Qariah: keep a saved choice. Qariah persisted this key at v16
-          // (Sprint 27), so an unconditional reset would turn off every
-          // reader's opt-in on upgrade.
+          // Qariah: keep a saved choice (Qariah persisted this key at v16).
           if (typeof state.showCommunityReflections !== 'boolean') {
             state.showCommunityReflections = false;
           }

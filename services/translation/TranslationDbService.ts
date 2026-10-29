@@ -70,9 +70,7 @@ class TranslationDbService {
   }
 
   private async ensureReady(): Promise<SQLite.SQLiteDatabase> {
-    // Sprint 35 (S35.1) — lazy-open: self-initialize on first access instead of
-    // throwing. Safe no-op when already booted, so correct whether or not
-    // AppInitializer registered this at boot (`lazyOpenFeatureDbs`).
+    // Lazy-open (`lazyOpenFeatureDbs`): initialize on first access instead of throwing.
     if (!this.ready) await this.initialize();
     if (!this.db || !this.ready) {
       throw new Error('TranslationDbService not initialized');

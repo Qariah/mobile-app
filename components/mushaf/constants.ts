@@ -1,5 +1,5 @@
 import {useMemo} from 'react';
-import {Dimensions, Platform, useWindowDimensions} from 'react-native';
+import {Dimensions, useWindowDimensions} from 'react-native';
 import type {EdgeInsets} from 'react-native-safe-area-context';
 import {getIsTablet} from '@/utils/responsive';
 
@@ -34,40 +34,14 @@ export const PAGE_PADDING_HORIZONTAL = IS_COMPACT_DEVICE ? 4 : 8;
 export const PAGE_PADDING_TOP = IS_COMPACT_DEVICE ? 95 : 130;
 export const PAGE_PADDING_BOTTOM = IS_COMPACT_DEVICE ? 70 : 100;
 
-/**
- * Vertical room the per-page labels need inside the page gutter.
- *
- * `components/mushaf/main.tsx` positions the surah / juz labels at
- * `paddingTop - 30` and the page number at `paddingBottom - 35`, both measured
- * from the page edge. A gutter smaller than the label offset plus the 12pt font
- * therefore yields a NEGATIVE offset, and the label is drawn outside the page
- * and clipped by the screen edge. 52 = 35 (the larger offset) + ~15 (a 12pt
- * `fontSize` with the platform's default leading) + 2pt of slack. Sized from
- * the rendered box, not the font size, so the floor cannot leave a label
- * technically on-page but visually shaved.
- */
+/** Gutter room for the page labels: 35 (the larger offset) + ~15 (a 12pt line) + 2. Less clips them. */
 export const PAGE_LABEL_BAND = 52;
 
-/**
- * Offsets the per-page labels are drawn at, measured INWARD from the page edge.
- * Exported so `PAGE_LABEL_BAND` above and the placement in
- * `components/mushaf/main.tsx` cannot drift apart, and so the regression test
- * for #475 asserts the real relationship rather than a restated copy of it.
- */
+/** Label offsets INWARD from the page edge, shared with main.tsx and the #475 test. */
 export const SURAH_JUZ_LABEL_OFFSET = 30;
 export const PAGE_NUMBER_LABEL_OFFSET = 35;
 
-/**
- * Where the three per-page labels sit, measured INWARD from the page edge.
- *
- * Both formulas live here rather than in `components/mushaf/main.tsx` so the
- * #475 regression test can assert them against the gutters that feed them. The
- * book-layout page number uses a different formula from the fullscreen one —
- * it centres itself in the gutter below the card rather than sitting a fixed
- * distance up from the page edge — and `pageLayout: 'book'` is the DEFAULT, so
- * a test that covered only the fullscreen formula would miss what most users
- * actually render.
- */
+/** Where the per-page labels sit, INWARD from the page edge. Book layout (the default) differs. */
 export function getPageLabelOffsets(
   metrics: Pick<MushafLayoutMetrics, 'paddingTop' | 'paddingBottom'>,
   opts: {isBookLayout: boolean; insetTop: number},
@@ -75,8 +49,7 @@ export function getPageLabelOffsets(
   return {
     labelTop: metrics.paddingTop - SURAH_JUZ_LABEL_OFFSET,
     pageNumberBottom: opts.isBookLayout
-      ? // Centre the number in the gutter between the card bottom and the
-        // page edge.
+      ? // Centre the number in the gutter below the card.
         opts.insetTop + (metrics.paddingBottom - opts.insetTop) / 2 - 8
       : metrics.paddingBottom - PAGE_NUMBER_LABEL_OFFSET,
   };
@@ -99,13 +72,7 @@ export function getPageEdgeLayout(pageNumber: number) {
 }
 
 // @ai-start
-/**
- * True when a book-layout page draws all four corners rounded and centres its
- * text (tablet single page), instead of the book-edge look with the text
- * against the spine. `DKPageView` in main.tsx explains each condition; the
- * rotation stage (`rotationStageGeometry.ts`) reads the same rule to know
- * where the page text sits.
- */
+/** True when a book-layout page rounds all four corners and centres its text. The rotation stage reads it too. */
 export function usesSymmetricPageEdges(
   metrics: Pick<
     MushafLayoutMetrics,
@@ -227,32 +194,9 @@ export function getMushafLayout(
   const height = opts.containerHeight ?? opts.height ?? _liveHeight;
   const insetTop = opts.insets?.top ?? 0;
   const insetBottom = opts.insets?.bottom ?? 0;
-  // Horizontal safe-area insets — honoured on iOS ONLY, deliberately.
-  //
-  // iOS: in landscape a notched / Dynamic Island iPhone reports the sensor
-  // housing as a *side* inset, and the housing physically covers whatever is
-  // drawn under it (#349). UIKit reports these SYMMETRICALLY — 59/59 on a
-  // Dynamic Island phone, 44/44 on a notch phone — whichever side the housing
-  // is physically on, so that content does not shift when the device is flipped
-  // 180°. `react-native-safe-area-context` passes UIKit's values straight
-  // through (`ios/RNCSafeAreaProvider.m`), so JS sees exactly that.
-  //
-  // Android: the same two fields mean something else entirely. The app draws
-  // edge-to-edge (`setTranslucent(true)` in `app/_layout.tsx` plus transparent
-  // `statusBarColor`/`navigationBarColor` in `styles.xml`), so in landscape
-  // these carry the NAVIGATION BAR — ~48dp on one side with 3-button
-  // navigation. Page content may safely sit under that bar.
-  //
-  // The gate is a deliberate trade, NOT a claim that Android is unexposed. On
-  // Android 15+ (what Expo 56 targets) the platform reinterprets every cutout
-  // mode as LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS, so a punch-hole device in
-  // landscape lays content into its cutout and therefore KEEPS this bug under
-  // the gate. We accept that: safe-area insets cannot distinguish a cutout from
-  // system chrome, and shrinking every 3-button-nav user's reader by ~48dp is
-  // the worse outcome. A real Android fix needs a cutout API, not these insets.
-  const insetsAreCutout = Platform.OS === 'ios';
-  const insetLeft = insetsAreCutout ? (opts.insets?.left ?? 0) : 0;
-  const insetRight = insetsAreCutout ? (opts.insets?.right ?? 0) : 0;
+  // Horizontal insets: the iOS sensor housing (#349); on edge-to-edge Android the side navigation bar and the cutout, which hide text too (TECH_DEBT #377).
+  const insetLeft = opts.insets?.left ?? 0; // @ai
+  const insetRight = opts.insets?.right ?? 0; // @ai
   const headerHeight = opts.headerHeight ?? 0;
   const toolbarHeight = opts.toolbarHeight ?? 0;
   const isTablet = opts.isTablet ?? getIsTablet();
@@ -269,22 +213,8 @@ export function getMushafLayout(
   // iPad the stack chrome lives *outside* the container; callers should
   // pass `headerHeight=0, toolbarHeight=0` and measure the true container
   // height via `onLayout`.
-  // NOT free here, unlike the phone-landscape floor below. `contentHeight` is
-  // `height - paddingTop - paddingBottom` (just under), and an iPad page does
-  // not scroll, so when the floor engages the content band narrows by the same
-  // amount the gutters deepen: at most ~40pt against a typical 800-1200pt iPad
-  // band, i.e. a ~3-5% font-size reduction. No line can be clipped —
-  // `calculateLineYPositions` always fills exactly the band it is given — so
-  // the trade is a slightly smaller glyph against a page number that is
-  // visible at all. Taken deliberately.
-  //
-  // Floored on `PAGE_LABEL_BAND` for the same reason as the phone-landscape
-  // gutters below: `main.tsx` passes `headerHeight = toolbarHeight = 0` on iOS
-  // 26+ for BOTH form factors, and an iPad then lands at
-  // `tabletPaddingBottom = 0 + max(insetBottom, 8) + 24`, i.e. 32 at its
-  // smallest — so the page number would sit at `32 - 35 = -3` and clip exactly
-  // as it does on the phone (#475). Non-glass passes 60 and clears the floor by
-  // a wide margin, so nothing moves there.
+  // Floor on PAGE_LABEL_BAND: iOS 26+ passes zero chrome heights and the page number clips (#475).
+  // On iPad the floor costs a ~3-5% smaller font, because the page does not scroll.
   const tabletPaddingTop = Math.max(
     headerHeight + Math.max(insetTop, 8) + 28,
     insetTop + PAGE_LABEL_BAND,
@@ -330,52 +260,20 @@ export function getMushafLayout(
 
     // Phone landscape: "zoomed in" layout, inset by the cutout safe area.
     //
-    // The page spans the window minus the left/right cutout insets, so no glyph
-    // can end up under the sensor housing. Because the font size scales with
-    // contentWidth, the text is noticeably larger than in portrait. The page
-    // content is taller than the physical screen, so a ScrollView wraps it —
-    // the user scrolls vertically and swipes horizontally to change pages.
-    //
-    // The math keeps left and right separate for GENERALITY, not because it
-    // buys anything today. UIKit reports landscape horizontal insets
-    // symmetrically, so on every real iOS device this comes out identical to
-    // simply centring the page. It is written per-side so that a genuinely
-    // one-sided inset would also land correctly if one were ever reported.
-    //
-    // Cost: `fontSizeEst = contentWidth × 0.053`, so every point of inset is
-    // font size. On an iPhone 15 Pro landscape (59/59) `contentWidth` goes
-    // 844 → 726 and the glyphs 44.7 → 38.5pt — about −14%. That is the real
-    // number. A one-sided 59/0 would cost only ~7%, but no iOS device reports
-    // that shape.
-    //
-    // `pageOffsetX` carries the left inset, and both readers place the page
-    // from it. Any offset stays self-consistent in each:
-    //   • Skia continuous view — `canvasMarginX = pageOffsetX + …` both
-    //     positions the canvas and maps taps back onto it (same value).
-    //   • DK paged view — `DKSpreadView` pads its scroll content by
-    //     `pageOffsetX`.
-    //
-    // `screenWidth` stays the FULL window width on purpose: the pager item has
-    // to remain exactly one window wide or horizontal paging stops snapping
-    // (`getItemLayout` in main.tsx sizes items from `screenWidth`). Only the
-    // page drawn inside that item gets narrower.
+    // The page fills the width between the cutout insets. Because the
+    // font size scales with contentWidth, the text is noticeably larger than
+    // in portrait. The page content is taller than the physical screen, so a
+    // ScrollView wraps it — the user scrolls vertically through the page and
+    // swipes horizontally to change pages.
+    // Both readers place the page from `pageOffsetX` (the left inset).
+    // `screenWidth` stays the FULL window width, or horizontal paging stops snapping.
     //
     // fontSize ≈ contentWidth × 0.053 (from SkiaPage: FONTSIZE/PAGE_WIDTH × 0.9)
     // We maintain the portrait baseLineHeight/fontSize ratio of ~2.1 so
     // harakat never overlap the line below.
     const headerH = opts.headerHeight ?? 60;
     const toolbarH = opts.toolbarHeight ?? 60;
-    // The gutters must stay at least `PAGE_LABEL_BAND` deep, or the surah /
-    // juz / page-number labels land at a negative offset and the screen edge
-    // clips them (#475). This bites on iOS 26+ ONLY, where `main.tsx` passes
-    // `headerHeight = toolbarHeight = 0` for the glass chrome: on an
-    // iPhone16,1 landscape that gives `paddingBottom = 0 + 21 + 8 = 29`, so
-    // the page number sits at `29 - 35 = -6`. Non-glass iOS and Android pass
-    // 60 for both, so their gutters already clear the band and nothing moves.
-    //
-    // Deepening a gutter is free here: the phone-landscape page is already
-    // taller than the screen and scrolls (`scrollContainerHeight` below), and
-    // the glyph metrics come from `contentWidth`, not from the page height.
+    // Floor on PAGE_LABEL_BAND, or the labels clip under the iOS 26+ glass chrome (#475). Free: the page scrolls.
     const landscapePaddingTop = Math.max(
       headerH + insetTop + 12,
       insetTop + PAGE_LABEL_BAND,
@@ -656,13 +554,7 @@ export function getHizbForPage(page: number): number {
  * (phone-portrait snapshot). iPad / rotation-aware callers should pass the
  * values returned by `useMushafLayout()` instead.
  *
- * `centerShortPages` guards the pages 1-2 centering. That centering assumes
- * `contentHeight` is what the reader can actually see at scroll offset 0. In
- * phone landscape the page is ~3x taller than its scroll viewport
- * (`scrollContainerHeight`), so the centering offset pushes the whole block
- * below the fold and the page reads as blank until the user scrolls (#358).
- * Callers that render the page inside a shorter scroll viewport pass `false`
- * so pages 1-2 start at the top, exactly like pages 3-604 already do.
+ * Pass `centerShortPages: false` in a shorter scroll viewport, or pages 1-2 render below the fold (#358).
  */
 // @ai-start
 /**

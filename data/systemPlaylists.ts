@@ -2,15 +2,11 @@
  * System Playlists - Curated playlists shipped with the app.
  * These are read-only playlists that provide themed collections of Quranic recitations.
  *
- * Qariah-curated: items carry reciterId so each tile plays a specific
- * Qariah-catalog recitation rather than falling through to the user's default.
- * Sprint 12/13/14 curation work. Sprint 14 round-3 added Al-A'raf to Surahs
- * of the Prophets; Sprint 12 D2 expanded Stories of the Prophets 6→13.
- *
- * Sprint 25 (#283) — converted to `getSystemPlaylists()` factory so
- * `branding.appName` resolves at call time (not module load). Qariah's
- * curated reciterIds + expanded surah lists preserved verbatim inside
- * the factory.
+ * The data lives behind `getSystemPlaylists()` (not a top-level const) so that
+ * brand strings inside the array — e.g. the "Bayaan Essentials" trending tile —
+ * resolve `branding.appName` at call time. Top-level const arrays evaluate
+ * before any `branding` resolution, baking the upstream brand name into the
+ * bundle.
  */
 
 import branding from '@/config/branding';
@@ -21,7 +17,7 @@ import i18n from '@/i18n';
 export interface SystemPlaylistItem {
   surahId: number;
   reciterId?: string; // Optional - if not provided, user chooses reciter
-  rewayatId?: string; // Optional - if not provided, default rewayat is used
+  rewayatId?: string; // Optional - if not provided, use default rewayat
 }
 
 export interface SystemPlaylist {
@@ -29,10 +25,10 @@ export interface SystemPlaylist {
   title: string;
   subtitle?: string;
   description: string;
-  backgroundColor: string; // Solid color
+  backgroundColor: string;
   type: 'surah-only' | 'fully-curated';
   items: SystemPlaylistItem[];
-  heightMultiplier: 1 | 2; // 1 for single row, 2 for double row
+  heightMultiplier: number;
   column: 'left' | 'right';
   order: number;
 }
@@ -119,9 +115,6 @@ export function getSystemPlaylists(): SystemPlaylist[] {
       backgroundColor: '#0EA5E9', // Sky blue
       type: 'surah-only',
       items: [
-        // Sprint 14 — expanded per user feedback to include Al-A'raf
-        // (id=7) alongside the existing 13. Surah ordered by id for
-        // consistency with the listening flow.
         {surahId: 7, reciterId: 'ee1dc6c7-18ac-54f5-9b08-9b5f07e75620'}, // Al-A'raf — Farah Amchichou
         {surahId: 10, reciterId: 'ee1dc6c7-18ac-54f5-9b08-9b5f07e75620'}, // Yunus — Farah Amchichou (Warsh)
         {surahId: 11, reciterId: '5159dfa7-bbfb-556f-87ed-708edbecace7'}, // Hud — Soumia Almir (Warsh)

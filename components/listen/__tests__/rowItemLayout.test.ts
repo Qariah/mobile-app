@@ -19,14 +19,12 @@ const VARIANTS: RowVariant[] = [
   'rewayat',
   'playlist',
   'country',
-  'translation',
 ];
 
 describe('rowItemLayout', () => {
   it('uses the card widths that RecitersView renders', () => {
     expect(rowCardWidth('rewayat')).toBe(moderateScale(130));
     expect(rowCardWidth('country')).toBe(moderateScale(130));
-    expect(rowCardWidth('translation')).toBe(moderateScale(130));
     expect(rowCardWidth('default')).toBe(moderateScale(120));
     expect(rowCardWidth('featured')).toBe(moderateScale(140));
     expect(rowCardWidth('playlist')).toBe(moderateScale(110));

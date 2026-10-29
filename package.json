@@ -42,7 +42,6 @@
     "version:current": "node scripts/generate-version.js",
     "ios:archive": "node scripts/rewayah/gen-manifest.mjs --check && ./scripts/ios-archive.sh",
     "ios:archive:upload": "node scripts/rewayah/gen-manifest.mjs --check && ./scripts/ios-archive.sh --upload",
-    "publish-trending": "node scripts/publish-trending-reciters.mjs",
     "build:dev:android": "eas build --profile development --platform android",
     "build:dev:ios": "eas build --profile development --platform ios",
     "build:preview:android": "eas build --profile preview --platform android",
@@ -196,7 +195,6 @@
     "react-test-renderer": "19.2.3",
     "satori": "^0.26.0",
     "sharp": "^0.33.5",
-    "svg-path-bbox": "^2.1.0",
     "tsx": "^4.19.2",
     "typescript": "~6.0.3"
   },

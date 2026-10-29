@@ -2,13 +2,8 @@ import React from 'react';
 import {useRouter} from 'expo-router';
 import {AdhkarView} from '@/components/AdhkarView';
 import {SuperCategory} from '@/types/adhkar';
-import {isFeatureEnabled} from '@/config/featureFlags'; // @ai
 
-// @ai-start
-// The flag check is in the outer component. The inner component calls its
-// hooks on every render, so the rules of hooks hold (TECH_DEBT #236).
-function AdhkarIndexContent() {
-  // @ai-end
+export default function AdhkarIndexScreen() {
   const router = useRouter();
 
   const handleCategoryPress = (superCategory: SuperCategory) => {
@@ -30,9 +25,3 @@ function AdhkarIndexContent() {
     />
   );
 }
-
-// @ai-start
-export default function AdhkarIndexScreen() {
-  return isFeatureEnabled('adhkar') ? <AdhkarIndexContent /> : null;
-}
-// @ai-end

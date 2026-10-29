@@ -22,22 +22,10 @@
 // REPORT-ONLY: this module writes/reads an MMKV flag and surfaces a signal on
 // the next launch. It does NOT alter playback, boot flow, or what the user sees.
 
-import {createMMKV, type MMKV} from 'react-native-mmkv';
-
-// Lazy + GUARDED handle on the existing 'analytics' MMKV store — identical
-// pattern (and rationale) to bootSentinel.ts: MMKV native init can throw on
-// some environments (iOS Simulator app-group lookup), and this module must
-// NEVER throw into the audio or boot path, so every caller no-ops on null.
-let _mmkv: MMKV | null | undefined; // undefined = not yet tried; null = failed
-function store(): MMKV | null {
-  if (_mmkv !== undefined) return _mmkv;
-  try {
-    _mmkv = createMMKV({id: 'analytics'});
-  } catch {
-    _mmkv = null; // never retried; never throws into the caller
-  }
-  return _mmkv;
-}
+// The 'analytics' MMKV store, opened lazily and guarded (`analyticsStore.ts`).
+// This module must NEVER throw into the audio or boot path, so every caller
+// no-ops when the store is null.
+import {analyticsStore as store} from './analyticsStore';
 
 const ACTIVE_KEY = 'playback:active'; // JSON ActivePlayback
 

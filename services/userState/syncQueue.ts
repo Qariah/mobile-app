@@ -28,8 +28,6 @@ import {
 } from './db';
 import {setPreference} from './preferences';
 import {upsertReadingSession} from './readingSessions';
-import {addBookmark, deleteBookmark} from './bookmarks';
-import {createCollection, deleteCollection} from './collections';
 import {QfApiError, QfAuthRequiredError, isQfErrorRetryable} from './qfErrors';
 import {ensureAccountVerified} from './accountCleanup'; // @ai
 
@@ -167,20 +165,6 @@ interface ReadingSessionPayload {
   ayahNumber?: number;
   timestamp?: string;
 }
-interface BookmarkCreatePayload {
-  collectionId: string;
-  verseKey: string;
-}
-interface BookmarkDeletePayload {
-  collectionId: string;
-  bookmarkId: string;
-}
-interface CollectionCreatePayload {
-  name: string;
-}
-interface CollectionDeletePayload {
-  collectionId: string;
-}
 
 async function dispatchByResource(row: SyncQueueRow): Promise<void> {
   const payload = JSON.parse(row.payload);
@@ -199,43 +183,6 @@ async function dispatchByResource(row: SyncQueueRow): Promise<void> {
         timestamp: p.timestamp,
       });
       return;
-    }
-    case 'bookmark': {
-      if (row.operation === 'create') {
-        const p = payload as BookmarkCreatePayload;
-        await addBookmark(p.collectionId, p.verseKey);
-        return;
-      }
-      if (row.operation === 'delete') {
-        const p = payload as BookmarkDeletePayload;
-        // Sprint 17 (S17.2): QF's bookmark-delete route is
-        // /collections/{collectionId}/bookmarks/{bookmarkId} (the SDK only
-        // exposes this nested form, matching QF's actual surface). Old
-        // queued rows lacking `collectionId` are unreachable — bookmark UI
-        // hadn't shipped yet at the time of the migration, so no real-user
-        // queues contain such rows.
-        if (!p.collectionId || !p.bookmarkId) {
-          throw new Error(
-            `bookmark delete payload missing collectionId or bookmarkId`,
-          );
-        }
-        await deleteBookmark(p.collectionId, p.bookmarkId);
-        return;
-      }
-      throw new Error(`unsupported bookmark operation: ${row.operation}`);
-    }
-    case 'collection': {
-      if (row.operation === 'create') {
-        const p = payload as CollectionCreatePayload;
-        await createCollection(p.name);
-        return;
-      }
-      if (row.operation === 'delete') {
-        const p = payload as CollectionDeletePayload;
-        await deleteCollection(p.collectionId);
-        return;
-      }
-      throw new Error(`unsupported collection operation: ${row.operation}`);
     }
     default:
       throw new Error(`unsupported sync resource: ${String(row.resource)}`);

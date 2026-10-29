@@ -67,11 +67,6 @@ jest.mock('@/store/mushafPlayerStore', () => ({
   useMushafPlayerStore: (selector: (s: {playbackState: string}) => unknown) =>
     selector({playbackState: 'idle'}),
 }));
-// @ai Qariah (Sprint 46): CarRoot marks a car-first boot for the sentinel.
-const mockMarkCarRootBoot = jest.fn();
-jest.mock('@/services/qariahBoot', () => ({
-  markCarRootBoot: () => mockMarkCarRootBoot(),
-}));
 jest.mock('@/services/appBoot', () => ({
   bootApp: () => mockBootApp(),
 }));

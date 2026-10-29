@@ -28,3 +28,6 @@ export const IOS_BUNDLE_ID = branding.bundleId.ios;
 
 /** The numeric App Store Connect app id, as a string. */
 export const APP_STORE_ID = branding.appStoreId;
+
+/** The URL scheme of the production app, e.g. 'qariah' (TECH_DEBT #342). */
+export const APP_URL_SCHEME = branding.urlScheme;

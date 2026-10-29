@@ -52,7 +52,10 @@ const SETTINGS_DIR = join(
   '(d.settings)',
 );
 const INDEX_SOURCE = readFileSync(join(SETTINGS_DIR, 'index.tsx'), 'utf8');
-const LAYOUT_SOURCE = readFileSync(join(SETTINGS_DIR, '_layout.tsx'), 'utf8');
+const PAGE_SOURCE = readFileSync(
+  join(SETTINGS_DIR, 'notifications.tsx'),
+  'utf8',
+);
 
 const t = i18n.t.bind(i18n) as unknown as TFunction<
   ['settings', 'common', 'qariah']
@@ -143,9 +146,9 @@ describe('the Settings files use the row', () => {
     expect(NOTIFICATIONS_SETTINGS_ROUTE).toBe('/(d.settings)/notifications');
   });
 
-  it('_layout.tsx registers the route with its title', () => {
-    expect(LAYOUT_SOURCE).toMatch(
-      /name="notifications"\s*\n\s*options=\{\{title: t\('qariah:settings\.screens\.notifications'\)\}\}/,
+  it('notifications.tsx sets its own title', () => {
+    expect(PAGE_SOURCE).toMatch(
+      /<Stack\.Screen\s*options=\{\{title: t\('qariah:settings\.screens\.notifications'\)\}\}/,
     );
   });
 });

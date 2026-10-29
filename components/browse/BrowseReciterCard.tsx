@@ -73,9 +73,7 @@ function createStyles(theme: Theme, width: number, height: number) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: moderateScale(4),
-      // Qariah: the Arabic follow-along chip is about twice the English
-      // width, so in RTL the chip moves to its own line instead of cutting
-      // the rewayah label to one letter. English keeps one line.
+      // Qariah: in RTL the wider Arabic chip wraps to its own line instead of cutting the rewayah label.
       ...(isRTL ? {flexWrap: 'wrap' as const} : null),
     },
     glassContainer: {

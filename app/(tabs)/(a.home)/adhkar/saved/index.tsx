@@ -12,7 +12,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  type ListRenderItemInfo,
   ViewToken,
 } from 'react-native';
 import {useRouter, useNavigation, useFocusEffect, Link} from 'expo-router';
@@ -283,7 +282,7 @@ const SavedAdhkarScreen: React.FC = () => {
   ]);
 
   const renderItem = useCallback(
-    ({item, index}: ListRenderItemInfo<Dhikr>) => (
+    ({item, index}: {item: Dhikr; index: number}) => (
       <Link
         href={{
           pathname: '/(tabs)/(a.home)/adhkar/saved/[dhikrId]',

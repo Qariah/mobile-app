@@ -26,35 +26,25 @@ import {PlaylistCard} from '@/components/cards/PlaylistCard';
 import {UserPlaylist} from '@/services/playlist/PlaylistService';
 import {Theme} from '@/utils/themeUtils';
 import {RecitersHero} from '@/components/hero/RecitersHero';
-// Sprint 25 (S25.2) — ListenTabTopGrid is now consumed via
-// `branding.listenTabTopComponent` (RFC-008 seam); no direct import needed.
 import {
   getTajweedReciters,
   getMemorizationReciters,
   getBeginnerFriendlyReciters,
   getFeaturedReciters,
-  getCuratedReciters,
+  getBayaanOriginalsReciters,
   getFollowAlongReciters,
+} from '@/data/reciterCollections';
+import {
   getHonoredReciters,
   getParadiseReciters,
-  getNewlyAddedReciters,
   getFullRecordingReciters,
-} from '@/data/reciterCollections';
-// Sprint 14 — SURAHS / SurahCard / GRADIENT_COLORS imports dropped along with
-// the Sprint-13 standalone "Explore by Surah" row.
+} from '@/data/qariahReciterCollections';
 import {useTimestampStore} from '@/store/timestampStore';
 import {useReciterStore} from '@/store/reciterStore';
 import {getAllRewayatTypes, RewayatInfo} from '@/data/rewayatCollections';
 import RewayatCard from '@/components/cards/RewayatCard';
 import {getAllCountries, CountryInfo} from '@/data/countryCollections';
 import CountryCard from '@/components/cards/CountryCard';
-import {
-  getAllTranslations,
-  TranslationInfo,
-} from '@/data/translationCollections';
-import TranslationCard from '@/components/cards/TranslationCard';
-import {useMostPlayedReciters} from '@/hooks/useMostPlayedReciters';
-import {useTrendingReciters} from '@/hooks/useTrendingReciters';
 import {useSettings} from '@/hooks/useSettings';
 import {useRouter} from 'expo-router';
 import Color from 'color';
@@ -71,12 +61,9 @@ import {
   useHasAdhkarSession,
 } from '@/components/adhkar/AdhkarNowPlayingCard';
 import {SuperCategory} from '@/types/adhkar';
-import {isFeatureEnabled} from '@/config/featureFlags';
 import branding, {type HomeRow, type HomeRowId} from '@/config/branding';
-// Qariah (Sprint 48): the "Newly Added" row of recitations.
 import {NewlyAddedRecitationsRow} from '@/components/listen/NewlyAddedRecitationsRow';
-// Qariah (TECH_DEBT #314): the rows start at their first card in Arabic on
-// iOS, and their item layout is the real one.
+// Qariah (TECH_DEBT #314): RTL-correct rows with the real item layout.
 import {RtlRowFlatList} from '@/components/listen/RtlRowFlatList';
 import {rowItemLayout} from '@/components/listen/rowItemLayout';
 // @ai-start
@@ -86,10 +73,9 @@ import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 
 /**
  * Fallback row order used when `branding.homeRowConfig` is undefined.
- * Matches the historical hardcoded Bayaan order so behavior is unchanged
- * for any branding that omits the field. Forks declare their own array
- * in `config/branding.js` to reorder, hide, or omit rows entirely.
- * Qariah's curated order lives in `config/branding.js` → `homeRowConfig`.
+ * Matches the historical hardcoded order so behavior is unchanged for any
+ * branding that omits the field. Forks declare their own array in
+ * `config/branding.js` to reorder, hide, or omit rows entirely.
  */
 const DEFAULT_HOME_ROW_CONFIG: readonly HomeRow[] = [
   {id: 'continue-listening', enabled: true},
@@ -106,12 +92,6 @@ const DEFAULT_HOME_ROW_CONFIG: readonly HomeRow[] = [
   {id: 'collection', enabled: true},
 ];
 
-// Qariah (Sprint 48): true only when the config turns the trending row on.
-// The owner turned the row off on 2026-10-18, so the R2 fetch must not run.
-const TRENDING_ROW_ENABLED = (
-  branding.homeRowConfig ?? DEFAULT_HOME_ROW_CONFIG
-).some(row => row.id === 'trending' && row.enabled);
-
 interface RecitersViewProps {
   onReciterPress: (reciter: Reciter) => void;
 }
@@ -121,8 +101,7 @@ type SectionItem =
   | RecentlyPlayedTrack
   | RewayatInfo
   | UserPlaylist
-  | CountryInfo
-  | TranslationInfo;
+  | CountryInfo;
 
 // Memoize the FlatList component
 const MemoizedFlatList = React.memo(
@@ -133,7 +112,6 @@ const MemoizedFlatList = React.memo(
     onRewayatPress,
     onPlaylistPress,
     onCountryPress,
-    onTranslationPress,
     showAdhkarTile,
   }: {
     data: SectionItem[];
@@ -144,13 +122,11 @@ const MemoizedFlatList = React.memo(
       | 'featured'
       | 'rewayat'
       | 'playlist'
-      | 'country'
-      | 'translation';
+      | 'country';
     onReciterPress: (reciter: Reciter) => void;
     onRewayatPress?: (rewayat: RewayatInfo) => void;
     onPlaylistPress?: (playlist: UserPlaylist) => void;
     onCountryPress?: (country: CountryInfo) => void;
-    onTranslationPress?: (translation: TranslationInfo) => void;
     showAdhkarTile?: boolean;
     theme: Theme;
   }) => (
@@ -165,7 +141,6 @@ const MemoizedFlatList = React.memo(
           onRewayatPress={onRewayatPress}
           onPlaylistPress={onPlaylistPress}
           onCountryPress={onCountryPress}
-          onTranslationPress={onTranslationPress}
         />
       )}
       keyExtractor={item =>
@@ -177,11 +152,9 @@ const MemoizedFlatList = React.memo(
             ? item.id
             : 'itemCount' in item && 'color' in item
               ? item.id
-              : 'languageCode' in item
-                ? item.id
-                : 'reciterCount' in item && 'flag' in item
-                  ? `country-${item.id}`
-                  : item.id
+              : 'reciterCount' in item && 'flag' in item
+                ? `country-${item.id}`
+                : item.id
       }
       horizontal
       showsHorizontalScrollIndicator={false}
@@ -216,7 +189,6 @@ const MemoizedFlatList = React.memo(
     prevProps.onRewayatPress === nextProps.onRewayatPress &&
     prevProps.onPlaylistPress === nextProps.onPlaylistPress &&
     prevProps.onCountryPress === nextProps.onCountryPress &&
-    prevProps.onTranslationPress === nextProps.onTranslationPress &&
     prevProps.showAdhkarTile === nextProps.showAdhkarTile &&
     prevProps.theme === nextProps.theme,
 );
@@ -233,7 +205,6 @@ const RenderSectionItem = React.memo(
     onRewayatPress,
     onPlaylistPress,
     onCountryPress,
-    onTranslationPress,
   }: {
     item: SectionItem;
     variant:
@@ -243,14 +214,12 @@ const RenderSectionItem = React.memo(
       | 'featured'
       | 'rewayat'
       | 'playlist'
-      | 'country'
-      | 'translation';
+      | 'country';
     index: number;
     onReciterPress: (reciter: Reciter) => void;
     onRewayatPress?: (rewayat: RewayatInfo) => void;
     onPlaylistPress?: (playlist: UserPlaylist) => void;
     onCountryPress?: (country: CountryInfo) => void;
-    onTranslationPress?: (translation: TranslationInfo) => void;
   }) => {
     const {theme} = useTheme();
     const {t} = useTranslation(['home', 'common']);
@@ -376,18 +345,6 @@ const RenderSectionItem = React.memo(
       );
     }
 
-    if (variant === 'translation' && 'languageCode' in item) {
-      const translation = item as TranslationInfo;
-      return (
-        <TranslationCard
-          translation={translation}
-          onPress={() => onTranslationPress?.(translation)}
-          width={moderateScale(130)}
-          height={moderateScale(110)}
-        />
-      );
-    }
-
     const reciter = item as Reciter;
     return (
       <BrowseReciterCard
@@ -416,7 +373,6 @@ const Section = React.memo(
     onRewayatPress,
     onPlaylistPress,
     onCountryPress,
-    onTranslationPress,
     onClear,
     showAdhkarTile,
     theme,
@@ -430,13 +386,11 @@ const Section = React.memo(
       | 'featured'
       | 'rewayat'
       | 'playlist'
-      | 'country'
-      | 'translation';
+      | 'country';
     onReciterPress: (reciter: Reciter) => void;
     onRewayatPress?: (rewayat: RewayatInfo) => void;
     onPlaylistPress?: (playlist: UserPlaylist) => void;
     onCountryPress?: (country: CountryInfo) => void;
-    onTranslationPress?: (translation: TranslationInfo) => void;
     onClear?: () => void;
     showAdhkarTile?: boolean;
     theme: Theme;
@@ -473,7 +427,6 @@ const Section = React.memo(
           onRewayatPress={onRewayatPress}
           onPlaylistPress={onPlaylistPress}
           onCountryPress={onCountryPress}
-          onTranslationPress={onTranslationPress}
           showAdhkarTile={showAdhkarTile}
           theme={theme}
         />
@@ -487,7 +440,6 @@ const Section = React.memo(
     prevProps.onRewayatPress === nextProps.onRewayatPress &&
     prevProps.onPlaylistPress === nextProps.onPlaylistPress &&
     prevProps.onCountryPress === nextProps.onCountryPress &&
-    prevProps.onTranslationPress === nextProps.onTranslationPress &&
     prevProps.onClear === nextProps.onClear &&
     prevProps.showAdhkarTile === nextProps.showAdhkarTile &&
     prevProps.theme === nextProps.theme,
@@ -529,11 +481,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
   const {playlists} = usePlaylists();
   const {incrementRecitersViewOpenCount, shouldShowNewToQuran} = useSettings();
 
-  // TECH_DEBT #154 — content-ready watchdog for the Listen tab. The catalog
-  // gates every catalog-dependent row; if `isInitialized` never flips, this
-  // self-reports `screen-content-stalled` (field-only, full-fleet). Mirrors the
-  // Mushaf wiring (app/mushaf.tsx). Report-only — no behaviour change. This is
-  // the instrument-don't-cold-pressure-gate posture (regression-test-plan.md).
+  // REPORT-ONLY content-ready watchdog for the Listen tab catalog (TECH_DEBT #154).
   const catalogReady = useReciterStore(s => s.isInitialized);
   useContentReadyWatchdog({
     screen: 'listen',
@@ -603,7 +551,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     [sessionSeed],
   );
   const bayaanOriginalsReciters = useMemo(
-    () => seededShuffle(getCuratedReciters(10), sessionSeed + 3),
+    () => seededShuffle(getBayaanOriginalsReciters(10), sessionSeed + 3),
     [sessionSeed],
   );
   const beginnerFriendlyReciters = useMemo(
@@ -628,12 +576,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
   );
   const rewayatTypes = useMemo(() => getAllRewayatTypes(), []);
 
-  // Sprint 13 — Qariah-specific reciter collections.
-  // Honored + Paradise are curated lists (driven by the Sprint 13 CSV);
-  // they return empty arrays until the CSV is filled in and auto-hide.
-  // Newly Added is algorithmic (catalog `added_at` window) and Full
-  // Recording is algorithmic (catalog flag) — both return non-empty data
-  // today and render whenever data exists.
+  // Qariah reciter collections. A curated row hides while its list is empty.
   const honoredReciters = useMemo(
     () => seededShuffle(getHonoredReciters(), sessionSeed + 10),
     [sessionSeed],
@@ -642,14 +585,8 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     () => seededShuffle(getParadiseReciters(), sessionSeed + 11),
     [sessionSeed],
   );
-  const newlyAddedReciters = useMemo(() => getNewlyAddedReciters(30), []);
   const fullRecordingReciters = useMemo(() => {
-    // Sprint 26 user-feedback — Translation reciters (e.g. Maryam from
-    // Elgo Academy, Spanish) satisfy the 114-surah `getFullRecordingReciters`
-    // filter because their translation tracks span the whole Quran. Anchor
-    // them to the END of the row so the Arabic recitations always lead;
-    // shuffle only within each group so the Arabic carousel still rotates
-    // per session.
+    // Translation reciters also pass the 114-surah filter: put them after the Arabic recitations.
     const all = getFullRecordingReciters();
     const arabic = all.filter(r => !r.translation);
     const translations = all.filter(r => !!r.translation);
@@ -659,48 +596,15 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     ];
   }, [sessionSeed]);
 
-  // Sprint 14 — Sprint-13's `exploreSurahs` row is removed; the Surahs
-  // tile in `ListenTabTopGrid` (Sprint 19 V1) is its replacement entry
-  // point.
-
-  // Sprint 8 — feedback-driven home rows.
-  // Country + translation row data is computed once per session (cheap, no
-  // network); `branding.homeRowConfig` decides if each row shows. Most-played
-  // is hooked from MMKV daily aggregates and recomputes on listening events.
+  // `branding.homeRowConfig` decides if each row shows.
   const countries = useMemo(() => getAllCountries(), []);
-  const translations = useMemo(() => getAllTranslations(), []);
-  const mostPlayedReciters = useMostPlayedReciters({windowDays: 30, limit: 10});
-  // Qariah (Sprint 48): no fetch while the trending row is off.
-  const {reciters: trendingReciters} = useTrendingReciters({
-    limit: 10,
-    enabled: TRENDING_ROW_ENABLED,
-  });
 
-  // Handler for country card press — routes to the existing reciter browse
-  // screen with a `country` param. The browse screen accepts arbitrary
-  // params and ignores unknown ones, so this degrades to "no filter" if
-  // the screen hasn't been updated yet.
+  // Handler for country card press
   const handleCountryPress = useCallback(
     (country: CountryInfo) => {
       router.push({
         pathname: '/(tabs)/(a.home)/reciter/browse',
         params: {country: country.id, countryName: country.name},
-      });
-    },
-    [router],
-  );
-
-  // Handler for translation card press (Sprint 15 S15.5). Routes to the
-  // same reciter-browse screen as country/rewaya, filtered by
-  // `Reciter.translation`. Mirrors `handleCountryPress` shape.
-  const handleTranslationPress = useCallback(
-    (translation: TranslationInfo) => {
-      router.push({
-        pathname: '/(tabs)/(a.home)/reciter/browse',
-        params: {
-          translation: translation.id,
-          translationName: translation.name,
-        },
       });
     },
     [router],
@@ -765,12 +669,6 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
    * `react/no-unstable-nested-components`; runtime cost is identical to
    * inline conditional rendering (each branch's null-return is what
    * Bayaan already did with `{cond && <Section …/>}`).
-   *
-   * Sprint 15 — Row order + visibility driven entirely by
-   * `branding.homeRowConfig` (XF-NNN RFC, upstream PR #260). Each row's
-   * data-empty check stays inline; `enabled: false` rows are registered
-   * but skipped at the `.filter()` step below. `enabled` is the only
-   * switch: Sprint 45 (TECH_DEBT #230) removed the last `qariah*Row` flags.
    */
   const rowNodes: Record<HomeRowId, React.ReactNode> = {
     'continue-listening':
@@ -820,9 +718,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
       ) : null,
 
     adhkar:
-      isFeatureEnabled('adhkar') &&
-      adhkarLoaded &&
-      adhkarCategories.length > 0 ? (
+      adhkarLoaded && adhkarCategories.length > 0 ? (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, {color: theme.colors.text}]}>
@@ -911,12 +807,6 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         />
       ) : null,
 
-    // Bayaan titles this row "Explore by Rewayah"; Qariah uses
-    // "Browse by Rewaya" (no trailing h, "Browse" not "Explore" for
-    // header consistency with Country / Translation / Surahs).
-    // @ai Pass C: upstream's key is kept. The Qariah wording comes from the
-    // override bundle (i18n/overrides/en.json "Browse by Rewaya"; the Arabic
-    // in i18n/overrides/ar.json is qariah:homeRows.rewayat).
     rewayat:
       rewayatTypes.length > 0 ? (
         <Section
@@ -953,18 +843,6 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         />
       ) : null,
 
-    translations:
-      translations.length > 0 ? (
-        <Section
-          title={t('qariah:homeRows.translation')}
-          data={translations}
-          variant="translation"
-          onReciterPress={onReciterPress}
-          onTranslationPress={handleTranslationPress}
-          theme={theme}
-        />
-      ) : null,
-
     honored:
       honoredReciters.length > 0 ? (
         <Section
@@ -987,20 +865,7 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         />
       ) : null,
 
-    'newly-added':
-      newlyAddedReciters.length > 0 ? (
-        <Section
-          title={t('qariah:homeRows.newlyAdded')}
-          data={newlyAddedReciters}
-          variant="default"
-          onReciterPress={onReciterPress}
-          theme={theme}
-        />
-      ) : null,
-
-    // Qariah (Sprint 48): recitations, not reciters. The row renders nothing
-    // when the catalog has no dated recitations, and recomputes on each
-    // catalog refill (components/listen/NewlyAddedRecitationsRow.tsx).
+    // Recitations, not reciters: the row renders nothing when no recitation is dated.
     'newly-added-recitations': <NewlyAddedRecitationsRow />,
 
     'full-recording':
@@ -1013,37 +878,13 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
           theme={theme}
         />
       ) : null,
-
-    trending:
-      trendingReciters.length > 0 ? (
-        <Section
-          title={t('qariah:homeRows.trending')}
-          data={trendingReciters}
-          variant="default"
-          onReciterPress={onReciterPress}
-          theme={theme}
-        />
-      ) : null,
-
-    'most-played':
-      mostPlayedReciters.length > 0 ? (
-        <Section
-          title={t('qariah:homeRows.mostPlayed')}
-          data={mostPlayedReciters}
-          variant="default"
-          onReciterPress={onReciterPress}
-          theme={theme}
-        />
-      ) : null,
   };
 
   const homeRowConfig = branding.homeRowConfig ?? DEFAULT_HOME_ROW_CONFIG;
 
   // RFC-008 — Listen-tab top-region slot. Forks may replace the default
   // `RecitersHero` via `branding.listenTabTopComponent`; capitalised here
-  // so it can be used as a JSX element. Qariah ships `ListenTabTopGrid`
-  // here. Sprint 25 (S25.2) retired the Sprint-19 `qariahListenTabTopGrid`
-  // flag in favor of this seam. `undefined` keeps Bayaan's hero.
+  // so it can be used as a JSX element. `undefined` keeps Bayaan's hero.
   const ListenTabTopComponent = branding.listenTabTopComponent;
 
   return (
@@ -1059,16 +900,8 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
       removeClippedSubviews={true}>
       {/* RFC-008 — Listen-tab top region. Default is the unified
        * `RecitersHero`; forks may substitute their own via
-       * `branding.listenTabTopComponent`. Qariah wraps in a marginBottom
-       * View so the curated grid sits with consistent vertical rhythm
-       * above the first row. */}
-      {ListenTabTopComponent ? (
-        <View style={{marginBottom: moderateScale(16)}}>
-          <ListenTabTopComponent />
-        </View>
-      ) : (
-        <RecitersHero />
-      )}
+       * `branding.listenTabTopComponent`. */}
+      {ListenTabTopComponent ? <ListenTabTopComponent /> : <RecitersHero />}
 
       {homeRowConfig
         .filter(row => row.enabled)

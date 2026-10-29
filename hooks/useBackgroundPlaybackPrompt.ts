@@ -35,7 +35,7 @@ export function showBackgroundPlaybackGuide(): void {
  * reliably-caught process-death path (`playback-killed-in-background`,
  * consumed in `components/QariahRootEffects.tsx`) and the best-effort silent
  * player-death path
- * (`ExpoAudioProvider`). Root cause + repro:
+ * (`services/diagnostics/playbackObserver.ts`). Root cause + repro:
  * planning/background-audio-kill-diagnosis-2026-06-10.md.
  *
  * BOUNDED, not one-shot: the first kill prompts immediately; afterwards only
@@ -98,8 +98,9 @@ export function showNotificationsBlockedGuide(): void {
 
 /**
  * S39.2 (#104) — one-time "allow notifications" prompt, shown only when the
- * audio provider observed that POST_NOTIFICATIONS is denied (Android 13+). The
- * provider records the denial in `backgroundPlaybackStore.notificationsDenied`
+ * launch request saw that POST_NOTIFICATIONS is denied (Android 13+). The
+ * request (`services/notifications/launchPermission.ts`) records the denial
+ * in `backgroundPlaybackStore.notificationsDenied`
  * (and clears it if the permission is later granted), so this fires whether
  * the denial was hydrated from a prior session or recorded live.
  *
@@ -127,7 +128,7 @@ export function useNotificationsDeniedPrompt(): void {
 
     let cancelled = false;
     void (async () => {
-      // The persisted `notificationsDenied` can be stale: the audio provider
+      // The persisted `notificationsDenied` can be stale: the launch request
       // clears it async on a later cold start if the user granted in the
       // meantime, but this effect may fire first. Re-check live so we never
       // show a "notifications are blocked" Alert to a user who just granted.

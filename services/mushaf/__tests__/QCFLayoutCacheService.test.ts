@@ -1,6 +1,4 @@
 // @ai-start
-// @ai Qariah (Pass C, Sprint 47): the cache keeps Qariah's `widestRef` shape
-// (GH #364) under upstream's content-width key, at schema 3.
 
 const mockData = new Map<string, string | number>();
 jest.mock('react-native-mmkv', () => ({
@@ -19,10 +17,10 @@ describe('QCF layout cache', () => {
 
   it('keeps page sizes and font variants separate when the reader resizes', () => {
     const phone = {
-      widestRef: 1200,
+      fontSize: 25,
       lineWidthsAtRef: [{lineIndex: 0, width: 1200}],
     };
-    const tablet = {...phone, widestRef: 1100};
+    const tablet = {...phone, fontSize: 40};
     qcfLayoutCacheService.setPageLayout(3, 'p3-v4', 320, phone);
     qcfLayoutCacheService.setPageLayout(3, 'p3-v4', 512, tablet);
 
@@ -54,7 +52,7 @@ describe('QCF layout cache', () => {
     jest.isolateModules(() => {
       require('../QCFLayoutCacheService');
       expect(mockData.has('qcf:p3-v4:3')).toBe(false);
-      expect(mockData.get('qcf_schema_version')).toBe(3);
+      expect(mockData.get('qcf_schema_version')).toBe(2);
     });
   });
 });

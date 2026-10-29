@@ -12,11 +12,14 @@
 //   arm in DEV, `isNotificationsHoldout()`), so a holdout user never loads
 //   `expo-notifications` (review of Task 16, L1). When the arm is written
 //   later, `handleHoldoutAssigned` starts it.
+// - The Android POST_NOTIFICATIONS request at launch (`launchPermission.ts`),
+//   for every user, the holdout too (as when the audio provider asked).
 import {useEffect, useRef} from 'react';
 import {usePostHog} from 'posthog-react-native';
 import {useNavigationContainerRef, useRouter} from 'expo-router';
 import {onNotificationsHoldoutAssigned} from './backgroundTask';
 import {isNotificationsHoldout} from './holdout';
+import {requestLaunchNotificationPermission} from './launchPermission';
 import {
   startHoldoutEnrollment,
   type HoldoutAssignment,
@@ -61,6 +64,12 @@ function reportTapOpened(
 
 /** The root hook (see the file header). */
 export function useQariahNotifications(): void {
+  // Android: ask for POST_NOTIFICATIONS once in each process (the root mounts
+  // once). Not gated on the holdout or the toggles.
+  useEffect(() => {
+    void requestLaunchNotificationPermission();
+  }, []);
+
   const posthog = usePostHog();
   useEffect(() => {
     const client = (posthog ?? null) as HoldoutFlagClient | null;

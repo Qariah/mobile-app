@@ -44,18 +44,9 @@ export interface VerseNote {
   createdAt: number;
   updatedAt: number;
   rewayahId?: RewayahId;
-  /**
-   * QF Notes API note id. Set when the note has been synced to QF
-   * (`auth.v1.notes.*`). Null on pure-local notes (signed-out users,
-   * or notes created before Sprint 18's Slice B sync landed).
-   */
+  /** QF Notes API id; null on a local-only note. */
   qfNoteId?: string | null;
-  /**
-   * QF QuranReflect post id, present when this note has been published.
-   * Returned by the `auth.v1.notes/{id}/publish` call. Null on private
-   * notes. Unpublish = `DELETE quranReflect.v1.posts/{qfPostId}` +
-   * nulling this field.
-   */
+  /** QuranReflect post id of a published note; null on a private note. */
   qfPostId?: string | null;
 }
 

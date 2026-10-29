@@ -14,7 +14,6 @@ import {useRouter} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
 import {markOnboarded} from '@/services/onboarding/onboardingState';
 import {useAuth} from '@/services/auth';
-import {isFeatureEnabled} from '@/config/featureFlags';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 
 export default function OnboardingDone() {
@@ -24,13 +23,8 @@ export default function OnboardingDone() {
 
   React.useEffect(() => {
     let cancelled = false;
-    // S35.3 — first-run discovery nudge: land on the reciter browse grid instead
-    // of the bare Listen home (49% of installers never tap a reciter). Reversible
-    // via the onboardingReciterNudge flag.
-    const nudge = isFeatureEnabled('onboardingReciterNudge');
     qariahAnalytics.trackOnboardingCompleted({
       signed_in: status === 'authenticated',
-      reciter_nudge: nudge,
     });
     markOnboarded()
       .catch(() => {
@@ -40,10 +34,6 @@ export default function OnboardingDone() {
       .finally(() => {
         if (cancelled) return;
         router.replace('/(tabs)/(a.home)');
-        if (nudge) {
-          // Push the reciter grid on top of the Listen home (back returns home).
-          router.push('/(tabs)/(a.home)/browse-all');
-        }
       });
     return () => {
       cancelled = true;

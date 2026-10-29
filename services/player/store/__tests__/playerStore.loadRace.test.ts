@@ -1,6 +1,5 @@
 /**
- * Regression tests for the in-flight load race in playerStore
- * (Sprint 42 whole-branch review finding, #266).
+ * Regression tests for the in-flight load race in playerStore.
  *
  * The race: updateQueue() optimistically writes the queue, then awaits
  * loadTrackAtIndex() → expoAudioService.loadTrack() (network-bound). Anything
@@ -108,7 +107,7 @@ function makeTrack(id: string): Track {
 // Flush the microtask queue so awaited continuations run to completion.
 const flush = () => new Promise<void>(r => setTimeout(r, 0));
 
-describe('playerStore in-flight load race (#266)', () => {
+describe('playerStore in-flight load race', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedAudio.loadTrack.mockImplementation(() => Promise.resolve());
@@ -158,8 +157,7 @@ describe('playerStore in-flight load race (#266)', () => {
     expect(state.loading.trackLoading).toBe(false);
   });
 
-  // @ai playback-health: a load-then-play marks its URL BEFORE the load, so
-  // the telemetry counts the no-audio window from the tap.
+  // @ai playback-health: a load-then-play marks its URL BEFORE the load.
   it('marks a load-then-play for playback-health before it loads', async () => {
     const markedBeforeLoad: boolean[] = [];
     mockedAudio.loadTrack.mockImplementation(() => {

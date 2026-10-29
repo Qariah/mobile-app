@@ -2,23 +2,25 @@
  * QF user-data API — Notes resource (Sprint 18 / Slice B).
  *
  * SDK-backed (`@quranjs/api/public`) — mirrors the Sprint-17-rewritten
- * `services/userState/bookmarks.ts` shape, including the `withQfCall`
- * 401-retry wrapper from `qfErrors.ts`.
+ * resource modules (`preferences.ts`, `readingSessions.ts`), including the
+ * `withQfCall` 401-retry wrapper from `qfErrors.ts`.
  *
  * Endpoints (auth service):
  *   GET    /auth/v1/notes                       — list all user notes
  *   POST   /auth/v1/notes                       — {body, ranges, attachedEntities?}
- *   GET    /auth/v1/notes/{noteId}              — single note
  *   PATCH  /auth/v1/notes/{noteId}              — update body / ranges
  *   DELETE /auth/v1/notes/{noteId}              — remove note (and any post)
  *   POST   /auth/v1/notes/{noteId}/publish      — returns {success, postId}
- *   GET    /auth/v1/notes/by-verse/{verseKey}   — narrow list to an ayah
  *
  * Unpublish lives on the quranReflect service, NOT the auth service —
  * there is no `/auth/v1/notes/{id}/unpublish`. Verified 2026-05-17 against
  * the `@quranjs/api` operation catalog. Unpublishing a note = deleting the
  * QuranReflect Post that the publish call returned:
  *   DELETE /v1/posts/{postId}                   — on the quranReflect service
+ *
+ * An edit of a post from the posts pull (TECH_DEBT #256) also uses the
+ * quranReflect service:
+ *   PATCH  /v1/posts/{id}                       — {body}; see `editPost`
  *
  * The QF Note resource shape is `{id, body, ranges, attachedEntities,
  * source, createdAt, updatedAt}` — no anonymous / visibility / displayName
@@ -33,7 +35,8 @@
 
 import * as Sentry from '@sentry/react-native'; // @ai
 import {getQfSdk} from '@/services/auth/sdkClient';
-import {withQfCall} from './qfErrors';
+import {QfApiError, withQfCall} from './qfErrors'; // @ai
+import {unwrapQfList} from './qfResponse'; // @ai
 
 export interface QfNote {
   id: string;
@@ -58,12 +61,7 @@ interface QfNotesListResponse {
 }
 
 function unwrapList(res: unknown): QfNote[] {
-  if (Array.isArray(res)) return res as QfNote[];
-  if (res && typeof res === 'object') {
-    const r = res as QfNotesListResponse;
-    return r.notes ?? r.data ?? [];
-  }
-  return [];
+  return unwrapQfList<QfNote>(res, ['notes', 'data']);
 }
 
 interface QfNoteSingleResponse {
@@ -217,21 +215,6 @@ export async function listAllNotes(): Promise<QfNotesListing> {
 }
 // @ai-end
 
-export async function listNotesByVerseKey(verseKey: string): Promise<QfNote[]> {
-  return withQfCall(`/notes/by-verse/${verseKey}`, async () => {
-    const res = await getQfSdk().auth.v1.notes.listByVerseKey(verseKey);
-    return unwrapList(res);
-  });
-}
-
-export async function getNote(noteId: string): Promise<QfNote | null> {
-  return withQfCall(`/notes/${noteId}`, async () => {
-    const res = await getQfSdk().auth.v1.notes.get(noteId);
-    if (!res) return null;
-    return unwrapNote(res);
-  });
-}
-
 export async function createNote(input: {
   body: string;
   ranges: string[];
@@ -323,3 +306,68 @@ export async function unpublishNote(postId: string): Promise<void> {
     });
   });
 }
+
+// @ai-start
+/**
+ * The QF answers to an edit that mean "this post cannot be edited in place
+ * here", so the caller falls back to create-then-delete (TECH_DEBT #256):
+ *   - 404: QF has no such post (or no such route).
+ *   - 405, 501: QF does not take the PATCH.
+ *   - 403: QF refuses the edit for this token. The posts pull gives only the
+ *     user's own posts, so for them a 403 means a missing `post.update`
+ *     grant, not another author's post. Create-then-delete needs only
+ *     `post.create` and `post.delete`.
+ */
+const POST_EDIT_FALLBACK_STATUSES = new Set([403, 404, 405, 501]);
+
+/**
+ * TECH_DEBT #256 — edit the text of a QuranReflect post in place, so that
+ * the post keeps its likes and comments.
+ *
+ * Contract, from the vendor client (`@quranjs/api` 3.2.0,
+ * `dist/public.min.js`, source `src/generated/specs/public-operation-catalog.json`):
+ * the operation `postsControllerEdit` is
+ * `{auth: "user", method: "patch", path: "/v1/posts/{id}"}` on the
+ * quranReflect service. `raw.<operationId>` takes an `OperationRequest`:
+ * `path` fills `{id}`, and an object `body` goes out as JSON.
+ *
+ * Body, from QF's REST reference "Edit post" (production and pre-live): a
+ * partial post with only the fields to change, at the top level. `body` is a
+ * string of 6 or more characters. Unlike "Create post", the edit body is NOT
+ * wrapped in a `post` object. Answers: 200 `{success, post}`, 401, 403, 404.
+ *
+ * The method name comes from `raw.postsControllerEdit`, not from the
+ * auto-derived `posts.update` (CLAUDE.md, "QF / OAuth / SDK").
+ *
+ * @returns true when QF edited the post. false when QF cannot edit it in
+ *   place (the SDK has no such operation, or QF answers 403, 404, 405 or
+ *   501); a Sentry breadcrumb records why. Any other error throws.
+ */
+export async function editPost(postId: string, body: string): Promise<boolean> {
+  const path = `/v1/posts/${postId}`;
+  const edit = getQfSdk().quranReflect.v1.raw.postsControllerEdit;
+  if (typeof edit !== 'function') {
+    recordPostEditFallback('no-sdk-operation');
+    return false;
+  }
+  try {
+    await withQfCall(path, () => edit({path: {id: postId}, body: {body}}));
+    return true;
+  } catch (e) {
+    if (e instanceof QfApiError && POST_EDIT_FALLBACK_STATUSES.has(e.status)) {
+      recordPostEditFallback(String(e.status));
+      return false;
+    }
+    throw e;
+  }
+}
+
+function recordPostEditFallback(reason: string): void {
+  Sentry.addBreadcrumb({
+    category: 'notes-sync',
+    level: 'warning',
+    message: 'QF post edit in place not available; create then delete',
+    data: {reason},
+  });
+}
+// @ai-end

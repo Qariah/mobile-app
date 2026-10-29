@@ -277,8 +277,7 @@ const UploadListItem: React.FC<UploadListItemProps> = React.memo(
 UploadListItem.displayName = 'UploadListItem';
 
 // @ai-start
-// The flag check is in the outer component. The inner component calls its
-// hooks on every render, so the rules of hooks hold (TECH_DEBT #236).
+// The outer component checks the flag, so this one always calls its hooks (TECH_DEBT #236).
 function UploadsScreenContent() {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();

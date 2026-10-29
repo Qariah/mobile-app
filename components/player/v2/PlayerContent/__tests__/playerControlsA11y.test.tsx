@@ -155,8 +155,11 @@ jest.mock('@/components/ReciterImage', () => {
 });
 
 jest.mock('@/services/dataService', () => ({
-  formatAyahRange: () => '',
   getReciterById: () => Promise.resolve(null),
+}));
+
+jest.mock('@/utils/surahMetadata', () => ({
+  formatAyahRange: () => '',
   getSurahMetadataSync: () => undefined,
 }));
 

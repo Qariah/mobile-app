@@ -75,6 +75,8 @@ struct ContinueListeningView: View {
     }
     .containerBackground(for: .widget) { widgetBackground }
     .widgetURL(deepLinkPlayer)
+    // @ai Qariah (TECH_DEBT #357): the text follows the app language.
+    .widgetLanguage(entry.snapshot?.language)
   }
 
   private var sideTitle: String {
@@ -257,7 +259,7 @@ struct LargeView: View {
       }
       Divider().overlay(.white.opacity(0.2))
       if !rows.isEmpty {
-        Text(rowsTitle).font(.caption2.weight(.semibold)).opacity(0.6)
+        Text(LocalizedStringKey(rowsTitle)).font(.caption2.weight(.semibold)).opacity(0.6)
       }
       ForEach(rows, id: \.self) { t in TrackRow(track: t, artSize: 32) }
       Spacer(minLength: 0)
@@ -272,7 +274,8 @@ struct ListHeader: View {
   let title: String?
   var body: some View {
     HStack {
-      if let title { Text(title).font(.caption2.weight(.semibold)).opacity(0.6) }
+      // @ai Qariah (TECH_DEBT #357): the title is a String Catalog key ("Up next", "Recent").
+      if let title { Text(LocalizedStringKey(title)).font(.caption2.weight(.semibold)).opacity(0.6) }
       Spacer(minLength: 0)
       BayaanLogo(size: 14)
     }

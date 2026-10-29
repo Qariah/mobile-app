@@ -42,6 +42,8 @@ struct QuickSurahEntry: TimelineEntry {
   /// The configured reciter when it is still in the catalog; nil plays the default reciter.
   let reciter: WidgetCatalogReciter?
   let defaultReciter: WidgetReciter?
+  // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage).
+  var language: String? = nil
 }
 
 struct QuickSurahProvider: AppIntentTimelineProvider {
@@ -65,11 +67,13 @@ struct QuickSurahProvider: AppIntentTimelineProvider {
   }
 
   private func entry(for configuration: QuickSurahConfigIntent) -> QuickSurahEntry {
-    QuickSurahEntry(
+    let snapshot = SnapshotStore.load()
+    return QuickSurahEntry(
       date: .now,
       surahs: configuration.surahIds.compactMap(StaticData.surah),
       reciter: CatalogStore.load()?.reciter(configuration.reciter?.id),
-      defaultReciter: SnapshotStore.load()?.defaultReciter)
+      defaultReciter: snapshot?.defaultReciter,
+      language: snapshot?.language)
   }
 }
 
@@ -104,7 +108,10 @@ struct QuickSurahView: View {
     }
     .foregroundStyle(.white)
     .containerBackground(for: .widget) { WidgetPalette.background }
+    .widgetLanguage(entry.language)
   }
+
+  private func name(_ surah: StaticSurah) -> String { WidgetLanguage.surahName(surah, entry.language) }
 
   private func intent(_ surah: StaticSurah) -> PlayTrackIntent {
     PlayTrackIntent(surahId: surah.id, reciterId: entry.reciter?.id, rewayatId: nil)
@@ -114,12 +121,12 @@ struct QuickSurahView: View {
     Button(intent: intent(surah)) {
       VStack(alignment: .leading, spacing: 3) {
         HStack(alignment: .top) {
-          SurahCard(surah: surah, size: 56)
+          SurahCard(surah: surah, size: 56, language: entry.language)
           Spacer(minLength: 0)
           BayaanLogo(size: 14)
         }
         Spacer(minLength: 0)
-        Text(surah.name).font(.headline).lineLimit(1)
+        Text(name(surah)).font(.headline).lineLimit(1)
         HStack(spacing: 6) {
           ReciterPhoto(file: reciterFile, name: reciterName)
             .frame(width: 18, height: 18).clipShape(Circle())
@@ -132,7 +139,7 @@ struct QuickSurahView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     .buttonStyle(.plain)
-    .accessibilityLabel("Play \(surah.name)")
+    .accessibilityLabel("Play \(name(surah))")
   }
 
   private var medium: some View {
@@ -156,14 +163,14 @@ struct QuickSurahView: View {
       let surah = entry.surahs[index]
       Button(intent: intent(surah)) {
         HStack(spacing: 8) {
-          SurahCard(surah: surah, size: 38)
-          Text(surah.name).font(.caption.weight(.semibold)).lineLimit(1)
+          SurahCard(surah: surah, size: 38, language: entry.language)
+          Text(name(surah)).font(.caption.weight(.semibold)).lineLimit(1)
           Spacer(minLength: 0)
         }
       }
       .buttonStyle(.plain)
       .frame(maxWidth: .infinity)
-      .accessibilityLabel("Play \(surah.name)")
+      .accessibilityLabel("Play \(name(surah))")
     } else {
       Color.clear.frame(height: 38)
     }

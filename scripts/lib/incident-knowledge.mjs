@@ -162,7 +162,7 @@ export const INCIDENTS = [
       'activity is no longer available") — typically the OS killing the app, most impactful ' +
       'during background audio (Sprint-24 FB-1: Samsung One UI / OnePlus / Xiaomi aggressively ' +
       'kill the audio foreground service). Check the POST_NOTIFICATIONS runtime grant + the ' +
-      '`withAndroidNotificationPermission` plugin in the affected build + the device ' +
+      'POST_NOTIFICATIONS line in the merged manifest of the affected build + the device ' +
       'battery-optimization setting.',
   },
   {

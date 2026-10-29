@@ -25,7 +25,8 @@
 import DeviceInfo from 'react-native-device-info';
 import * as Sentry from '@sentry/react-native';
 import {AppState, type AppStateStatus} from 'react-native';
-import {createMMKV, type MMKV} from 'react-native-mmkv';
+import type {MMKV} from 'react-native-mmkv';
+import {analyticsStore, __resetAnalyticsStoreForTests} from './analyticsStore';
 import {
   DIAGNOSTIC_BUILD_FLAG,
   isMemoryProbeEnabled,
@@ -129,17 +130,14 @@ export async function captureMemorySnapshot(reason: string): Promise<void> {
 // this misbehaves the choice is not just "full signal or nothing".
 const BUDGET_KEY = 'memprobe:daily';
 
-// Lazy + GUARDED handle on the existing 'analytics' store, matching
-// bootSentinel.ts: MMKV native init throws on the iOS Simulator (no app-group
-// container), and this module must never throw into a pressure callback. A null
-// store means "cannot persist" — see consumeDailyBudget for why that FAILS CLOSED.
-let _mmkv: MMKV | null | undefined; // undefined = not tried; null = failed
+// The 'analytics' MMKV store, opened lazily and guarded (`analyticsStore.ts`):
+// this module must never throw into a pressure callback. A null store means
+// "cannot persist" — see consumeDailyBudget for why that FAILS CLOSED.
+let storeUnavailableTagged = false;
 function store(): MMKV | null {
-  if (_mmkv !== undefined) return _mmkv;
-  try {
-    _mmkv = createMMKV({id: 'analytics'});
-  } catch {
-    _mmkv = null;
+  const mmkv = analyticsStore();
+  if (mmkv === null && !storeUnavailableTagged) {
+    storeUnavailableTagged = true;
     // A silent zero here is indistinguishable from "this device was healthy",
     // which is the wrong story to tell about a device whose storage just failed.
     // A TAG (not an event — this path must never add quota cost) leaves the
@@ -150,7 +148,7 @@ function store(): MMKV | null {
       // never throw from the probe
     }
   }
-  return _mmkv;
+  return mmkv;
 }
 
 // Negative-cache a failing WRITE the same way a failing init is cached. Without
@@ -221,7 +219,8 @@ function consumeDailyBudget(
 
 /** Test seam — drops the memoised MMKV handle so a fresh mock is picked up. */
 export function __resetMemoryBudgetForTests(): void {
-  _mmkv = undefined;
+  __resetAnalyticsStoreForTests();
+  storeUnavailableTagged = false;
   writesBroken = false;
 }
 

@@ -1,5 +1,5 @@
 // @ai Qariah (TECH_DEBT #289): types for config/iosAppGroup.js (CommonJS, so
-// that app.config.ts and the scripts can load it). See that file.
+// that app.config.js and the scripts can load it). See that file.
 
 /** True for the one beta release that moves the beta data (TECH_DEBT #289). */
 export declare const MOVE_DATA_FROM_PRODUCTION_GROUP: boolean;

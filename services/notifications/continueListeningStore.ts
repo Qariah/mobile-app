@@ -19,12 +19,23 @@
 // finds the switch off or no permission, and the holdout sync. So the record
 // is there only while the app wants the notice to be pending.
 //
+// One notice a day (Sprint 51, TECH_DEBT #328): a record whose time is past
+// when a new play replaces it, or when the engine removes it, was a notice
+// that fired. Its local day goes to the key `continue_listening_fired_day`
+// (`YYYY-MM-DD`), so the app posts no second notice that day
+// (`continueNoticeDays`). A notice that Android lost to a force-stop also
+// counts: that day then gets no notice, never two.
+//
 // Nothing here throws into its caller.
 import {notificationsStorage} from './catalogDiff';
+import {localDay} from './localDay';
 import type {PlayedTrack} from './notificationScheduling';
 import type {KeyValueStorage} from './types';
 
 export const CONTINUE_LISTENING_LAST_PLAY_KEY = 'continue_listening_last_play';
+
+/** The local day of the last "continue listening" notice that fired (TECH_DEBT #328). */
+export const CONTINUE_LISTENING_FIRED_DAY_KEY = 'continue_listening_fired_day';
 
 /** The format of the stored value. A value in another format is no record. */
 const RECORD_FORMAT = 1;
@@ -109,11 +120,61 @@ export function readContinuePlay(
   return record;
 }
 
-/** Keeps `play` (it replaces the last one). Gives `false` when the write throws. */
+/**
+ * Before the record changes: when the stored notice is due at `now` or
+ * earlier, it fired; keep its local day (TECH_DEBT #328).
+ */
+function rememberFiredNotice(storage: KeyValueStorage, now: number): void {
+  let raw: string | undefined;
+  try {
+    raw = storage.getString(CONTINUE_LISTENING_LAST_PLAY_KEY);
+  } catch {
+    return;
+  }
+  if (typeof raw !== 'string') return;
+  const record = parseRecord(raw);
+  if (!record || record.fireAt > now) return;
+  try {
+    storage.set(
+      CONTINUE_LISTENING_FIRED_DAY_KEY,
+      localDay(new Date(record.fireAt)),
+    );
+  } catch {
+    // Best effort: the day can get a second notice.
+  }
+}
+
+/**
+ * The local days (`YYYY-MM-DD`) that have a "continue listening" notice: the
+ * day of the stored notice (pending, or past and not removed yet) and the day
+ * of the last one that fired. The app posts nothing on these days.
+ */
+export function continueNoticeDays(
+  storage: KeyValueStorage = notificationsStorage,
+): string[] {
+  const days: string[] = [];
+  const record = readContinuePlay(storage);
+  if (record) days.push(localDay(new Date(record.fireAt)));
+  let fired: string | undefined;
+  try {
+    fired = storage.getString(CONTINUE_LISTENING_FIRED_DAY_KEY);
+  } catch {
+    fired = undefined;
+  }
+  if (typeof fired === 'string' && fired !== '') days.push(fired);
+  return days;
+}
+
+/**
+ * Keeps `play` (it replaces the last one). Gives `false` when the write
+ * throws. A replaced notice that was due at `now` or earlier keeps its day.
+ */
 export function writeContinuePlay(
   play: PersistedContinuePlay,
   storage: KeyValueStorage = notificationsStorage,
+  now: number = Date.now(),
 ): boolean {
+  rememberFiredNotice(storage, now);
   const {track} = play;
   const value = JSON.stringify({
     v: RECORD_FORMAT,
@@ -143,13 +204,15 @@ export function clearContinuePlayIfPast(
   storage: KeyValueStorage = notificationsStorage,
 ): void {
   const record = readContinuePlay(storage);
-  if (record && record.fireAt <= now) clearContinuePlay(storage);
+  if (record && record.fireAt <= now) clearContinuePlay(storage, now);
 }
 
-/** Removes the stored play. */
+/** Removes the stored play. A notice that was due at `now` or earlier keeps its day. */
 export function clearContinuePlay(
   storage: KeyValueStorage = notificationsStorage,
+  now: number = Date.now(),
 ): void {
+  rememberFiredNotice(storage, now);
   try {
     storage.remove(CONTINUE_LISTENING_LAST_PLAY_KEY);
   } catch {

@@ -6,16 +6,11 @@ import {
 import {featureFlags} from '@/config/featureFlags';
 import nativeWidgetsConfig from '@/config/nativeWidgets.config';
 
-// @ai Qariah: this upstream suite pins Bayaan's widget set, which needs the
-// flags Qariah turns off (adhkar, the ambient overlay). Run it with upstream's
-// flag values (see test-utils/upstreamFeatureFlags.ts).
+// @ai Qariah: this upstream suite needs upstream's flag values (Qariah turns adhkar and ambient off).
 jest.mock('@/config/featureFlags', () =>
   jest.requireActual('@/test-utils/upstreamFeatureFlags'),
 );
-// @ai Qariah: the same for the widget list. Qariah ships a core set (owner
-// decision O5, 2026-10-18); Bayaan ships every surface. Run this suite with
-// upstream's list (see test-utils/upstreamNativeWidgetsConfig.ts).
-// config/__tests__/nativeWidgets.qariah.test.ts asserts Qariah's list.
+// @ai Qariah: and upstream's widget list. nativeWidgets.qariah.test.ts asserts Qariah's core set.
 jest.mock('@/config/nativeWidgets.config', () =>
   jest.requireActual('@/test-utils/upstreamNativeWidgetsConfig'),
 );

@@ -35,7 +35,7 @@
 
 import * as Sentry from '@sentry/react-native';
 import {AppState, Platform} from 'react-native';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 // S-PR2 — native main-thread (UI-thread) freeze watchdog (Android-only; iOS/web
 // no-op). Catches the native main-thread block class the JS heartbeat is blind to.
 import {
@@ -148,7 +148,9 @@ export function setDiagnosticsConfigListener(fn: (() => void) | null): void {
 
 /** Single source of truth for whether the S35.2 memory probe should run. */
 export function isMemoryProbeEnabled(): boolean {
-  return enabled && cfg.memoryProbe && isFeatureEnabled('memoryPressureProbe');
+  return (
+    enabled && cfg.memoryProbe && isQariahFeatureEnabled('memoryPressureProbe')
+  );
 }
 
 /** Per-source, per-UTC-day emit budget for the memory probe. Applied once per
@@ -381,7 +383,9 @@ let watchdogSub: {remove(): void} | null = null;
  *  local build flag is on. */
 export function isMainThreadWatchdogEnabled(): boolean {
   return (
-    enabled && cfg.mainThreadWatchdog && isFeatureEnabled('mainThreadWatchdog')
+    enabled &&
+    cfg.mainThreadWatchdog &&
+    isQariahFeatureEnabled('mainThreadWatchdog')
   );
 }
 

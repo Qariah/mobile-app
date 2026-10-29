@@ -153,8 +153,9 @@ export const CHECKS = {
     decide(item, f) {
       const builds = unclaimed(f.watchBuilds, item.noFixBuilds);
       if (!builds.length) return DONE;
-      // Not Omar's step: the Mac loop reads the build's commits and records the
-      // answer itself (triage-loop skill Step 1.6). Omar is never asked.
+      // Not Omar's step: post-sprint Step 14b records the build at a sprint
+      // close, and a session records it by hand (triage-loop skill Step 1.6),
+      // from the build's commits. Omar is never asked.
       return {
         state: 'waiting',
         lines: builds.map(build => fill(item.promptWhenDue, {build})),

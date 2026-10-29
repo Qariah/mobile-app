@@ -5,7 +5,10 @@
 
 import {renderHook} from '@testing-library/react-native';
 import {Platform} from 'react-native';
-import {useReciterProfileSurahsWatchdog} from '../useContentReadyWatchdog';
+import {
+  useContentReadyWatchdog,
+  useReciterProfileSurahsWatchdog,
+} from '../useContentReadyWatchdog';
 
 const mockCaptureMessage = jest.fn();
 jest.mock('@sentry/react-native', () => ({
@@ -17,6 +20,8 @@ jest.mock('@/services/analytics/qariahEvents', () => ({
   qariahAnalytics: {
     trackReciterProfileSurahsStalled: (p: unknown) => mockStalled(p),
     trackReciterProfileSurahsRendered: (p: unknown) => mockRendered(p),
+    trackScreenContentStalled: jest.fn(),
+    trackScreenContentRendered: jest.fn(),
   },
 }));
 jest.mock('@/services/diagnostics/bootSentinel', () => ({
@@ -77,6 +82,8 @@ describe('useReciterProfileSurahsWatchdog', () => {
           rp_platform: Platform.OS,
         },
         extra: ctx,
+        // One Sentry issue per message, whatever the call site (#603).
+        fingerprint: ['reciter-profile-surahs-stalled'],
       },
     );
     expect(mockStalled).toHaveBeenCalledWith(ctx);
@@ -139,5 +146,26 @@ describe('useReciterProfileSurahsWatchdog', () => {
       tabs_count: 2,
       platform: Platform.OS,
     });
+  });
+});
+
+// #603: without a fingerprint, Sentry groups a captureMessage by its call
+// site. In a build with no source map every setTimeout callback in this file
+// is the same frame, so two different stalls could share one Sentry issue.
+describe('useContentReadyWatchdog', () => {
+  it('groups the stall by its message in Sentry', () => {
+    renderHook(() =>
+      useContentReadyWatchdog({
+        screen: 'mushaf',
+        ready: false,
+        awaiting: 'digital-khatt-init',
+      }),
+    );
+    jest.advanceTimersByTime(8000);
+    expect(mockCaptureMessage).toHaveBeenCalledTimes(1);
+    expect(mockCaptureMessage).toHaveBeenCalledWith(
+      'screen-content-stalled',
+      expect.objectContaining({fingerprint: ['screen-content-stalled']}),
+    );
   });
 });

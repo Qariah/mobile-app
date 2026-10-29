@@ -10,9 +10,7 @@ function getHafsRewayat(reciter: Reciter) {
   return reciter.rewayat.find(r => r.name === HAFS_REWAYAT_NAME);
 }
 
-// Qariah: prefer reciters with a complete (114-surah) recitation as the default.
-// Avoids picking an alphabetically-first Hafs reciter whose catalog only covers
-// a handful of surahs (e.g. Maryam Amir, who has Hafs but only ~5 surahs).
+// Qariah: the default reciter must have a complete (114-surah) recitation, not only a few surahs.
 function hasCompleteQuran(reciter: Reciter) {
   return reciter.rewayat.some(
     r => r.surah_list?.filter(id => id !== null).length === 114,
@@ -101,9 +99,7 @@ export const useReciterStore = create<ReciterState>()(
       name: 'reciter-storage',
       partialize: state => ({defaultReciter: state.defaultReciter}),
       storage: guardedJSONStorage('reciter-storage'),
-      // Qariah: if the persisted default reciter doesn't have a complete Quran
-      // (legacy installs picked Maryam Amir, who only has ~5 surahs), reset to
-      // a sensible default. Runs once on app launch after rehydration.
+      // Qariah: reset a persisted default reciter that has no complete Quran (older installs).
       onRehydrateStorage: () => state => {
         if (!state) return;
         const current = state.defaultReciter;

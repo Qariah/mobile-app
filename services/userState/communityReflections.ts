@@ -1,5 +1,5 @@
 /**
- * QuranReflect — community reflections + comments + like wrapper.
+ * QuranReflect — inline community reflections (per ayah).
  *
  * Sits alongside `services/userState/notes.ts` (Sprint 18 / Slice B).
  * Notes.ts surfaces the user's OWN annotations (private QF Notes that
@@ -8,18 +8,10 @@
  * "Community Reflections" toggle (Sprint 27 S27.4) can render them
  * inline under each ayah.
  *
- * SDK-backed (`@quranjs/api/public`). Endpoints (quranReflect service —
- * NOT auth):
- *   GET  /v1/posts/feed                       — paginated community feed
+ * Endpoint (quranReflect service, raw `fetch` with a client_credentials
+ * token — see `listCommunityReflectionsByAyah`):
+ *   GET  /quran-reflect/v1/posts/feed         — paginated community feed
  *                                                (bracket-array filter)
- *   GET  /v1/posts/by-verse/{verseKey}        — posts on a verse (auth-user; broken — see history)
- *   GET  /v1/posts/{id}                       — single post
- *   GET  /v1/posts/{id}/liked                 — has the current user liked?
- *   POST /v1/posts/{id}/toggle-like           — like/unlike toggle
- *   GET  /v1/posts/{id}/comments              — comments on a post (paginated)
- *   GET  /v1/posts/{id}/all-comments          — all comments (one shot)
- *   POST /v1/comments                         — create comment
- *   POST /v1/comments/{id}/toggle-like        — like a comment
  *
  * **History — the by-verse hunt (Sprint 21 r3 → Sprint 27):**
  *
@@ -47,234 +39,21 @@
  * Live-probed 2026-05-26: returned 200 OK + real reflection for
  * An-Nisa 4:10 against prelive. The bracket-array shape was the only
  * unprobed shape from S21 r3. `listCommunityReflectionsByAyah` below
- * uses it; `listPostsByVerse` (the broken `by-verse` wrapper) is left
- * in place but unused.
+ * uses it.
  *
- * Sign-in is required. Callers should gate UI on
- * `useUserState().isAuthenticated` and surface a sign-in CTA otherwise.
- * Today's QF policy: `/posts/feed` requires user auth (`auth: "user"`
- * in the SDK definition).
+ * Divergence batch C3 (SEM-S2, 2026-10-24) removed the SDK wrappers that
+ * no code called: the broken `listPostsByVerse`, `getPost`,
+ * `togglePostLike`, the comment wrappers, `authorLabel` and their types.
+ * Note for a later like or comment feature: the `quranReflect.v1.posts.*`
+ * resource names are auto-derived by the SDK and are not reliable for a
+ * path with a placeholder (`/v1/posts/by-verse/{verseKey}` maps to
+ * `postsControllerGetMyPostsByVerse`). Call
+ * `sdk.quranReflect.v1.raw.<operationId>` (see `postsRestore.ts`).
  */
 
-import {getQfSdk} from '@/services/auth/sdkClient';
 import {getQfApiBase, getQfOAuthConfig} from '@/services/auth/config';
 import {getQfClientCredentialsToken} from '@/services/auth/qfClientCredentials';
-import {withQfCall} from './qfErrors';
-import i18n from '@/i18n';
-
-export interface QfReflectionAuthor {
-  id?: number | string;
-  username?: string;
-  name?: string;
-  displayName?: string;
-  avatarUrl?: string | null;
-}
-
-export interface QfReflectionPost {
-  id: number | string;
-  body: string;
-  /** Verse range string e.g. `"2:255-2:255"` */
-  range?: string;
-  ranges?: string[];
-  /** Author summary — shape varies by SDK version; we use a permissive type. */
-  user?: QfReflectionAuthor;
-  author?: QfReflectionAuthor;
-  /** Aggregate counts the QF post payload typically carries. */
-  likesCount?: number;
-  commentsCount?: number;
-  /** Whether the calling user has liked this post (may require a separate fetch). */
-  liked?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-  /** QF web URL — useful for "View on QuranReflect" deeplink. */
-  link?: string;
-  url?: string;
-}
-
-export interface QfComment {
-  id: number | string;
-  body: string;
-  user?: QfReflectionAuthor;
-  author?: QfReflectionAuthor;
-  likesCount?: number;
-  repliesCount?: number;
-  liked?: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-interface QfListResponse<T> {
-  data?: T[];
-  posts?: T[];
-  comments?: T[];
-  results?: T[];
-  total?: number;
-  page?: number;
-}
-
-function unwrapList<T>(res: unknown): T[] {
-  if (Array.isArray(res)) return res as T[];
-  if (res && typeof res === 'object') {
-    const r = res as QfListResponse<T>;
-    return r.data ?? r.posts ?? r.comments ?? r.results ?? [];
-  }
-  return [];
-}
-
-/**
- * SDK method-name resolution (post-runtime probe, 2026-05-20):
- *
- * Unlike the `auth.v1.notes.*` resource (which has hand-coded ergonomic
- * wrappers like `list` / `listByVerseKey`), the `quranReflect.v1.posts.*`
- * and `comments.*` resources are populated **purely** by the SDK's
- * auto-derivation pass in `y(serviceDef, requestMap)` — see
- * `node_modules/@quranjs/api/dist/public.min.js` function `F(op)`.
- *
- * The auto-derivation rules are:
- *   - path `/v1/x` (1 seg)              → `w[method]` (get=list, post=create, …)
- *   - path `/v1/x/{id}` (2 seg, last placeholder)  → `get`/`remove`/`update`
- *   - path `/v1/x/y/{z}` (3 seg, last placeholder) → `d(operationId)` ← FALLBACK
- *   - path `/v1/x/{id}/y` (3 seg, last NOT placeholder, y≠x) → `d(y)`
- *
- * So `postsControllerGetMyPostsByVerse` (path `/v1/posts/by-verse/{verseKey}`)
- * falls through to `d(operationId)` = the camel-cased operationId itself
- * = `postsControllerGetMyPostsByVerse`. Calling
- * `sdk.quranReflect.v1.posts.getMyPostsByVerse(…)` throws "is not a function".
- *
- * The robust fix is to use `sdk.quranReflect.v1.raw` — that's the
- * resource-grouping-bypassing map keyed by full operationId.
- *
- * Caveat: every call here needs to know its exact operationId; rename
- * those upstream and we break here. We accept that cost — the SDK
- * doesn't surface a stable ergonomic shape for community-posts, and
- * coding against `raw[opId]` is at least obvious about the coupling.
- */
-
-/**
- * Posts on a specific verse.
- *
- * Operation: `postsControllerGetMyPostsByVerse`
- * Path:      `/v1/posts/by-verse/{verseKey}`  (auth=user)
- *
- * Runtime probe (2026-05-20): with `client_credentials` token, this
- * 401s. With user auth, the visibility scope (own-posts vs community)
- * was not separately probed — see file header.
- */
-export async function listPostsByVerse(
-  verseKey: string,
-): Promise<QfReflectionPost[]> {
-  return withQfCall(`/posts/by-verse/${verseKey}`, async () => {
-    const sdk = getQfSdk();
-    const res = await sdk.quranReflect.v1.raw.postsControllerGetMyPostsByVerse({
-      path: {verseKey},
-    });
-    return unwrapList<QfReflectionPost>(res);
-  });
-}
-
-/** Operation: `postsControllerFindOne` — path `/v1/posts/{id}`. */
-export async function getPost(
-  postId: string | number,
-): Promise<QfReflectionPost | null> {
-  return withQfCall(`/posts/${postId}`, async () => {
-    const res = await getQfSdk().quranReflect.v1.raw.postsControllerFindOne({
-      path: {id: String(postId)},
-    });
-    return (res as QfReflectionPost) ?? null;
-  });
-}
-
-/**
- * Toggle the like state of a post. QF returns the post with `liked` updated.
- *
- * Operation: `postsControllerToggleLike` — path `/v1/posts/{id}/toggle-like`.
- */
-export async function togglePostLike(
-  postId: string | number,
-): Promise<QfReflectionPost | null> {
-  return withQfCall(`/posts/${postId}/toggle-like`, async () => {
-    const res = await getQfSdk().quranReflect.v1.raw.postsControllerToggleLike({
-      path: {id: String(postId)},
-    });
-    return (res as QfReflectionPost) ?? null;
-  });
-}
-
-/**
- * Get all comments on a post (one-shot, non-paginated).
- *
- * Operation: `postsControllerGetAllComment` — path `/v1/posts/{id}/all-comments`.
- */
-export async function listAllComments(
-  postId: string | number,
-): Promise<QfComment[]> {
-  return withQfCall(`/posts/${postId}/all-comments`, async () => {
-    const res =
-      await getQfSdk().quranReflect.v1.raw.postsControllerGetAllComment({
-        path: {id: String(postId)},
-      });
-    return unwrapList<QfComment>(res);
-  });
-}
-
-/**
- * Get paginated comments on a post.
- *
- * Operation: `postsControllerGetComments` — path `/v1/posts/{id}/comments`.
- */
-export async function listComments(
-  postId: string | number,
-): Promise<QfComment[]> {
-  return withQfCall(`/posts/${postId}/comments`, async () => {
-    const res = await getQfSdk().quranReflect.v1.raw.postsControllerGetComments(
-      {
-        path: {id: String(postId)},
-      },
-    );
-    return unwrapList<QfComment>(res);
-  });
-}
-
-/**
- * Create a new comment on a post.
- *
- * Operation: `commentsControllerCreate` — path `/v1/comments`.
- */
-export async function createComment(
-  postId: string | number,
-  body: string,
-): Promise<QfComment | null> {
-  return withQfCall(`/comments (post=${postId})`, async () => {
-    const res = await getQfSdk().quranReflect.v1.raw.commentsControllerCreate({
-      body: {postId, body},
-    });
-    return (res as QfComment) ?? null;
-  });
-}
-
-/**
- * Toggle the like state of a comment.
- *
- * Operation: `commentsControllerToggleLike` — path `/v1/comments/{id}/toggle-like`.
- */
-export async function toggleCommentLike(
-  commentId: string | number,
-): Promise<QfComment | null> {
-  return withQfCall(`/comments/${commentId}/toggle-like`, async () => {
-    const res =
-      await getQfSdk().quranReflect.v1.raw.commentsControllerToggleLike({
-        path: {id: String(commentId)},
-      });
-    return (res as QfComment) ?? null;
-  });
-}
-
-/** Best-effort author label for UI — falls back through user fields. */
-export function authorLabel(post: QfReflectionPost | QfComment): string {
-  const u = post.user ?? post.author;
-  const name = u ? (u.displayName ?? u.name ?? u.username) : undefined;
-  return name ?? i18n.t('qariah:reflections.anonymous');
-}
+import {unwrapQfList} from './qfResponse';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sprint 27 — inline community reflections (per-ayah)
@@ -283,10 +62,8 @@ export function authorLabel(post: QfReflectionPost | QfComment): string {
 /**
  * Shape returned to inline-reflection consumers (Mushaf-tab card per ayah).
  *
- * Distinct from `QfReflectionPost` (the raw SDK payload, kept permissive
- * with many optional fields for the legacy sheet) — this one is narrower
- * and pre-normalized so the `<AyahCommunityReflections />` subcomponent
- * doesn't need to defend against shape variance at render time.
+ * Narrow and pre-normalized so the `<AyahCommunityReflections />`
+ * subcomponent doesn't need to defend against shape variance at render time.
  */
 export interface AyahReflectionAuthor {
   id: number | string;
@@ -437,7 +214,12 @@ export async function listCommunityReflectionsByAyah(
     );
   }
   const json = (await res.json()) as unknown;
-  const raw = unwrapList<QfFeedEntry>(json);
+  const raw = unwrapQfList<QfFeedEntry>(json, [
+    'data',
+    'posts',
+    'comments',
+    'results',
+  ]);
   const out: AyahReflection[] = [];
   for (const entry of raw) {
     const norm = normalizeFeedEntry(entry);

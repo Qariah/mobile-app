@@ -5,8 +5,11 @@ import {DEFAULT_NOTIFICATION_TYPE_PREFS} from '../prefsStore';
 import type {NotificationPrefsState} from '../prefsStore';
 import {notificationsStorage} from '../catalogDiff';
 import {
+  CONTINUE_LISTENING_FIRED_DAY_KEY,
   CONTINUE_LISTENING_LAST_PLAY_KEY,
+  clearContinuePlay,
   clearContinuePlayIfPast,
+  continueNoticeDays,
   readContinuePlay,
   writeContinuePlay,
 } from '../continueListeningStore';
@@ -25,6 +28,8 @@ import {
 import {
   CONTINUE_LISTENING_DELAY_DAYS,
   continueListeningTrigger,
+  localDay,
+  type ContinueNoticeDayRules,
 } from '../scheduler';
 import type {
   KeyValueStorage,
@@ -106,6 +111,13 @@ const YASIN: PlayedTrack = {...KAHF, surahId: 36};
 /** A fixed "now" before each play date of these tests (not the clock of the test machine). */
 const CONTINUE_TEST_NOW = new Date(2026, 9, 1).getTime();
 
+/**
+ * No taken day (TECH_DEBT #328): the notice keeps the time of
+ * `continueListeningTrigger`. The plays of the older tests fall on a Tuesday,
+ * so their notice falls on a Friday; the one-a-day tests below set the rules.
+ */
+const NO_TAKEN_DAY = () => ({kahfFridayOn: false, lastNotifiedDay: null});
+
 function continueDeps(
   notifier: FakeNotifier,
   overrides: Partial<ContinueScheduleDeps> = {},
@@ -148,6 +160,7 @@ beforeEach(() => {
   // The tests with no injected storage use the Jest in-memory MMKV: no stored
   // play may go from one test to the next.
   notificationsStorage.remove(CONTINUE_LISTENING_LAST_PLAY_KEY);
+  notificationsStorage.remove(CONTINUE_LISTENING_FIRED_DAY_KEY);
 });
 
 describe('playedTrackOf', () => {
@@ -329,6 +342,8 @@ describe('startNotificationScheduling', () => {
       storage?: KeyValueStorage & {values: Map<string, string>};
       /** Share one notifier between two "processes" (iOS keeps the notices). */
       notifier?: FakeNotifier;
+      /** The taken days (TECH_DEBT #328). Default: none. */
+      dayRules?: () => ContinueNoticeDayRules;
     } = {},
   ) {
     let now = start;
@@ -353,6 +368,7 @@ describe('startNotificationScheduling', () => {
     const sync = jest.fn(async () => undefined);
     const onContinueScheduled = jest.fn();
     startNotificationScheduling({
+      dayRules: options.dayRules ?? NO_TAKEN_DAY,
       subscribePlayStarts: listener => {
         play.listener = listener;
         return () => undefined;
@@ -500,6 +516,7 @@ describe('startNotificationScheduling', () => {
       const notifier = fakeNotifier();
       let playListener: ((track: PlayedTrack) => void) | null = null;
       startNotificationScheduling({
+        dayRules: NO_TAKEN_DAY,
         subscribePlayStarts: listener => {
           playListener = listener;
           return () => undefined;
@@ -1020,6 +1037,7 @@ describe('startNotificationScheduling', () => {
           let syncedListener: ((result: SyncOutcome) => void) | null = null;
           // The default reporter (no `onContinueScheduled`).
           startNotificationScheduling({
+            dayRules: NO_TAKEN_DAY,
             subscribePlayStarts: listener => {
               playListener = listener;
               return () => undefined;
@@ -1091,6 +1109,108 @@ describe('startNotificationScheduling', () => {
       });
     });
   });
+
+  describe('one notice a day (TECH_DEBT #328)', () => {
+    // A play on Tuesday 2026-10-20: its notice falls on Friday 2026-10-23.
+    const TUESDAY = new Date(2026, 9, 20, 10, 0).getTime();
+    const fridayFireAt = continueListeningTrigger(TUESDAY).at;
+    const KAHF_ON = () => ({kahfFridayOn: true, lastNotifiedDay: null});
+
+    it('the play of a Tuesday: its Friday notice moves to Saturday, the same time', async () => {
+      expect(new Date(fridayFireAt).getDay()).toBe(5);
+      const h = harness(TUESDAY, {dayRules: KAHF_ON});
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(new Date(at).getDay()).toBe(6);
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+      expect(new Date(at).getHours()).toBe(new Date(fridayFireAt).getHours());
+      // The record keeps the moved time, for the boot step.
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(at);
+    });
+
+    it('with Al-Kahf off, the notice stays on the Friday', async () => {
+      const h = harness(TUESDAY);
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(h.notifier.scheduled.get('continue_listening')?.at).toBe(
+        fridayFireAt,
+      );
+    });
+
+    it('a notice on the day of the app notice moves to the next free day', async () => {
+      // A play on a Monday: its notice falls on a Thursday.
+      const monday = new Date(2026, 9, 19, 10, 0).getTime();
+      const thursdayFireAt = continueListeningTrigger(monday).at;
+      const h = harness(monday, {
+        dayRules: () => ({
+          kahfFridayOn: true,
+          lastNotifiedDay: localDay(new Date(thursdayFireAt)),
+        }),
+      });
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      // Thursday is taken, and Friday is the Al-Kahf day: Saturday.
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+    });
+
+    it('Al-Kahf ON moves a pending Friday notice to Saturday (the same id)', async () => {
+      let kahfOn = false;
+      const h = harness(TUESDAY, {
+        dayRules: () => ({kahfFridayOn: kahfOn, lastNotifiedDay: null}),
+      });
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(fridayFireAt);
+
+      kahfOn = true;
+      h.changePrefs(
+        {kahf_friday: true, continue_listening: true},
+        {kahf_friday: false, continue_listening: true},
+      );
+      await flush();
+      expect(h.notifier.schedule).toHaveBeenCalledTimes(2);
+      expect([...h.notifier.scheduled.keys()]).toEqual(['continue_listening']);
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(at);
+      // The same notice: not a new notice for the analytics.
+      expect(h.onContinueScheduled).toHaveBeenCalledTimes(1);
+    });
+
+    it('a new play after the notice fired keeps the day of that notice', async () => {
+      const h = harness(TUESDAY);
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      // The notice fires on the Friday; the user plays again an hour later.
+      h.advance(fridayFireAt - TUESDAY + 60 * 60_000);
+      h.play(YASIN);
+      await flush();
+      expect(readContinuePlay(h.storage)?.track).toEqual(YASIN);
+      expect(continueNoticeDays(h.storage)).toContain('2026-10-23');
+    });
+
+    it('the store: a removed record that was due keeps its day; a future one does not', () => {
+      const storage = memoryStorage();
+      const record = {track: KAHF, playedAt: TUESDAY, fireAt: fridayFireAt};
+      writeContinuePlay(record, storage, TUESDAY);
+      expect(continueNoticeDays(storage)).toEqual(['2026-10-23']);
+      // The switch OFF before the notice: nothing fired.
+      clearContinuePlay(storage, fridayFireAt - 60_000);
+      expect(continueNoticeDays(storage)).toEqual([]);
+      // The boot step after the notice: it fired on the Friday.
+      writeContinuePlay(record, storage, TUESDAY);
+      clearContinuePlayIfPast(fridayFireAt + 60_000, storage);
+      expect(readContinuePlay(storage)).toBeNull();
+      expect(continueNoticeDays(storage)).toEqual(['2026-10-23']);
+    });
+  });
 });
 
 describe('the iOS opt-in path (review M2), end to end', () => {
@@ -1107,6 +1227,7 @@ describe('the iOS opt-in path (review M2), end to end', () => {
     let playListener: ((track: PlayedTrack) => void) | null = null;
     // The default `subscribeSynced`: the real `onNotificationsSynced`.
     startNotificationScheduling({
+      dayRules: NO_TAKEN_DAY,
       subscribePlayStarts: listener => {
         playListener = listener;
         return () => undefined;
@@ -1181,6 +1302,7 @@ describe('an Android force-stop (Sprint 48 Tier 2, defect D2), end to end', () =
     /** One process: the subscriptions, the boot sync, then the boot step. */
     async function boot(notifier: FakeNotifier): Promise<void> {
       startNotificationScheduling({
+        dayRules: NO_TAKEN_DAY,
         subscribePlayStarts: listener => {
           playListener = listener;
           return () => undefined;

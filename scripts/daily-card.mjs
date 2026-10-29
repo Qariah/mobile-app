@@ -88,6 +88,8 @@ import {
   renderAnrCard,
 } from './lib/anr-card.mjs';
 import {labExclusionSQL, sqlList} from './lib/lab-exclusion.mjs';
+import {STEPS, stepCond} from './lib/journey-steps.mjs';
+import {asOfFor, laDate} from './signals/lib/rules.mjs';
 import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
 import {
   abConfig,
@@ -96,6 +98,7 @@ import {
   renderAbCard,
 } from './lib/ab-card.mjs';
 import {
+  anrScoreBuilds,
   cardBuilds,
   renderActive,
   renderHeader,
@@ -129,6 +132,34 @@ const ARGS = Object.fromEntries(
   }),
 );
 
+// --- the end of the windows --------------------------------------------------
+//
+// Since 2026-10-25 (owner decision A) the PostHog numbers of the card (people,
+// the journey, the journey lines of FAILURES, ACTIVE and USE) end at one
+// instant, AT: 11:00 in Los Angeles on the LA date of the run, or the run time
+// when that is earlier (the signals snapshot's asOf, rules.mjs asOfFor). They
+// count only the events that PostHog received by AT (created_at). The
+// snapshot passes its own asOf (--at), so the card and the snapshot give the
+// same numbers whenever each runs. Before, the windows ended at run time, and
+// PostHog still receives old events for hours: a snapshot that ran 2 to 8
+// hours after the card missed the 3% match on the 1-day windows (the checks of
+// 2026-10-18 to 2026-10-23).
+function windowEnd() {
+  const at = ARGS.at ? new Date(String(ARGS.at)) : new Date(asOfFor(laDate()));
+  if (Number.isNaN(at.getTime()))
+    throw new Error(`--at must be an ISO time, got "${ARGS.at}"`);
+  return at;
+}
+const AT = windowEnd();
+const AT_SQL = `toDateTime('${AT.toISOString().slice(0, 19).replace('T', ' ')}')`;
+const RECEIVED = `created_at <= ${AT_SQL}`;
+/** "11:00": the end of the windows on the Los Angeles clock. */
+const AT_LA = AT.toLocaleTimeString('en-GB', {
+  timeZone: 'America/Los_Angeles', // the asOf rule is a Los Angeles time
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 const PH = posthogConfig();
 const {token: PH_TOKEN, project: PH_PROJECT} = PH;
 
@@ -150,60 +181,7 @@ const hogql = query =>
 
 // --- the journey -------------------------------------------------------------
 //
-// Ordered, and each step is the UNION of its events (a user who skipped
-// onboarding is as "set up" as one who completed it). Labels are deliberately
-// plain English: this card gets forwarded to people who do not know what a
-// `meaningful_listen` is.
-//
-// "Installed" is NOT the store download count, and it is NOT a journey step:
-// `Application Installed` / `Application Updated` fire once, on the first
-// launch after an install or an update. A person who updated before the window
-// opens the app every day and never sends one in it, so "installed" can be far
-// below "opened" (2598 vs 4656 on 2026-10-11). The card prints it as its own
-// line under the people count (card-layout.mjs renderJourney); the journey
-// starts at Opened. True downloads need App Store Connect (Sales & Trends) or
-// the Play reports bucket.
-//
-// "Logged in" counts the people who signed in on a counted build. PostHog does
-// not know who is ALREADY signed in: the app never calls identify() and sends
-// no signed-in property, so a person who signed in on an older build and
-// stayed signed in does not count. The number is a floor until the app reports
-// its signed-in state on each launch.
-const STEPS = [
-  {
-    key: 'installed',
-    label: 'Installed',
-    events: ['Application Installed', 'Application Updated'],
-  },
-  {key: 'opened', label: 'Opened', events: ['cold_start_began']},
-  // Past loading = a first screen rendered: splash_hidden OR
-  // screen_content_rendered, the cold-start completion that ColdStartBeganProps
-  // (services/analytics/qariahEvents.ts) defines. scripts/lib/ab-card.mjs and
-  // the engagement funnel (active-rollout.json) use the same two events.
-  {
-    key: 'past_loading',
-    label: 'Past loading',
-    events: ['splash_hidden', 'screen_content_rendered'],
-  },
-  {
-    key: 'logged_in',
-    label: 'Logged in',
-    events: ['sign_in_succeeded'],
-    or: "(event = 'onboarding_completed' AND properties.signed_in = true)",
-  },
-  {
-    key: 'started',
-    label: 'Started',
-    events: ['playback_started', 'mushaf_page_opened'],
-  },
-  {
-    key: 'used_it',
-    label: 'Really used',
-    events: ['meaningful_listen', 'mushaf_page_read', 'playback_completed'],
-  },
-];
-const stepCond = s =>
-  [`event IN (${sqlList(s.events)})`, s.or].filter(Boolean).join(' OR ');
+// The steps and their HogQL condition: scripts/lib/journey-steps.mjs.
 
 // --- how much it is being used -----------------------------------------------
 //
@@ -246,35 +224,38 @@ function windowClause(cfg) {
     const days = Math.max(
       1,
       Math.ceil(
-        (Date.now() - new Date(`${start}T00:00:00`).getTime()) / 86_400_000,
+        (AT.getTime() - new Date(`${start}T00:00:00`).getTime()) / 86_400_000,
       ),
     );
     return {
-      sql: `timestamp >= toDateTime('${start} 00:00:00')`,
-      label: `since launch (${start})`,
+      sql: `timestamp >= toDateTime('${start} 00:00:00') AND timestamp <= ${AT_SQL}`,
+      // startedAt is the start of the current rollout (3.2.1, vc2027, on
+      // 2026-09-28), not the v2 launch (2026-08-02): the label said "launch"
+      // until 2026-10-25.
+      label: `since rollout start (${start})`,
       days,
     };
   }
   const m = since.match(/^(\d+)d$/);
   if (!m) throw new Error(`--since must be "launch" or "<N>d", got "${since}"`);
   return {
-    sql: `timestamp > now() - INTERVAL ${m[1]} DAY`,
+    sql: `timestamp > ${AT_SQL} - INTERVAL ${m[1]} DAY AND timestamp <= ${AT_SQL}`,
     label: `last ${m[1]} days`,
     days: Number(m[1]),
   };
 }
 
-// The three trailing windows of ACTIVE and USE, ending now, one day ago and
-// two days ago. Trailing windows, not calendar days: "Today" is the last 24 h
-// before the run, so it is a full day at any hour.
+// The three trailing windows of ACTIVE and USE, ending at AT, one day before
+// and two days before. Trailing windows, not calendar days: "Today" is the 24 h
+// to AT (11:00 LA), so it is a full day at any hour.
 const ACTIVE_ROWS = [
   {label: 'Today', shift: 0},
   {label: 'Yesterday', shift: 1},
   {label: 'Day before', shift: 2},
 ];
 const trailing = (days, shift = 0) =>
-  `timestamp > now() - INTERVAL ${days + shift} DAY` +
-  (shift ? ` AND timestamp <= now() - INTERVAL ${shift} DAY` : '');
+  `timestamp > ${AT_SQL} - INTERVAL ${days + shift} DAY AND timestamp <= ` +
+  (shift ? `${AT_SQL} - INTERVAL ${shift} DAY` : AT_SQL);
 
 async function collect(cfg) {
   const builds = cardBuilds(cfg);
@@ -301,7 +282,7 @@ async function collect(cfg) {
   const PER_USER = `SELECT person_id,
          multiIf(any(properties.$os_name) IN ('iOS', 'iPadOS'), 'iOS', 'Android') AS platform,
          ${perUserCols}
-       FROM events WHERE ${win.sql} AND ${scope}
+       FROM events WHERE ${win.sql} AND ${scope} AND ${RECEIVED}
        GROUP BY person_id`;
 
   // ACTIVE and USE count EVERY version, unlike the rest of the card. Scoping
@@ -318,14 +299,16 @@ async function collect(cfg) {
   ).join(',\n       ');
   const activeQuery = `SELECT ${activeCols}
      FROM events
-     WHERE timestamp > now() - INTERVAL 32 DAY AND ${labExclusionSQL()}`;
+     WHERE timestamp > ${AT_SQL} - INTERVAL 32 DAY AND timestamp <= ${AT_SQL}
+       AND ${RECEIVED} AND ${labExclusionSQL()}`;
 
   // USE is a straight event count, so grouping raw events is CORRECT here (we
   // want every occurrence).
   const usageQuery = `SELECT event,
        countIf(${trailing(1)}), countIf(${trailing(7)}), count()
      FROM events
-     WHERE timestamp > now() - INTERVAL 30 DAY AND ${labExclusionSQL()}
+     WHERE timestamp > ${AT_SQL} - INTERVAL 30 DAY AND timestamp <= ${AT_SQL}
+       AND ${RECEIVED} AND ${labExclusionSQL()}
        AND event IN (${sqlList(USAGE.flatMap(u => u.events))})
      GROUP BY event LIMIT ${ROW_CAP}`;
 
@@ -380,6 +363,18 @@ async function collect(cfg) {
   //     inside ~150ms, which is store/scanner install-verification at machine
   //     speed, not a person failing to get in.
   const MIN_HUMAN_SESSION_MS = 2000;
+  //
+  // Since 2026-10-24 (planning/android-anr-boot-stall-rca-2026-10-24.md):
+  //   • the window is the last STUCK_DAYS days, not the card's window. A
+  //     running total since the launch only grows, so it read as a rise.
+  //   • a person whose events cover less than STALL_MS and who sent no
+  //     splash_stalled LEFT DURING THE SPLASH. The app had not had the time
+  //     to fail: the stall timer (app/_layout.tsx SPLASH_TTI_BUDGET_MS) fires
+  //     at 12 s. Build 2027 sees these people because it makes the PostHog
+  //     client at module load; 1717 made it after the ready gate and saw
+  //     none. The card prints them on a line of their own, not as a failure.
+  const STUCK_DAYS = 7;
+  const STALL_MS = 12000;
   const stuck = await hogql(`SELECT build, platform, kind, count() AS n FROM (
        SELECT any(properties.$app_build) AS build,
          multiIf(any(properties.$os_name) IN ('iOS', 'iPadOS'), 'iOS', 'Android') AS platform,
@@ -388,11 +383,14 @@ async function collect(cfg) {
          countIf(event = 'cold_start_began') AS opened,
          countIf(event = 'splash_hidden') AS past,
          countIf(event = 'screen_content_rendered') AS rendered,
+         countIf(event = 'splash_stalled') AS stalled,
          dateDiff('millisecond', min(timestamp), max(timestamp)) AS span_ms,
          multiIf(
-           countIf(event = 'cold_start_began') = 0, 'never got in',
+           stalled = 0 AND span_ms < ${STALL_MS}, '${LEFT_DURING_SPLASH}',
+           opened = 0, 'never got in',
            'stuck on loading') AS kind
-       FROM events WHERE ${win.sql} AND ${scope}
+       FROM events WHERE timestamp > ${AT_SQL} - INTERVAL ${STUCK_DAYS} DAY AND timestamp <= ${AT_SQL}
+         AND ${RECEIVED} AND ${scope}
        GROUP BY person_id
        HAVING installed > 0
           AND span_ms >= ${MIN_HUMAN_SESSION_MS}
@@ -411,8 +409,11 @@ async function collect(cfg) {
 //   2. CRASH failures (Sentry) — error/fatal issues on this release.
 // A clean card must mean BOTH are clean, or it teaches the reader to ignore it.
 
-function journeyFailures(stuck) {
-  return stuck
+// The journey kind of a person who left before the app could fail (collect()).
+const LEFT_DURING_SPLASH = 'left during the splash';
+
+const journeyRows = stuck =>
+  stuck
     .map(([build, platform, kind, n]) => ({
       n: Number(n),
       platform,
@@ -421,6 +422,14 @@ function journeyFailures(stuck) {
     }))
     .filter(f => f.n > 0)
     .sort((a, b) => b.n - a.n);
+
+function journeyFailures(stuck) {
+  return journeyRows(stuck).filter(f => f.what !== LEFT_DURING_SPLASH);
+}
+
+// The people who left during the splash: a line under FAILURES, not a failure.
+function leftDuringSplash(stuck) {
+  return journeyRows(stuck).filter(f => f.what === LEFT_DURING_SPLASH);
 }
 
 // Sentry titles are developer strings — full of `Error Domain=NSCocoaErrorDomain
@@ -535,8 +544,8 @@ async function sentryFailures(builds, cfg) {
 // platform comes from PostHog: the OS its cold starts report. A build number
 // seen on both platforms (the internal builds share numbers) gets no platform
 // and is left out of those rates entirely, which also keeps the simulators and
-// emulators out. sentry.week needs no such map: card.builds names the
-// platform of each production build.
+// emulators out. sentry.week uses the same map to add the older builds that
+// still have users to the builds of card.builds (anr-card.mjs weekReleases).
 async function collectAnr(cfg) {
   const rows = await hogql(`SELECT properties.$app_build AS build,
        countIf(properties.$os IN ('iOS', 'iPadOS')) AS ios,
@@ -555,7 +564,8 @@ async function collectAnr(cfg) {
     }
   }
   const builds = cardBuilds(cfg);
-  const androidCodes = builds
+  // Google's score pools only the builds without `anrScore: false`.
+  const androidCodes = anrScoreBuilds(cfg)
     .filter(b => b.platform === 'Android')
     .map(b => Number(b.build));
   const [play, sentry, appStore, week] = await Promise.all([
@@ -573,6 +583,7 @@ async function collectAnr(cfg) {
       org: SENTRY_ORG,
       host: SENTRY_HOST,
       builds,
+      platformOf: platformOfBuild,
     }),
   ]);
   // Additive: anr.sentry.week sits beside the daily rates. It is kept when
@@ -836,7 +847,7 @@ function releaseWatchLines(cfg) {
     }
     if (!n)
       L.push(
-        `Build ${b} has no fix record yet. The Mac loop records it itself (Step 1.6).`,
+        `Build ${b} has no fix record yet. Post-sprint Step 14b records it when a sprint closes, and triage-loop Step 1.6 records it by hand.`,
       );
   }
   return L;
@@ -992,7 +1003,7 @@ function ownerLines(owner) {
 // bottom: the header, people and the journey, ACTIVE, USE, FAILURES, FREEZES
 // (ANR), the ops sections, NEEDS YOU.
 function render(
-  {builds, win, byPlatform, usage, active},
+  {builds, win, byPlatform, usage, active, stuck},
   failures,
   crashes,
   cfg,
@@ -1021,6 +1032,7 @@ function render(
       date: today,
       weekday,
       windowLabel: win.label,
+      windowEnd: AT_LA,
       builds,
       ios: ARGS.ios || (cfg && cfg._cardIos),
       android: ARGS.android || (cfg && cfg._cardAndroid),
@@ -1045,6 +1057,8 @@ function render(
   // Failures: enumerated when present, one clean line when not. The shape of this
   // block is deliberately allowed to change day to day — a fixed empty table is
   // something the eye learns to skip.
+  // The journey lines count the last 7 days (collect(), STUCK_DAYS); the
+  // crash lines count 14 days (sentryFailures).
   L.push('');
   const hasAny = failures.length > 0 || (crashes && crashes.length > 0);
   if (!hasAny) {
@@ -1053,7 +1067,7 @@ function render(
     L.push('⚠️ FAILURES');
     for (const f of failures) {
       L.push(
-        `${String(f.n).padStart(3)} ${f.platform} · ${f.what} (b${f.build})`,
+        `${String(f.n).padStart(3)} ${f.platform} · ${f.what}, 7d (b${f.build})`,
       );
     }
     for (const c of crashes || []) {
@@ -1065,6 +1079,13 @@ function render(
       L.push(`${String(c.users).padStart(3)} ${title}${tail}`);
     }
   }
+  // Not a failure: these people left before the 12 s stall timer could fire.
+  // One line for each platform, all builds together, to fit 44 columns.
+  const left = new Map();
+  for (const f of leftDuringSplash(stuck || []))
+    left.set(f.platform, (left.get(f.platform) || 0) + f.n);
+  for (const [platform, n] of left)
+    L.push(`  (${n} ${platform} left at the splash, 7d)`);
 
   // The A/B section no longer prints here (--ab prints it); a blocking FAIL
   // shows as the ⛔ line at the top of FREEZES (ANR).
@@ -1132,7 +1153,10 @@ async function main() {
       JSON.stringify(
         {
           ...data,
+          // The end of the windows (ISO, UTC): the snapshot's header.measuredAt.
+          at: AT.toISOString(),
           failures,
+          leftDuringSplash: leftDuringSplash(data.stuck),
           crashes,
           crashesFailedRequests: sentryFailedRequests,
           anr,

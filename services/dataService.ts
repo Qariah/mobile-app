@@ -4,7 +4,6 @@ import {
   Reciter,
   Rewayat,
   RECITERS,
-  SurahMetadata,
   markRecitersUpdated, // @ai
 } from '../data/reciterData';
 import {usePlayerStore} from './player/store/playerStore';
@@ -13,10 +12,9 @@ import {useApiHealthStore} from '../store/apiHealthStore';
 // @ai bundled fallback is now Qariah's catalog; path driven by branding.catalog.fallbackPath
 import catalogFallback from '../assets/data/catalog.json';
 import branding from '@/config/branding';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 // @ai-start
 import {rankSurahs} from '@/utils/search/catalog';
-import i18n from '@/i18n'; // @ai Qariah: formatAyahRange
 import {recitationAudioUrl} from '@/utils/recitationAudioUrl'; // Qariah (TECH_DEBT #70)
 // Qariah (Sprint 48): the network fills, for the notification check.
 import {markLiveCatalogLoaded} from '@/services/liveCatalogSignal';
@@ -24,9 +22,7 @@ import {markLiveCatalogLoaded} from '@/services/liveCatalogSignal';
 
 const BAYAAN_API_URL = process.env.EXPO_PUBLIC_BAYAAN_API_URL;
 const BAYAAN_API_KEY = process.env.EXPO_PUBLIC_BAYAAN_API_KEY;
-// Non-empty → fetch a static catalog JSON array from this URL (Qariah path).
-// Empty/absent → fall back to the Bayaan paginated API (BAYAAN_API_URL).
-// Update this URL in config/branding.js once the audio CDN is finalised. // @ai
+// Set → fetch a static catalog JSON array from this URL; unset → the paginated API. // @ai
 const CATALOG_LIVE_URL: string | undefined = branding.catalog.liveUrl;
 
 // ── Killswitch ───────────────────────────────────────────────────────────────
@@ -54,7 +50,7 @@ async function isBackendEnabled(): Promise<boolean> {
 
 const RECITERS_KEY = 'bayaan_reciters';
 const RECITER_SERVERS_KEY = 'bayaan_reciter_servers';
-const DATA_VERSION = '11'; // Sprint 48: bust cache for `surah_metadata[].added_at` (catalog v93) and the explicit `is_full` rows of complete surahs. '10' was Sprint 47 (Pass C): bust cache for the Arabic catalog fields `name_arabic` (upstream's) and `bio_ar` (Qariah's) from the review pack (scripts/catalog-arabic-names.mjs). '9' was Sprint 28's Wasabi→R2 photo migration.
+const DATA_VERSION = '11'; // Increment: bust cache on each catalog field change ('11': `surah_metadata[].added_at`)
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
@@ -85,13 +81,8 @@ async function setStoredData<T>(key: string, data: T): Promise<void> {
 // We mutate it in-place so every importer automatically sees the data
 // without needing import changes anywhere.
 
-// ── Asset access gating (Sprint 28 S28.2) ─────────────────────────────────────
-// When branding.audioStreamProxy.enabled, rewrite the legacy public storage
-// host → the qariah-media-proxy Worker host on audio + photo URLs. Applied to
-// the in-memory RECITERS view at populate time (AsyncStorage keeps the canonical
-// legacy-host catalog, so the flag is a clean toggle) and idempotently on the
-// audio URL builder. Default-off → no-op. See config/branding.js +
-// docs/operations/asset-gating-cloudflare-runbook.md.
+// ── Asset access gating ───────────────────────────────────────────────────────
+// branding.audioStreamProxy (default off): rewrite the legacy host in memory only; the cache keeps it.
 function rewriteAssetHost(url: string): string {
   const proxy = branding.audioStreamProxy;
   if (!proxy?.enabled || !proxy.host || !proxy.legacyHost) return url;
@@ -166,8 +157,7 @@ async function fetchAllRecitersFromApi(): Promise<Reciter[]> {
 }
 // @ai-end
 
-// @ai fetches a static catalog JSON (Qariah's CDN) — simpler than the Bayaan
-// paginated API; expects a top-level array matching the Reciter[] schema.
+// @ai Fetch a static catalog JSON: a top-level Reciter[] array.
 async function fetchCatalogFromLiveUrl(url: string): Promise<Reciter[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
@@ -252,14 +242,9 @@ export async function getAllReciters(): Promise<Reciter[]> {
     return cached.data;
   }
 
-  // Sprint 30 (B2) — bundle-first on first launch. Instead of blocking the
-  // splash on the live catalog fetch (up to a 10s ceiling on a cold cache),
-  // populate from the bundled catalog immediately and upgrade live in the
-  // background. The RFC-010 version poll + this background refresh converge to
-  // the live catalog within a moment. Refresh the bundle before each release
-  // build with `node scripts/sync-bundled-catalog.mjs --apply`. Flip `bundleFirstCatalog` off to
-  // restore the blocking first-launch fetch below.
-  if (canFetch && isFeatureEnabled('bundleFirstCatalog')) {
+  // Bundle-first: seed from the bundled catalog, then refresh live in the background (not on the splash).
+  // Refresh the bundle before each release build: `node scripts/sync-bundled-catalog.mjs --apply`.
+  if (canFetch && isQariahFeatureEnabled('bundleFirstCatalog')) {
     const seed = catalogFallback as Reciter[];
     if (seed.length > 0) {
       populateReciters(seed);
@@ -327,12 +312,7 @@ async function refreshRecitersInBackground(): Promise<void> {
   }
 }
 
-// Sprint 17 (S17.6) — RFC-010 callback. The version-poll module hands us
-// the new server version + (optionally) the immutable per-version URL.
-// We prefer the versioned URL when present (CDN-cacheable forever);
-// otherwise fall back to the mutable liveUrl. Catalog version is informational
-// here — the AsyncStorage cache is keyed on DATA_VERSION (schema), and the
-// last-seen catalog version is tracked separately by the poll module.
+// RFC-010 version-poll callback: prefer the immutable versioned URL. The cache keys on DATA_VERSION.
 export async function refetchCatalogToVersion(
   _newVersion: number,
   versionedUrl?: string,
@@ -358,31 +338,6 @@ export async function getReciterById(id: string): Promise<Reciter | undefined> {
 }
 
 // Sync version reads from the in-memory RECITERS array (populated after first load)
-export function getSurahMetadataSync(
-  reciterId: string,
-  rewayatId: string | undefined,
-  surahId: number,
-): SurahMetadata | undefined {
-  const reciter = RECITERS.find(r => r.id === reciterId);
-  if (!reciter) return undefined;
-  const rewayat = rewayatId
-    ? reciter.rewayat.find(rw => rw.id === rewayatId)
-    : reciter.rewayat[0];
-  return rewayat?.surah_metadata?.find(sm => sm.surah === surahId);
-}
-
-/**
- * Qariah (Sprint 20): the ayah range of a partial recitation ("ayah 5",
- * "ayahs 1–7"), translated when it is called, never at module load.
- */
-export function formatAyahRange(metadata: SurahMetadata): string | undefined {
-  if (metadata.is_full || !metadata.range) return undefined;
-  const {from, to} = metadata.range;
-  return from === to
-    ? i18n.t('qariah:ayahRange.single', {from})
-    : i18n.t('qariah:ayahRange.range', {from, to});
-}
-
 export function getReciterByIdSync(id: string): Reciter | undefined {
   return RECITERS.find(reciter => reciter.id === id);
 }
@@ -470,9 +425,7 @@ export async function fetchAudioUrl(
     }
   }
 
-  // Qariah (Sprint 50, TECH_DEBT #70): a partial with `audio_path: 'suffixed'`
-  // is at `{server}/{surah}-{from}-{to}.mp3`. Every other entry keeps
-  // `{server}/{surah}.mp3`.
+  // Qariah (TECH_DEBT #70): a 'suffixed' partial has its own path.
   return rewriteAssetHost(recitationAudioUrl(rewayat, surahId));
 }
 

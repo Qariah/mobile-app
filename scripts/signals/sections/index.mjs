@@ -23,6 +23,7 @@ import * as v1Backend from './v1-backend.mjs';
 import * as platforms from './platforms.mjs';
 import * as focus from './focus.mjs';
 import * as listens from './listens.mjs';
+import * as journeyByBuild from './journey-by-build.mjs';
 
 export const SECTIONS = [
   card,
@@ -41,4 +42,5 @@ export const SECTIONS = [
   platforms,
   focus,
   listens,
+  journeyByBuild,
 ];

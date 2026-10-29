@@ -16,6 +16,7 @@ const RAW_ERROR = 'State mismatch (possible CSRF)';
 
 jest.mock('expo-router', () => ({
   useRouter: () => ({back: jest.fn()}),
+  Stack: {Screen: () => null},
 }));
 
 jest.mock('@/hooks/useTheme', () => ({

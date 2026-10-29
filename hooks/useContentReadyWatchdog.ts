@@ -84,6 +84,8 @@ export function useContentReadyWatchdog({
           sc_platform: Platform.OS,
         },
         extra: ctx,
+        // Group by the message, not by the setTimeout call site (#603).
+        fingerprint: ['screen-content-stalled'],
       });
       // PostHog — discrete product-fault event (per-build/screen tripwire).
       qariahAnalytics.trackScreenContentStalled(ctx);
@@ -181,6 +183,8 @@ export function useReciterProfileSurahsWatchdog({
           rp_platform: Platform.OS,
         },
         extra: ctx,
+        // Group by the message, not by the setTimeout call site (#603).
+        fingerprint: ['reciter-profile-surahs-stalled'],
       });
       // PostHog — discrete product-fault event (drives the per-build tripwire).
       qariahAnalytics.trackReciterProfileSurahsStalled(ctx);

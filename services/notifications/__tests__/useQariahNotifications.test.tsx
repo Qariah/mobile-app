@@ -26,6 +26,10 @@ jest.mock('../tapRouter', () => ({
   startNotificationTapRouter: (...args: unknown[]) => mockStartRouter(...args),
   openNotificationTap: jest.fn(),
 }));
+const mockLaunchRequest = jest.fn(() => Promise.resolve());
+jest.mock('../launchPermission', () => ({
+  requestLaunchNotificationPermission: () => mockLaunchRequest(),
+}));
 
 import {
   handleHoldoutAssigned,
@@ -68,6 +72,13 @@ describe('useQariahNotifications (the tap router and the arm)', () => {
     handleHoldoutAssigned({arm: 'notify', enrollment: 'flag'}, true);
     expect(mockStartRouter).toHaveBeenCalledTimes(1);
     expect(mockAssigned).toHaveBeenCalledWith('notify');
+  });
+
+  it('asks for the Android permission once at mount, the holdout too (C5)', () => {
+    mockIsHoldout.mockReturnValue(true);
+    const view = render(<Host />);
+    view.rerender(<Host />);
+    expect(mockLaunchRequest).toHaveBeenCalledTimes(1);
   });
 
   it('a stored arm is not new: no sync, but the router starts', () => {

@@ -17,8 +17,7 @@ const mockStore = {
 jest.mock('@/services/player/store/playerStore', () => ({
   usePlayerStore: {getState: () => mockStore},
 }));
-// @ai Qariah (TECH_DEBT #285): loadAndPlayCurrent asks if the player holds
-// the current track's source, not if the player reports isLoaded.
+// @ai Qariah (TECH_DEBT #285): loadAndPlayCurrent asks holdsSource(), not isLoaded.
 jest.mock('@/services/audio/ExpoAudioService', () => ({
   expoAudioService: {
     getIsLoaded: () => mockLoaded,

@@ -87,8 +87,8 @@ export function judgePr(pr, policy) {
   if (pr.mergeable !== 'MERGEABLE') reasons.push(`mergeable=${pr.mergeable}`);
   // @ai A gate that never started is not a pass. A draft whose last push came
   // before a gate existed has no run of that gate, and an empty rollup would
-  // read as green. Branding Conformance runs only on PRs into qariah-main, so
-  // the script applies the list only to those PRs. In the seconds after a push, a gate
+  // read as green. The list holds for PRs into qariah-main only: a PR into a
+  // release branch runs that branch's copy of the workflows. In the seconds after a push, a gate
   // with no run yet also reads "did not start"; the verdict is NOT GREEN
   // either way.
   const required =

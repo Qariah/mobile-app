@@ -38,6 +38,7 @@ import expo.modules.bayaanwidgets.R
 import expo.modules.bayaanwidgets.StaticData
 import expo.modules.bayaanwidgets.StaticSurah
 import expo.modules.bayaanwidgets.WidgetCommandActivity
+import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.WidgetStorage
 import expo.modules.bayaanwidgets.WidgetText
 import org.json.JSONObject
@@ -142,12 +143,14 @@ fun recordMissingArtwork(context: Context, surahIds: List<Int>, reciters: List<P
 
 /** The surah card when cached, else a dark tile with the number and name. */
 @Composable
-fun SurahCard(context: Context, surah: StaticSurah?, sizeDp: Int) {
+fun SurahCard(context: Context, surah: StaticSurah?, sizeDp: Int, language: String? = null) {
   val bmp = surah?.let { loadArtwork(context, it.artworkFile, sizeDp) }
+  // @ai Qariah (TECH_DEBT #357): the name in the app language.
+  val name = surah?.let { WidgetLanguage.surahName(it, language) }
   val corner = (sizeDp / 6).dp
   if (surah != null && bmp != null) {
     Image(
-      ImageProvider(bmp), contentDescription = surah.name,
+      ImageProvider(bmp), contentDescription = name,
       modifier = GlanceModifier.size(sizeDp.dp).cornerRadius(corner), contentScale = ContentScale.Crop,
     )
     return
@@ -157,8 +160,8 @@ fun SurahCard(context: Context, surah: StaticSurah?, sizeDp: Int) {
     horizontalAlignment = Alignment.CenterHorizontally, verticalAlignment = Alignment.CenterVertically,
   ) {
     Text(surah?.id?.toString() ?: "", style = TextStyle(color = WidgetColors.WHITE, fontSize = (sizeDp / 3).sp, fontWeight = FontWeight.Bold))
-    if (surah != null && sizeDp >= 44) {
-      Text(surah.name, maxLines = 1, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 9.sp, textAlign = TextAlign.Center))
+    if (name != null && sizeDp >= 44) {
+      Text(name, maxLines = 1, style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 9.sp, textAlign = TextAlign.Center))
     }
   }
 }

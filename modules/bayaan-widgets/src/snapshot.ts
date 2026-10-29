@@ -53,6 +53,14 @@ export interface WidgetSnapshot {
   reciterRecents: Record<string, WidgetTrack[]>;
   lastRead: WidgetLastRead | null;
   tasbeeh: Record<string, WidgetTasbeehEntry>;
+  // @ai Qariah (TECH_DEBT #357): the app language, for the widgets.
+  /**
+   * The app's UI language (a BCP 47 tag, e.g. "en" or "ar"). Widget text,
+   * surah names and the ayah translation follow it, not the device language.
+   * Absent when the app keeps "System default" (and in a snapshot from an
+   * older app build): widgets then follow the device language.
+   */
+  language?: string;
 }
 
 export function isWidgetTrack(value: unknown): value is WidgetTrack {
@@ -132,5 +140,7 @@ export function isWidgetSnapshot(value: unknown): value is WidgetSnapshot {
   if (!Object.values(value.reciterRecents).every(isTrackList)) return false;
   if (value.lastRead !== null && !isLastRead(value.lastRead)) return false;
   if (!isRecord(value.tasbeeh)) return false;
+  if (value.language !== undefined && typeof value.language !== 'string')
+    return false;
   return Object.values(value.tasbeeh).every(isTasbeehEntry);
 }

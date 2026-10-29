@@ -14,11 +14,12 @@
 import {markPlayerReadyForWidgets} from '@/services/widgets/syncWidgets';
 import React, {useEffect, useLayoutEffect, useRef, useCallback} from 'react';
 import {AppState, Platform} from 'react-native';
-import {notePlaybackProgress} from '@/services/diagnostics/playbackHealth';
-// @ai Qariah (Sprint 48, S48.6): the completed-play signal of the iOS
-// notification card.
+// @ai Qariah: report-only playback telemetry, completed-play signal (S48.6).
+import {usePlaybackObserver} from '@/services/diagnostics/playbackObserver';
 import {notePlaybackCompleted} from '@/services/notifications/playbackEvents';
-import * as Sentry from '@sentry/react-native';
+// @ai Qariah (#557): continue with the next surah at the end of the queue.
+import branding from '@/config/branding';
+import {queueNextSurah} from '@/services/player/utils/queueNextSurah';
 import {AudioPlayer, createAudioPlayer, useAudioPlayerStatus} from 'expo-audio';
 import {expoAudioService} from './ExpoAudioService';
 import {lockScreenService} from './LockScreenService';
@@ -31,15 +32,6 @@ import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStor
 import {useAmbientStore} from '@/store/ambientStore';
 import {useMushafPlayerStore} from '@/store/mushafPlayerStore';
 import {mushafAudioService} from './MushafAudioService';
-import {
-  markPlaybackActive,
-  updatePlaybackPosition,
-  clearPlaybackActive,
-  peekActivePlayback,
-  type ActivePlayback,
-} from '@/services/diagnostics/playbackSentinel';
-import {useBackgroundPlaybackStore} from '@/store/backgroundPlaybackStore';
-import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import {isFeatureEnabled} from '@/config/featureFlags';
 import {startAdhkarPlaybackEngine} from '@/services/adhkar/playback/adhkarPlaybackEngine';
 import {startAdhkarActivitySync} from '@/services/widgets/live-activity/syncAdhkarActivity';
@@ -108,6 +100,7 @@ export function ExpoAudioProvider({
 
   // Get reactive status updates
   const status = useAudioPlayerStatus(player);
+  usePlaybackObserver(player, status); // @ai Qariah: report-only telemetry
 
   // Refs for tracking state
   const lastProgressUpdate = useRef(0);
@@ -120,58 +113,6 @@ export function ExpoAudioProvider({
   });
   const isHandlingTrackEnd = useRef(false);
   const wasPlaying = useRef(false);
-  // @ai REPORT-ONLY playback-kill sentinel arm-state (#54/#104). Tracked
-  // separately from `wasPlaying` because `wasPlaying` flips to false on a
-  // mid-play BUFFERING tick — so a user pause that lands after a rebuffer
-  // would otherwise leave the sentinel armed and false-report a kill. This
-  // ref arms once on entering playing and disarms on the first
-  // non-playing/non-buffering state, regardless of buffering churn.
-  const playbackSentinelArmed = useRef(false);
-
-  // @ai S33.2 — emit the involuntary-background-stop signal. Called from BOTH
-  // detection paths: (1) the DISARM moment, when JS observes playback stop while
-  // the app is backgrounded (the JS-OBSERVED variant — battery-restricted OEMs
-  // pause/stop the media service; proven on the A35 device-verify, where the
-  // stop surfaced as a clean pause and disarmed the sentinel); and (2) the next
-  // FOREGROUND, when the sentinel is still armed but the player is no longer
-  // playing (the SILENT variant — player destroyed with no JS event). REPORT-ONLY
-  // + trips the one-time battery-unrestrict prompt. Foreground user button-pauses
-  // are excluded by the AppState check at the call site; a backgrounded
-  // media-notification pause is a known minor false-positive.
-  const reportStoppedInBackground = useCallback(
-    (rec: ActivePlayback | null, via: 'disarm' | 'foreground'): void => {
-      const detectedAt = Date.now();
-      try {
-        Sentry.captureMessage('playback-stopped-in-background', {
-          level: 'warning',
-          tags: {scope: 'audio', detect_via: via},
-          extra: {
-            surah_id: rec?.surahId ?? null,
-            reciter_id: rec?.reciterId ?? null,
-            position_sec: rec?.positionSec ?? 0,
-            started_at_ms: rec?.startedAt ?? 0,
-            detected_at_ms: detectedAt,
-          },
-        });
-      } catch {
-        // best-effort; telemetry must never throw into the audio path
-      }
-      qariahAnalytics.trackPlaybackStoppedInBackground({
-        surah_id: rec?.surahId ?? null,
-        reciter_id: rec?.reciterId ?? null,
-        reciter_name: rec?.reciterName ?? null,
-        position_sec: rec?.positionSec ?? 0,
-        started_at_ms: rec?.startedAt ?? 0,
-        detected_at_ms: detectedAt,
-      });
-      // Record the kill for the bounded battery-unrestrict prompt (Android
-      // only — the OEM background-stop path).
-      if (Platform.OS === 'android') {
-        useBackgroundPlaybackStore.getState().recordKill();
-      }
-    },
-    [],
-  );
 
   // Analytics refs
   const playbackStartTimeRef = useRef(0);
@@ -188,8 +129,7 @@ export function ExpoAudioProvider({
   const persistCurrentProgress = useCallback(
     (position: number, duration: number, force = false) => {
       if (duration <= 0 || position < 0) return;
-      // @ai Qariah (TECH_DEBT #285): the restore's source reports 0 until its
-      // seek lands. Do not save that as the position (or the recent progress).
+      // @ai Qariah (TECH_DEBT #285): do not save the 0 that the restore's source reports before its seek.
       if (isRestoreSeekPending()) return;
 
       const store = usePlayerStore.getState();
@@ -245,9 +185,7 @@ export function ExpoAudioProvider({
     const initializePlayer = async () => {
       try {
         // Initialize the audio service
-        // @ai A failed initialize() (audio mode) must not block setPlayer().
-        // Without the player, every play() and loadTrack() waits
-        // PLAYER_WAIT_MS and then plays nothing. Report the error and go on.
+        // @ai A failed initialize() must not block setPlayer(), or every play() waits and plays nothing.
         try {
           await expoAudioService.initialize();
         } catch (error) {
@@ -262,11 +200,7 @@ export function ExpoAudioProvider({
         if (!lockScreenSyncing) {
           lockScreenSyncing = true;
           await lockScreenService.startSync();
-          // @ai Qariah (Sprint 47 Pass C): the adhkar engine, its Live
-          // Activity, session saving and the saved-session restore start
-          // only when the adhkar feature is on. With `adhkar` off no adhkar
-          // session can exist, so nothing takes the lock screen entry or the
-          // car's next / previous from the Quran player.
+          // @ai Qariah: start the adhkar engine only with `adhkar` on, so nothing takes the lock screen.
           if (isFeatureEnabled('adhkar')) {
             stopAdhkarEngine = startAdhkarPlaybackEngine();
             stopAdhkarActivity = startAdhkarActivitySync();
@@ -276,59 +210,6 @@ export function ExpoAudioProvider({
         }
 
         markPlayerReadyForWidgets();
-
-        // Sprint 24 S24.1 (FB-1) — request POST_NOTIFICATIONS on Android
-        // 13+ so the expo-audio AudioControlsService can post its media
-        // notification, which is required to keep the foreground service
-        // alive when the app is backgrounded on aggressive OEMs (Samsung
-        // One UI 6.1, OnePlus, Xiaomi). Without the permission Samsung
-        // kills the service within seconds of home-button and audio
-        // stops. expo-notifications is already a project dep; dynamic
-        // import keeps initial-bundle weight off iOS where this is a
-        // no-op. Fire-and-forget — the audio path doesn't depend on
-        // the result, and the OS prompt is one-shot per install.
-        if (Platform.OS === 'android') {
-          import('expo-notifications')
-            .then(async Notifications => {
-              const current = await Notifications.getPermissionsAsync();
-              const status =
-                current.status === 'granted'
-                  ? current
-                  : await Notifications.requestPermissionsAsync({
-                      android: {
-                        allowAlert: true,
-                        allowBadge: false,
-                        allowSound: false,
-                      },
-                    });
-              // S39.2 (#104) — when the user blocks POST_NOTIFICATIONS the
-              // media foreground-service notification can't post, so OEMs kill
-              // background playback. Record the denial so the bounded
-              // notifications-blocked prompt (useNotificationsDeniedPrompt) can
-              // explain it + deep-link to Settings. Clear it if granted, so a
-              // later grant retires the prompt.
-              if (status.status === 'denied') {
-                useBackgroundPlaybackStore
-                  .getState()
-                  .recordNotificationsDenied();
-              } else if (
-                status.status === 'granted' &&
-                useBackgroundPlaybackStore.getState().notificationsDenied
-              ) {
-                useBackgroundPlaybackStore.setState({
-                  notificationsDenied: false,
-                });
-              }
-            })
-            .catch(err => {
-              if (__DEV__) {
-                console.log(
-                  '[ExpoAudioProvider] POST_NOTIFICATIONS request failed (non-fatal):',
-                  err,
-                );
-              }
-            });
-        }
 
         if (__DEV__)
           console.log('[ExpoAudioProvider] Player connected to service');
@@ -364,13 +245,6 @@ export function ExpoAudioProvider({
   useEffect(() => {
     if (!status.isLoaded) return;
 
-    // @ai REPORT-ONLY playback-health: a few comparisons, no native reads.
-    notePlaybackProgress(
-      status.currentTime,
-      status.playing,
-      status.isBuffering,
-    );
-
     const now = Date.now();
     const shouldUpdateProgress =
       now - lastProgressUpdate.current >= PROGRESS_UPDATE_INTERVAL;
@@ -379,8 +253,7 @@ export function ExpoAudioProvider({
     if (shouldUpdateProgress) {
       lastProgressUpdate.current = now;
       updatePlaybackState({
-        // @ai Qariah (TECH_DEBT #285): keep the restored position while the
-        // restore's seek runs (the source reports 0 until it lands).
+        // @ai Qariah (TECH_DEBT #285): keep the restored position while the restore's seek runs.
         ...(isRestoreSeekPending() ? {} : {position: status.currentTime}),
         duration: status.duration,
         buffering: status.isBuffering,
@@ -393,12 +266,6 @@ export function ExpoAudioProvider({
         analyticsService.updatePlaybackProgress(
           Math.round(status.currentTime * 1000),
         );
-
-        // @ai REPORT-ONLY playback-kill sentinel (#54/#104): refresh where the
-        // audio currently is, so a process death reports the position it died
-        // at. Already inside the throttled progress path — one tiny sync MMKV
-        // write per tick.
-        updatePlaybackPosition(status.currentTime);
       }
     }
 
@@ -517,34 +384,6 @@ export function ExpoAudioProvider({
       }
     }
 
-    // @ai REPORT-ONLY playback-kill sentinel (#54's user symptom / #104):
-    // keep a synchronous MMKV record while audio is audibly playing; clear it
-    // when JS observes the stop. If the process dies with the record still set
-    // (OEM task killer, swipe-away from recents, crash mid-playback), the NEXT
-    // launch reports `playback-killed-in-background` — today that death is a
-    // silent absence of events. Buffering does NOT disarm (a mid-buffer kill is
-    // still a mid-playback kill); the first non-playing/non-buffering state
-    // does. Does not alter playback.
-    if (status.playing) {
-      if (!playbackSentinelArmed.current) {
-        playbackSentinelArmed.current = true;
-        markPlaybackActive({
-          surahId: currentTrack?.surahId ?? null,
-          reciterId: currentTrack?.reciterId ?? null,
-          reciterName: currentTrack?.reciterName ?? null,
-          positionSec: status.currentTime,
-        });
-      }
-    } else if (!status.isBuffering && playbackSentinelArmed.current) {
-      // A JS-observed stop (user pause, notification, call/audio-focus loss, or
-      // a recoverable service pause) — disarm. This is deliberately NOT reported
-      // as an involuntary background stop: those interruptions are frequent and
-      // legitimate. Only a SILENT player death (sentinel still armed on the next
-      // foreground) is the OEM-kill signal — see the foreground detector below.
-      playbackSentinelArmed.current = false;
-      clearPlaybackActive();
-    }
-
     wasPlaying.current = status.playing;
   }, [
     status.currentTime,
@@ -579,34 +418,6 @@ export function ExpoAudioProvider({
     };
   }, [persistCurrentProgress]);
 
-  // @ai S33.2 — involuntary background-stop detector, SILENT variant. The disarm
-  // branch above catches the JS-observed stop (player paused while backgrounded).
-  // This catches the case where the player is destroyed with NO JS event at all
-  // (whole media service torn down): the sentinel stays armed, and on the next
-  // return to foreground the player is no longer playing. REPORT-ONLY. A user
-  // pause (in-app or notification) is JS-observed → disarms above → not seen here.
-  // See planning/background-audio-kill-diagnosis-2026-06-10.md.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', nextState => {
-      if (nextState !== 'active') return;
-      if (!playbackSentinelArmed.current) return; // we did not think audio was playing
-      let stillPlaying = false;
-      try {
-        stillPlaying = player.playing;
-      } catch {
-        stillPlaying = false; // player object gone → it was stopped
-      }
-      if (stillPlaying) return; // audio survived — nothing to report
-
-      // Armed but not playing on return → silent involuntary background stop.
-      const rec = peekActivePlayback();
-      playbackSentinelArmed.current = false;
-      clearPlaybackActive();
-      reportStoppedInBackground(rec, 'foreground');
-    });
-    return () => sub.remove();
-  }, [player, reportStoppedInBackground]);
-
   // Handle track end (didJustFinish)
   const handleTrackEnd = useCallback(async () => {
     if (isHandlingTrackEnd.current) {
@@ -639,8 +450,7 @@ export function ExpoAudioProvider({
           surah_id: parseInt(completedTrack.surahId, 10),
           reciter_id: completedTrack.reciterId,
           reciter_name: completedTrack.reciterName,
-          // @ai Qariah (TECH_DEBT #296): the same value as `playback_started`
-          // and `meaningful_listen` send, so a finish rate per riwayah works.
+          // @ai Qariah (TECH_DEBT #296): the same value as `playback_started` sends.
           rewayah_id: completedTrack.rewayatId ?? '',
           duration_ms: durationMs,
           listened_ms: totalListened,
@@ -653,9 +463,7 @@ export function ExpoAudioProvider({
         // Reset listen tracking refs
         playbackStartTimeRef.current = 0;
         accumulatedListenMsRef.current = 0;
-        // @ai Qariah (Sprint 48, S48.6): the notification card waits for the
-        // first completed play.
-        notePlaybackCompleted();
+        notePlaybackCompleted(); // @ai Qariah (S48.6): the notification card
       }
 
       if (repeatMode === 'track') {
@@ -668,6 +476,9 @@ export function ExpoAudioProvider({
         // Auto-advance to next track
         if (__DEV__)
           console.log('[ExpoAudioProvider] Auto-advancing to next track');
+        await skipToNext();
+      } else if (branding.continueToNextSurah && (await queueNextSurah())) {
+        // @ai Qariah (#557): the queue ended; the next surah by the same reciter is now queued.
         await skipToNext();
       } else {
         // End of queue, no repeat

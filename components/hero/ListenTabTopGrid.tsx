@@ -20,19 +20,12 @@
  *               `RandomRecitationHero.handleRandomPlay`; Bayaan upstream's
  *               file is untouched).
  *
- * Rolled back (entirely) by setting `qariahListenTabTopGrid: false` —
- * `RecitersView` falls through to the upstream `RecitersHero`.
+ * Qariah sets it as `branding.listenTabTopComponent` (RFC-008). Without that
+ * field, `RecitersView` falls through to the upstream `RecitersHero`.
  */
 
 import React, {useCallback, useMemo} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ToastAndroid,
-  Platform,
-} from 'react-native';
+import {View, Text, StyleSheet, Pressable} from 'react-native';
 import {Feather} from '@expo/vector-icons';
 import {Link} from 'expo-router';
 import {moderateScale} from 'react-native-size-matters';
@@ -56,16 +49,11 @@ import {SESSION_SEED, pickHeroTheme} from '@/components/hero/heroThemes';
 import {useTranslation} from 'react-i18next';
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {latinLetterSpacing} from '@/utils/rtl';
+import {showToast} from '@/utils/toastUtils'; // @ai TECH_DEBT #220: the cross-platform toast (burnt)
 
 const RECITERS_ACCENT = '#2f5059'; // Sage/Teal — Qariah brand
 const SURAHS_ACCENT = '#5645a1'; // lightColors.accent (purple)
 const SHUFFLE_ACCENT = '#c97a3b'; // warm amber
-
-function showToast(message: string) {
-  if (Platform.OS === 'android') {
-    ToastAndroid.show(message, ToastAndroid.SHORT);
-  }
-}
 
 interface TileProps {
   iconName: React.ComponentProps<typeof Feather>['name'];
@@ -146,14 +134,16 @@ export function ListenTabTopGrid() {
   // RandomRecitationHero.handleRandomPlay so upstream Bayaan's file stays
   // untouched. If Bayaan ever adopts a shared `useRandomRecitation` hook,
   // this collapses to a one-line call.
+  // @ai-start TECH_DEBT #220: one cross-platform toast says what started, on iOS too.
+  // The pick is synchronous, so the old "Finding…" toast never covered a wait:
+  // on Android it only delayed this message, and on iOS two toasts would overlap.
   const handleShuffle = useCallback(async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      showToast(t('qariah:listenTop.finding'));
 
       const picks = pickRandomRecitations(15);
       if (picks.length === 0) {
-        showToast(t('home:randomHero.findFailed'));
+        showToast(t('home:randomHero.findFailed'), undefined, 'error');
         return;
       }
 
@@ -177,9 +167,10 @@ export function ListenTabTopGrid() {
       await startNewChain(reciter, surah, 0, 0, rewayatId);
     } catch (error) {
       console.error('Error playing random recitation:', error);
-      showToast(t('home:randomHero.playFailed'));
+      showToast(t('home:randomHero.playFailed'), undefined, 'error');
     }
   }, [updateQueue, play, startNewChain, t]);
+  // @ai-end
 
   return (
     <View style={styles.card}>
@@ -230,6 +221,8 @@ const createStyles = (theme: Theme) =>
       borderRadius: moderateScale(22),
       // Round-4 — clip the SurahGradientMesh to the rounded card.
       overflow: 'hidden',
+      // Space above the first Listen row (moved here from RecitersView).
+      marginBottom: moderateScale(16),
     },
     eyebrow: {
       fontFamily: theme.fonts.bold,

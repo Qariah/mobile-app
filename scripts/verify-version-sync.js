@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
  * Pre-archive sanity check: assert that the version+build values in
- * `app.config.ts` (via generate-version.js), the iOS `Info.plist`, and
+ * `app.config.js` (via generate-version.js), the iOS `Info.plist`, and
  * `android/app/build.gradle` all agree.
  *
- * Why: version drift between source-of-truth (`app.config.ts`) and the
+ * Why: version drift between source-of-truth (`app.config.js`) and the
  * committed native files happens silently — `expo prebuild` regenerates
  * native dirs from the config, but if you bump the config and forget to
  * re-prebuild (or commit the prebuild output to a separate branch), the
@@ -84,8 +84,7 @@ function readVersionFromGenerator() {
   const out = execFileSync(
     'node',
     [path.join(__dirname, 'generate-version.js'), '--json-only'],
-    // generate-version.js runs git with `-C <its own repo>`, so cwd does not
-    // change the result. REPO here only keeps the child in the same tree.
+    // generate-version.js ignores cwd. REPO only keeps the child in the same tree.
     {encoding: 'utf8', cwd: REPO},
   );
   const json = JSON.parse(out);
@@ -384,7 +383,7 @@ function main() {
 
   console.log(`Version sync check (platform=${PLATFORM}):`);
   console.log(
-    `  Source of truth (app.config.ts via generate-version.js): ${truthPair}`,
+    `  Source of truth (app.config.js via generate-version.js): ${truthPair}`,
   );
   if (CHECK_IOS) console.log(`  iOS ${ios.path}: ${iosPair}`);
   else console.log('  iOS: skipped (--platform=android)');

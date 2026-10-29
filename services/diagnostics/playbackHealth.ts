@@ -44,7 +44,7 @@
 // other diagnostics.
 //
 // GATED, FAIL CLOSED:
-//   - build flag `playbackHealthTelemetry` (config/featureFlags.ts) = hard off;
+//   - build flag `playbackHealthTelemetry` (config/qariahFeatureFlags.ts) = hard off;
 //   - remote PostHog boolean flag `playback_health`, pushed in through
 //     setPlaybackHealthEnabled(). It starts OFF and every change applies at
 //     once — a flag turned off mid-attempt cancels the pending timer.
@@ -63,7 +63,7 @@
 import {AppState, type AppStateStatus} from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {consumeDeviceDailyBudget} from './deviceDailyBudget';
 
 /** Event names. Defined here, not in the upstream-shared analytics/events.ts. */
@@ -140,7 +140,7 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let appStateSub: {remove(): void} | null = null;
 
 function isEnabled(): boolean {
-  return remoteEnabled && isFeatureEnabled('playbackHealthTelemetry');
+  return remoteEnabled && isQariahFeatureEnabled('playbackHealthTelemetry');
 }
 
 function sourceOf(url: string): PlaybackSource {
@@ -381,8 +381,9 @@ export function notePlaybackPaused(): void {
 }
 
 /**
- * A native status update arrived (ExpoAudioProvider). The first time the
- * position moves forward while playing, the attempt has audio.
+ * A native status update arrived (ExpoAudioProvider, via playbackObserver.ts).
+ * The first time the position moves forward while playing, the attempt has
+ * audio.
  */
 export function notePlaybackProgress(
   positionSec: number,

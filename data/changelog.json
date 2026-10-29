@@ -6,7 +6,7 @@
     "highlights": [
       {
         "title": "Qariah in Arabic",
-        "description": "Most of the app is now in Arabic, with a right-to-left layout and the reciters' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language.",
+        "description": "Most of the app is now in Arabic, with a right-to-left layout and the qariahs' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language.",
         "icon": "language-outline"
       },
       {
@@ -16,18 +16,18 @@
       },
       {
         "title": "Newly Added recitations",
-        "description": "The Newly Added row on the Listen tab now lists the newest recitations, with the surah and the reciter. Tap one to play it.",
+        "description": "The Newly Added row on the Listen tab now lists the newest recitations, with the surah and the qariah. Tap one to play it.",
         "icon": "sparkles-outline"
       }
     ],
     "fullChangelog": {
       "features": [
         "Most of the app in Arabic, with a right-to-left layout. It follows your phone's language; change it in Settings › Language",
-        "Reciter names and bios in Arabic",
+        "Qariah names and bios in Arabic",
         "Home Screen widgets on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day"
       ],
       "improvements": [
-        "The Newly Added row on the Listen tab lists the newest recitations first, with the surah, the reciter and the ayah range of a partial recitation",
+        "The Newly Added row on the Listen tab lists the newest recitations first, with the surah, the qariah and the ayah range of a partial recitation",
         "You stay signed in to your Quran Foundation account through network errors and server outages"
       ],
       "fixes": [

@@ -20,8 +20,7 @@ function mockRecord(name: string, props: Record<string, unknown>) {
   (mockScreens[name] ??= []).push(props);
   return null;
 }
-// Qariah: upstream's flag values, so the Highlight cases still run (Qariah
-// ships coloredHighlights off). See test-utils/upstreamFeatureFlags.ts.
+// Qariah: upstream's flag values, so the Highlight cases run (Qariah ships coloredHighlights off).
 jest.mock('@/config/featureFlags', () =>
   jest.requireActual('@/test-utils/upstreamFeatureFlags'),
 );

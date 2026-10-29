@@ -40,10 +40,7 @@ function getCredits(
       items: [
         {
           title: i18n.t('qariah:credits.bayaanTitle'),
-          // Only the app-name post-processor: the digit one turned
-          // "@OKKHALIL3" and "AGPL-3.0" into "@OKKHALIL٣" and "٣.٠-AGPL".
-          // The handle and the licence go in isolates, so Arabic text keeps
-          // their Latin order (TECH_DEBT #310).
+          // No digit post-processor (it changes "AGPL-3.0"); isolates keep the Latin order (TECH_DEBT #310).
           description: i18n.t('qariah:credits.bayaanDesc', {
             appName,
             handle: isolate('@OKKHALIL3'),
@@ -111,8 +108,7 @@ function getCredits(
         },
         {
           title: 'Wikipedia contributors',
-          // @ai Qariah: no digit post-processing, so the licence reads
-          // "CC BY-SA 4.0" in Arabic, not "CC BY-SA ٤.٠".
+          // @ai Qariah: no digit post-processing, so "CC BY-SA 4.0" keeps its digits in Arabic.
           description: t('credits.items.wikipediaNames', {postProcess: []}),
           link: 'https://creativecommons.org/licenses/by-sa/4.0/',
         },

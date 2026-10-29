@@ -11,50 +11,17 @@ export interface Reciter {
   date: string | null;
   image_url: string | null;
   rewayat: Rewayat[];
-  /**
-   * Sprint 6 — total post-filter recitations across all rewayat
-   * (sum of `rewayat[].surah_total`). Optional + nullable for back-compat
-   * with catalog snapshots predating Sprint 6 + Bayaan API responses
-   * that don't carry it.
-   */
+  /** Sum of `rewayat[].surah_total`. Older catalogs and API responses do not carry it. */
   recitationsCount?: number | null;
-  /**
-   * Sprint 8 — country / region of the reciter (e.g. "Egypt", "Saudi
-   * Arabia", "Morocco"). Optional + nullable for back-compat with catalog
-   * snapshots predating Sprint 8. Source-of-truth lives in
-   * `planning/reciter-bios-template.csv`; gets baked into `catalog.json`
-   * via `scripts/generate-catalog.mjs`. Drives the "Browse by Country" home
-   * row (the `country` entry in `branding.homeRowConfig`).
-   */
+  /** Country or region of the reciter. It drives the "Browse by Country" home row. */
   country?: string | null;
-  /**
-   * Sprint 14 — short English bio (2–3 sentences). Source-of-truth lives
-   * in `planning/reciter-bios-template.csv` (combined with the country
-   * + paradise/honored CSV in Sprint 14). Written into `catalog.json` by
-   * `scripts/apply-reciter-metadata.ts`. Currently NOT rendered in the
-   * `ReciterProfile` UI — that ships in Sprint 15+ once we settle the
-   * placement and i18n model.
-   */
+  /** Short English bio. qariah-ops-console writes it to the catalog. */
   bio_en?: string | null;
-  /**
-   * Sprint 47 (Pass C) — the Arabic name. Upstream's field:
-   * `getReciterDisplayName` (i18n/format.ts) shows it when the app language
-   * shows Arabic names. Written into the catalog from the review pack by
-   * `scripts/catalog-arabic-names.mjs`.
-   */
+  /** Arabic name (upstream field), shown by `getReciterDisplayName` in Arabic. */
   name_arabic?: string | null;
-  /**
-   * Sprint 47 (Pass C) — the Arabic bio, a Qariah field. The reciter header
-   * shows it instead of `bio_en` in Arabic (`getReciterBio`,
-   * i18n/qariahCatalog.ts). Written by `scripts/catalog-arabic-names.mjs`.
-   */
+  /** Arabic bio (Qariah field), shown instead of `bio_en` in Arabic (`getReciterBio`). */
   bio_ar?: string | null;
-  /**
-   * Sprint 14 — translation tag (e.g. "English", "French"). Empty for
-   * the entire catalog as of Sprint 14 — the column is a placeholder
-   * for a future curation pass. When populated, drives the
-   * `getRecitersByTranslation` selector and a future Listen-tab row.
-   */
+  /** Translation tag (for example "English"). */
   translation?: string | null;
 }
 
@@ -70,36 +37,11 @@ export interface Rewayat {
   created_at: string;
   mp3quran_read_id?: number;
   qdc_reciter_id?: number;
-  /**
-   * Sprint 19 — per-surah completeness metadata backfilled from v1 Qariah.
-   * `is_full: true` means the audio file is the complete surah.
-   * `is_full: false` means the file is a partial recording covering
-   * `range.from..range.to` (inclusive). Optional + only present for surahs
-   * that have v1 data; absent entries default to `is_full: true` for
-   * back-compat with pre-Sprint-19 catalog snapshots.
-   *
-   * The audio path is `{server}/{surah-padded}.mp3` for a full recording
-   * and for a legacy partial (the v1 migration put all partials at the
-   * unsuffixed path). A partial with `audio_path: 'suffixed'` is at
-   * `{server}/{surah-padded}-{from}-{to}.mp3` (Sprint 50, TECH_DEBT #70).
-   * `utils/recitationAudioUrl.ts` builds both paths.
-   */
+  /** Per-surah completeness. A missing entry means `is_full: true`. Audio paths: `utils/recitationAudioUrl.ts`. */
   surah_metadata?: SurahMetadata[];
-  /**
-   * Sprint 26 — upstream PR #278 (`feat(timestamps): switch follow-along to
-   * R2 + mirror scripts + 2 new reciters`). Catalog-level signals that
-   * timestamp data exists for this rewaya; the timestamp service
-   * (`services/timestamps/TimestampFetchService.ts`) reads them when
-   * deciding whether to attempt an R2 fetch.
-   */
   has_timestamps?: boolean;
   timestamps_surah_list?: number[];
-  /**
-   * Qariah — the Arabic rewayah name that qariah-ops-console writes on the
-   * rewayat it creates. `getCatalogRewayahLabel` (i18n/qariahCatalog.ts)
-   * uses it in Arabic when neither the review pack nor upstream knows the
-   * catalog name.
-   */
+  /** Arabic rewayah name from qariah-ops-console; the last fallback of `getCatalogRewayahLabel`. */
   name_ar?: string | null;
 }
 
@@ -107,14 +49,9 @@ export interface SurahMetadata {
   surah: number;
   is_full: boolean;
   range?: {from: number; to: number};
-  // Qariah (Sprint 48): `YYYY-MM-DD` (UTC date) when this recitation first
-  // appeared in the catalog. The ops console and the Sprint 48 backfill
-  // (`scripts/catalog-added-at.mjs`) write it. Treat a missing value as "unknown".
+  // `YYYY-MM-DD` (UTC) when this recitation first appeared in the catalog. Missing means "unknown".
   added_at?: string;
-  // Qariah (Sprint 50, TECH_DEBT #70): 'suffixed' means that the audio of this
-  // partial is at `{server}/{surah-padded}-{from}-{to}.mp3`. The entry must
-  // also have `is_full: false` and `range`. A missing value means the legacy
-  // path `{server}/{surah-padded}.mp3`.
+  // 'suffixed': a partial at `{server}/{surah-padded}-{from}-{to}.mp3` (needs `is_full: false` and `range`).
   audio_path?: 'suffixed';
 }
 
@@ -138,11 +75,7 @@ export function getRecitersVersion(): number {
 // @ai-end
 
 // @ai-start
-// Qariah (Sprint 48): a subscriber list on the version above, so a component
-// can re-render when `RECITERS` is filled again. `populateReciters` refills
-// the array in place on each catalog load (cache, bundled seed, background
-// refresh, version poll), and `isInitialized` changes only on the first one.
-// Read it with `useRecitersVersion` (hooks/useRecitersVersion.ts).
+// Qariah: subscribers re-render on each in-place refill of `RECITERS` (`isInitialized` changes only once).
 const recitersListeners = new Set<() => void>();
 
 export function subscribeRecitersUpdated(listener: () => void): () => void {

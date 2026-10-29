@@ -8,7 +8,7 @@
 // - `holdout_assigned`: this start wrote the arm (`holdoutEnrollment.ts`);
 // - `foreground`: the app is active again (the user can change the permission
 //   in the system settings, or answer the Android 13+ dialog of the first
-//   launch, `ExpoAudioProvider`);
+//   launch, `launchPermission.ts`);
 // - `permission_granted`: the iOS soft prompt or the Notifications page got a
 //   grant.
 // A toggle change syncs only its own type (`notificationScheduling.ts`).

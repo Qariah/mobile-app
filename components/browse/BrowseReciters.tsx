@@ -30,11 +30,12 @@ import {useRouter} from 'expo-router';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {createTracksForReciter} from '@/utils/track';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
+import {getSurahById} from '@/services/dataService';
 import {
-  getSurahById,
-  getSurahMetadataSync,
+  completeRecitationsFirst,
   formatAyahRange,
-} from '@/services/dataService';
+  getSurahMetadataSync,
+} from '@/utils/surahMetadata';
 import {expandPlayerSheet} from '@/services/player/sheetRef';
 import {reciterImages} from '@/utils/reciterImages';
 import Header from '@/components/Header';
@@ -52,10 +53,9 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useHeaderHeight} from 'expo-router/react-navigation';
 import branding from '@/config/branding';
 import {reciterMatchesCountry} from '@/data/countryCollections';
-import {reciterMatchesTranslation} from '@/data/translationCollections';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {USE_GLASS} from '@/hooks/useGlassProps';
-import {useBottomInset} from '@/hooks/useBottomInset'; // @ai B1: mini-player-aware bottom padding
+import {useBottomInset} from '@/hooks/useBottomInset';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 // @ai-end
@@ -67,19 +67,8 @@ interface BrowseRecitersProps {
   title?: string;
   initialTeacher?: string;
   initialStudent?: string;
-  /**
-   * Sprint 14 — when set, the reciter list is filtered to entries whose
-   * `country` slug matches. Slug shape matches `slugify(reciter.country)`
-   * from `data/countryCollections.ts`.
-   */
+  /** Filter to reciters whose country slug matches (`data/countryCollections.ts`). */
   country?: string;
-  /**
-   * Sprint 15 (S15.5) — when set, the reciter list is filtered to entries
-   * whose `translation` language slug matches. Slug shape matches
-   * `slugifyLanguage(reciter.translation)` from
-   * `data/translationCollections.ts` (lowercase + dash-separated).
-   */
-  translation?: string;
   /**
    * RFC-012 — initial value for the `has-photo` filter chip. When the
    * chip is enabled in `branding.searchFilters`, this prop seeds its
@@ -152,7 +141,6 @@ export default function BrowseReciters({
   initialTeacher,
   initialStudent,
   country,
-  translation,
   initialHasPhoto = false,
 }: BrowseRecitersProps) {
   const router = useRouter();
@@ -161,7 +149,7 @@ export default function BrowseReciters({
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const {setReciterPreference} = useSettings();
   const insets = useSafeAreaInsets();
-  const bottomInset = useBottomInset(); // @ai B1: clears mini-player when playing
+  const bottomInset = useBottomInset();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   // On iOS, the native Stack header handles the top area; on Android, use custom Header
@@ -295,12 +283,9 @@ export default function BrowseReciters({
       });
     }
 
-    // Qariah: country and translation-language filters (S14, S15.5).
+    // Qariah: the country filter (S14).
     if (country) {
       result = result.filter(r => reciterMatchesCountry(r, country));
-    }
-    if (translation) {
-      result = result.filter(r => reciterMatchesTranslation(r, translation));
     }
 
     // @ai-start
@@ -329,7 +314,7 @@ export default function BrowseReciters({
 
     // @ai Qariah-only: styles filter is no-op when qariahRecitationStyleFilter is off
     if (
-      isFeatureEnabled('qariahRecitationStyleFilter') &&
+      isQariahFeatureEnabled('qariahRecitationStyleFilter') &&
       advancedFilters.styles.length > 0
     ) {
       result = result.filter(reciter =>
@@ -395,17 +380,12 @@ export default function BrowseReciters({
     searchQuery,
     surahId,
     country,
-    translation,
     advancedFilters,
     hasPhoto,
     hasPhotoEnabled,
   ]);
 
-  // Sprint 21 S21.U1 — when filtered to a specific surahId, expand each
-  // reciter into one row per rewaya that has this surah. Lets the user pick
-  // a recitation (reciter + narration) directly rather than tapping the
-  // reciter card and falling through to a default rewaya. Single-rewaya
-  // reciters still get one row each.
+  // With a surahId, show one row for each reciter rewaya that has this surah.
   const recitationRows = useMemo(() => {
     if (!surahId) return [];
     type Row = {key: string; reciter: Reciter; rewaya: Rewayat};
@@ -420,7 +400,8 @@ export default function BrowseReciters({
         });
       }
     }
-    return rows;
+    // Complete recitations first, then the partial ones (#532).
+    return completeRecitationsFirst(rows, surahId);
   }, [filteredReciters, surahId]);
 
   const handleRecitationPress = useCallback(
@@ -443,14 +424,7 @@ export default function BrowseReciters({
         await play();
         await startNewChain(reciter, surah, 0, 0, rewayatId);
 
-        // Sprint 22 S22.2 (revised) — expand the now-playing PlayerSheet
-        // (the ayah-list-style player surface the mini-player itself opens
-        // on tap). The original S22.2 routed to /mushaf, but the Listen
-        // surface's expected destination is the PlayerSheet, not the
-        // Mushaf-tab page renderer — those are two separate views with
-        // different player controls. The PlayerSheet's TrackInfo already
-        // shows the rewaya + ayah-range subtitle (Sprint 20 S20.1), so
-        // partial-recitation context is preserved.
+        // Open the PlayerSheet, not /mushaf: it is the player of the Listen surface.
         expandPlayerSheet();
       } catch (error) {
         console.error('Error playing recitation:', error);
@@ -520,7 +494,7 @@ export default function BrowseReciters({
       selectedTeacher !== null ||
       selectedStudent !== null ||
       searchQuery.trim() !== '' ||
-      (isFeatureEnabled('qariahRecitationStyleFilter') &&
+      (isQariahFeatureEnabled('qariahRecitationStyleFilter') &&
         advancedFilters.styles.length > 0) ||
       advancedFilters.rewayat.length > 0 ||
       advancedFilters.sortBy !== 'featured' ||
@@ -643,9 +617,7 @@ export default function BrowseReciters({
   const topOffset = useNativeHeader ? iosHeaderHeight : 0;
 
   return (
-    // @ai Sprint 50: a TouchableWithoutFeedback is one accessibility element by
-    // default, so VoiceOver read the whole screen as one item and could not reach
-    // a reciter card. Expose the content instead.
+    // @ai accessible={false}: otherwise VoiceOver reads the whole screen as one element.
     <TouchableWithoutFeedback onPress={handleOutsidePress} accessible={false}>
       <View style={styles.container}>
         {/* Android: custom Header; iOS: native Stack header handles this */}
@@ -808,11 +780,7 @@ export default function BrowseReciters({
         {/* Content */}
         <View style={styles.contentContainer}>
           {surahId ? (
-            // Sprint 21 S21.U1 — Listen → Surah tile shows recitations
-            // (reciter + rewaya rows) instead of the grid of reciters; each
-            // row is one tap-to-play. Closes the user-feedback complaint
-            // that tapping a surah dumped users into a reciter list that
-            // they then had to drill into to find the surah again.
+            // With a surahId, show tap-to-play recitation rows instead of the reciter grid.
             <LegendList
               data={recitationRows}
               keyExtractor={row => row.key}
@@ -828,10 +796,7 @@ export default function BrowseReciters({
                   ? (getDisplayLabelFromName(item.rewaya.name) ??
                     item.rewaya.name)
                   : undefined;
-                // Sprint 22 S22.1 — append the ayah range for a partial
-                // recitation of this surah, same line after the rewaya
-                // label (e.g. "Warsh · ayahs 1–45"). Full recitations
-                // (or rows with no surah_metadata) show the label alone.
+                // Append the ayah range of a partial recitation (e.g. "Warsh · ayahs 1–45").
                 const meta = surahId
                   ? getSurahMetadataSync(
                       item.reciter.id,

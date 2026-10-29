@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Branding conformance (hard-rule #4): no hardcoded Bayaan brand strings.
 #
-# CI runs this script from .github/workflows/branding-conformance.yml. Run it
+# CI runs this script as a step of .github/workflows/lint.yml. Run it
 # locally the same way, from anywhere in the checkout:
 #
 #   bash scripts/check-branding.sh
@@ -30,6 +30,9 @@ cd "$ROOT"
 #     comments referencing "Bayaan" as a code identifier (`BayaanError`,
 #     "upstream Bayaan convention", etc.) are legitimate; the comment
 #     filter prevents false positives that tripped Sprint 4 + 5.
+#   - the lines of a block comment that starts a line with /* or with the
+#     JSX form {/* (scripts/lib/branding-comment-filter.awk). A JSX comment
+#     has no * at the start of each line, so the line filter cannot see it.
 #   - services/timestamps/TimestampFetchService.ts — Sprint 26 RFC-015:
 #     after the RFC-015 adoption, the URL is read from
 #     `branding.timestampCdnBase` (Qariah sets its own R2 base),
@@ -73,10 +76,15 @@ PASS_B_ALLOWED=(
   # branding.surahArtworkCdnBase is set (plan B3, "Artwork").
   "^\./utils/surahArtworkBase\.ts:[0-9]+:.*'https://cdn\.thebayaan\.com/assets/car/surah/'"
   '^\./utils/__tests__/surahArtworkBase\.test\.ts:'
-  # app.config.ts: the App Group Info.plist key and the plugin paths.
-  "^\./app\.config\.ts:[0-9]+:[[:space:]]*(BayaanAppGroup:|'\./plugins/with(BayaanCar|BayaanWidgets)\.js',)"
+  # app.config.js: the App Group Info.plist key and the plugin paths.
+  "^\./app\.config\.js:[0-9]+:[[:space:]]*(BayaanAppGroup:|'\./plugins/with(BayaanCar|BayaanWidgets)\.js',)"
   # The mock of the BayaanCar native module (Sprint 46 boot test).
   '^\./services/__tests__/appBoot\.qariah\.characterization\.test\.ts:[0-9]+:[[:space:]]*BayaanCar: \{$'
+  # Upstream's collection function getBayaanOriginalsReciters (an identifier;
+  # the row title comes from i18n). Only its two upstream lines in
+  # RecitersView pass (divergence batch C1, LSN-S5).
+  '^\./components/RecitersView\.tsx:[0-9]+:[[:space:]]*getBayaanOriginalsReciters,$'
+  '^\./components/RecitersView\.tsx:[0-9]+:[[:space:]]*\(\) => seededShuffle\(getBayaanOriginalsReciters\(10\), sessionSeed \+ 3\),$'
   # Pass C (Sprint 47): upstream's adhkar lock-screen suite mocks branding
   # with appName 'Bayaan' (a fixture value, never shown to a user). Kept
   # byte-identical to upstream.
@@ -92,6 +100,9 @@ MATCHES=$(grep -rEn 'Bayaan|thebayaan' \
   --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
   --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=ios --exclude-dir=android \
   . 2>/dev/null | grep -vE "$ALLOWED" | grep -vE "$PASS_B" | grep -vE "$COMMENT_LINE" || true)
+if [ -n "$MATCHES" ]; then
+  MATCHES=$(printf '%s\n' "$MATCHES" | awk -f scripts/lib/branding-comment-filter.awk)
+fi
 
 STATUS=0
 if [ -n "$MATCHES" ]; then

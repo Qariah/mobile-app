@@ -257,17 +257,15 @@ export const QuranView: React.FC<QuranViewProps> = ({
   const listRef = useRef<FlashListRef<EnhancedVerse>>(null);
   // RFC-014 — fork-supplied scroll-handler strategy. `'gorhom'` (default)
   // wires the bottom-sheet scrollable so the player sheet inherits the
-  // FlashList scroll gesture as its swipe-down-to-dismiss. Qariah sets
-  // `'native'` in config/branding.js because Sprint 23 surfaced the gorhom
-  // interception bug: imperative `scrollToIndex` calls issued before the
-  // player sheet's open animation has settled into EXTENDED/FILL_PARENT
-  // are silently dropped by the gorhom wrapper. For Qariah's partial-ayah
-  // recitations (RFC-013's anchor mechanism issues a 2-rAF deferred
-  // scrollToIndex on every track start), this caused the list to land at
-  // ayah 1 while audio played from the partial-range start. The hook is
-  // called unconditionally (rules-of-hooks); the factory is discarded
-  // when behavior is 'native'. Sheet stays dismissable via the (×) button
-  // in the player header. See docs/rfcs/014-player-scroll-strategy-seam.md.
+  // FlashList scroll gesture as its swipe-down-to-dismiss. `'native'`
+  // skips the wrapper — imperative scrollToIndex/scrollToOffset calls
+  // (RFC-013's anchor, the active-ayah auto-scroll, the rAF-deferred
+  // surah-change seek, and the scroll-to-top fallback) reach the native
+  // scroll node immediately, but the sheet's swipe-to-dismiss gesture is
+  // lost at the Mushaf list level — forks opting in must provide an
+  // alternative dismiss affordance. The hook is called unconditionally to
+  // satisfy rules-of-hooks; the factory is discarded when behavior is
+  // 'native'. See docs/rfcs/014-player-scroll-strategy-seam.md.
   const scrollBehavior = branding.playerMushafScrollBehavior ?? 'gorhom';
   const gorhomScrollComponent = usePlayerScrollable();
   const renderScrollComponent =
@@ -466,17 +464,7 @@ export const QuranView: React.FC<QuranViewProps> = ({
   const currentTrack = usePlayerStore(
     s => s.queue.tracks[s.queue.currentIndex],
   );
-  // Subscribe to catalog-init flag — `branding.initialPlayerVerseKey` reaches
-  // through a lazy `require('services/dataService')` into the module-scope
-  // `RECITERS` array, which is populated asynchronously by `getAllReciters()`
-  // on app start. React can't see that dependency, so without an explicit
-  // subscription the memo caches `undefined` on cold-start (RECITERS empty →
-  // metadata lookup fails) and never re-fires when the catalog later
-  // populates. Sprint 20 standing rule #1 codified this for any RECITERS
-  // reader; the upstream RFC-013 QuranView take dropped the subscription
-  // because upstream Bayaan doesn't load its catalog asynchronously. The
-  // flag is only a memo dependency: before the catalog loads, Qariah's
-  // `initialPlayerVerseKey` finds no metadata and returns undefined itself.
+  // Keep: `initialPlayerVerseKey` reads the async catalog, so the memo must re-run when it loads.
   const isCatalogInitialized = useReciterStore(s => s.isInitialized);
   const initialScrollIndex = useMemo(() => {
     if (!currentTrack || !branding.initialPlayerVerseKey) return undefined;
@@ -493,8 +481,7 @@ export const QuranView: React.FC<QuranViewProps> = ({
     // @ai-end
     const idx = verses.findIndex(v => v.verse_key === verseKey);
     return idx >= 0 ? idx : undefined;
-    // Qariah: `isCatalogInitialized` is not read here, but it is the signal
-    // that the catalog the hook reads has loaded. Do not remove it.
+    // Qariah: `isCatalogInitialized` signals that the catalog loaded. Do not remove it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTrack, verses, unitRows, verseUnits, isCatalogInitialized]); // @ai
 
@@ -668,13 +655,7 @@ export const QuranView: React.FC<QuranViewProps> = ({
     <View style={styles.container}>
       <FlashList
         ref={listRef}
-        // `key={currentSurah}` remains a Qariah-only divergence from
-        // upstream. It's a companion fix from the Sprint 23 work that
-        // prevents stale-list scroll races when surahs switch rapidly
-        // (FlashList recycles items and an in-flight scrollToIndex can
-        // target a recycled index). Orthogonal to the gorhom interception
-        // race that RFC-014 fixes; lives on as a tiny diff until a
-        // separate RFC absorbs it (TECH_DEBT candidate).
+        // Qariah: remount on a surah change, so an in-flight scrollToIndex cannot hit a recycled index.
         key={currentSurah}
         style={{width: contentWidth, height: '100%'}}
         data={listData} // @ai
@@ -717,11 +698,8 @@ export const QuranView: React.FC<QuranViewProps> = ({
           paddingTop: effectivePaddingTop,
           paddingBottom: effectivePaddingBottom,
         }}
-        // RFC-014: conditional spread — when scrollBehavior === 'native'
-        // (Qariah's value), renderScrollComponent is omitted entirely so
-        // FlashList renders with its default ScrollView wrapper. When
-        // 'gorhom' (Bayaan default; absent from Qariah's branding.js
-        // today), the prop is passed through unchanged.
+        // RFC-014: conditional spread keeps prop-shape parity with
+        // upstream's no-fork path when scrollBehavior === 'native'.
         {...(renderScrollComponent ? {renderScrollComponent} : {})}
         showsVerticalScrollIndicator={false}
         bounces={true}

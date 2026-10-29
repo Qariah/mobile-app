@@ -40,7 +40,7 @@ export function recitationKey(
  *
  * Walks the LISTED surahs of each rewayah (`surah_list`; integers only, each
  * once) and takes the FIRST `surah_metadata` row of each surah for its range,
- * as `scripts/catalog-added-at.mjs` and the ops console do. A row alone (a
+ * as the ops console (and the Sprint 48 added_at backfill) do. A row alone (a
  * surah that is not listed) never makes a recitation.
  */
 export function listRecitations(

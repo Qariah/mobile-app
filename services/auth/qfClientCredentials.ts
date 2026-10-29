@@ -117,9 +117,3 @@ export async function getQfClientCredentialsToken(): Promise<string> {
   });
   return inflight;
 }
-
-/** Test/diagnostic helper — clears the in-memory cache. */
-export function _resetQfClientCredentialsCache(): void {
-  cached = null;
-  inflight = null;
-}

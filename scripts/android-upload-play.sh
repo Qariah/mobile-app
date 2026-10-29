@@ -21,6 +21,11 @@
 #   versionCode. Change a live rollout in the Play Console
 #   (Release → Production → Manage rollout).
 #
+#   Before it reads a secret, the script checks that the AAB holds the widget
+#   fonts (scripts/check-widget-fonts.mjs), and it stops when they are missing.
+#   An AAB with no widget module (a line from before the widgets) is not
+#   checked. SKIP_WIDGET_FONT_CHECK=1 turns the check off and prints a WARNING.
+#
 # Pre-requisites (one-time setup; see "Provisioning" block below if missing):
 #   - .env.local var `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` pointing at a
 #     service-account JSON file (default: ~/.android/play-service-account.json).
@@ -43,7 +48,7 @@
 # Mirror PR candidate: this script is fork-generic — the package name
 # `com.qariah.app` is the only Qariah-specific bit. Lift to upstream
 # Bayaan as `scripts/android-upload-play.sh` with `PACKAGE_NAME` sourced
-# from `app.config.ts` (or a CLI flag) when convenient.
+# from `app.config.js` (or a CLI flag) when convenient.
 
 set -euo pipefail
 
@@ -178,6 +183,18 @@ if [ ! -f "$AAB_PATH" ]; then
     else
         echo -e "${RED}   Build first with: ./scripts/android-archive.sh --bundle${NC}"
     fi
+    exit 1
+fi
+
+# Refuse an AAB that has the widget module but not its fonts (Sprint 51). The
+# widgets then show no Quran text, as in the builds 3490 and 3506. An AAB from
+# before the widgets (for example hotfix/3.2.0-anr-splash) has no widget assets,
+# and the check lets it pass. SKIP_WIDGET_FONT_CHECK=1 turns the check off (a
+# WARNING). This runs before any secret is read and before any network call.
+if ! node "$SCRIPT_DIR/check-widget-fonts.mjs" "$AAB_PATH"; then
+    echo -e "${RED}❌ The AAB has no widget fonts. Not uploading.${NC}"
+    echo -e "${RED}   Build again with ./scripts/android-archive.sh --bundle (it copies the fonts).${NC}"
+    echo -e "${RED}   To upload this AAB anyway, set SKIP_WIDGET_FONT_CHECK=1 for this call.${NC}"
     exit 1
 fi
 

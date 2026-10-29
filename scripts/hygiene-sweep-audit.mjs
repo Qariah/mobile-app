@@ -197,6 +197,13 @@ const basenames = new Set([...tree].map((p) => p.split('/').pop()));
 const evergreen = claude.split(/^## (?:Last updated|Standing rules)/m)[0];
 const refRe = /`([A-Za-z0-9_./@-]+\.(?:ts|tsx|js|mjs|jsx|sh|json|md|yml|yaml|plist|gradle|patch))`/g;
 const seen = new Set();
+// A path can be missing from REF on purpose: CLAUDE.md names files that live only on a
+// release/hotfix line, or in another repository it links to. Both scored HIGH on
+// 2026-10-15 (`planning/anr-hotfix-v2-plan.md`, `archive/README.md`).
+const lineAt = (s, i) => s.slice(s.lastIndexOf('\n', i) + 1, s.indexOf('\n', i) < 0 ? undefined : s.indexOf('\n', i));
+const releaseRefs = git('for-each-ref', '--format=%(refname:short)', 'refs/remotes/origin/release', 'refs/remotes/origin/hotfix')
+  .trim().split('\n').filter(Boolean);
+const otherRepoLink = /github\.com\/(?!omar-zarka\/qariah-v2[/)\s])[\w.-]+\/[\w.-]+/;
 for (const m of evergreen.matchAll(refRe)) {
   const p = m[1];
   if (seen.has(p)) continue;
@@ -208,6 +215,16 @@ for (const m of evergreen.matchAll(refRe)) {
   // Gitignored-by-design paths are absent from the tree but genuinely exist on disk.
   if (git('check-ignore', p).trim()) continue;
   if (!tree.has(p)) {
+    const line = lineAt(evergreen, m.index);
+    if (otherRepoLink.test(line)) continue;
+    const home = releaseRefs.find((r) => git('ls-tree', '--name-only', r, '--', p).trim());
+    if (home) {
+      if (!/branch only|on this branch/i.test(line)) {
+        note('low', 'Stale reference',
+          `CLAUDE.md (evergreen section) cites \`${p}\` — present on ${home} only; say so in the text.`);
+      }
+      continue;
+    }
     note('high', 'Stale reference', `CLAUDE.md (evergreen section) cites \`${p}\` — not present on ${REF}.`);
   }
 }
@@ -227,7 +244,9 @@ for (const m of claude.matchAll(/~\/\.claude\/projects\/(-[A-Za-z0-9-]+)\/memory
 }
 
 // ---------------------------------------------------------------- 7. Feature flags
-const flagsSrc = show('config/featureFlags.ts', { required: true });
+// The Qariah-only flags live in config/qariahFeatureFlags.ts since 2026-10-24.
+const flagsSrc =
+  show('config/featureFlags.ts', { required: true }) + '\n' + show('config/qariahFeatureFlags.ts');
 const declared = new Set([...flagsSrc.matchAll(/^\s{2,}([a-zA-Z][A-Za-z0-9]*)\s*:/gm)].map((m) => m[1]));
 
 // ---------------------------------------------------------------- 8. Skills cross-references

@@ -18,9 +18,7 @@ const mockWait = jest.fn(
 );
 const mockOpen = jest.fn<boolean, [unknown, unknown]>();
 
-// @ai Qariah (Sprint 47 Pass C): Qariah ships `adhkar` off, and the route then
-// only leaves itself (adhkarPlayingRoute.qariah.test.tsx). This upstream suite
-// runs with upstream's flag values.
+// @ai Qariah ships `adhkar` off (adhkarPlayingRoute.qariah.test.tsx); this suite uses upstream's flags.
 jest.mock('@/config/featureFlags', () =>
   jest.requireActual('@/test-utils/upstreamFeatureFlags'),
 );

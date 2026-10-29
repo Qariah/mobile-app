@@ -22,7 +22,7 @@ import {
   getShortLabel,
   resolveRewayahFromName,
 } from '@/services/rewayah/RewayahIdentity';
-import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 
 interface FilterModalProps {
   visible: boolean;
@@ -347,8 +347,8 @@ export default function FilterModal({
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled={Platform.OS === 'android'}
                 scrollEventThrottle={16}>
-                {/* Recitation Styles — hidden for Qariah (qariahRecitationStyleFilter=false) */}
-                {isFeatureEnabled('qariahRecitationStyleFilter') && (
+                {/* Recitation Styles */}
+                {isQariahFeatureEnabled('qariahRecitationStyleFilter') && (
                   <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
                       {t('filters.recitationStyles')}

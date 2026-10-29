@@ -55,6 +55,8 @@ struct WidgetSnapshot: Codable {
   let reciterRecents: [String: [WidgetTrack]]
   let lastRead: WidgetLastRead?
   let tasbeeh: [String: WidgetTasbeehEntry]
+  // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage); nil in an older app's snapshot.
+  var language: String? = nil
 
   static func decode(_ data: Data) -> WidgetSnapshot? {
     guard let s = try? JSONDecoder().decode(WidgetSnapshot.self, from: data),

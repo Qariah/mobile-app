@@ -80,8 +80,7 @@ async function seed(mock: MockModule, sql: string): Promise<void> {
 
 async function rawNotes(mock: MockModule, table = 'notes'): Promise<Row[]> {
   const db = await mock.openDatabaseAsync(DB_FILE);
-  // Qariah: leave out the QF note sync columns (Sprint 18), which the
-  // upstream schema these rows describe does not have.
+  // Qariah: leave out the QF note sync columns, which the upstream schema does not have.
   return (await readTable(db, table)).map(
     ({qf_note_id: _qfNoteId, qf_post_id: _qfPostId, ...row}) => row,
   );

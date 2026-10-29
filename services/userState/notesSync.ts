@@ -261,18 +261,20 @@ function realPostId(note: Pick<VerseNote, 'qfPostId'>): string | null {
  *   - Publish turned off: the user asked to take the post down. Delete the
  *     post, then keep the text as a private QF note. If the delete fails,
  *     this function throws and changes nothing.
- *   - Text changed, publish on: create and publish the new post FIRST. The
- *     row stays linked to the old post until the new post exists, so a
- *     failed create or publish (a network drop, an iOS suspend) leaves the
- *     old reflection public and linked (Stage-2 review: the first H3 fix
- *     deleted the old post first and could unpublish it with no message).
- *     Then link the row to the new post and delete the old post. If that
- *     delete fails, the old post id goes to the pending-delete list, the next
- *     posts pull deletes it again, and Sentry gets a warning.
- *
- * The flow uses only the endpoints that the app already uses
- * (`DELETE /v1/posts/{id}` and create-and-publish). The new post does not
- * keep the likes and comments of the old post.
+ *   - Text changed, publish on (TECH_DEBT #256): edit the post in place
+ *     (`PATCH /v1/posts/{id}`, see `qfNotes.editPost`). The post keeps its
+ *     id, likes and comments, and the row stays linked to it. If any other
+ *     error stops the edit, this function throws and changes nothing.
+ *   - The edit is not available (no SDK operation, or QF answers 403, 404,
+ *     405 or 501): fall back to the earlier flow. Create and publish the new
+ *     post FIRST. The row stays linked to the old post until the new post
+ *     exists, so a failed create or publish (a network drop, an iOS suspend)
+ *     leaves the old reflection public and linked (Stage-2 review: the first
+ *     H3 fix deleted the old post first and could unpublish it with no
+ *     message). Then link the row to the new post and delete the old post.
+ *     If that delete fails, the old post id goes to the pending-delete list,
+ *     the next posts pull deletes it again, and Sentry gets a warning. The
+ *     new post does not keep the likes and comments of the old post.
  *
  * @param before The note as it was before the local edit.
  * @param edited The note after the local edit (read again from the DB).
@@ -305,6 +307,11 @@ export async function pushEditOfUnlinkedNoteToQf(
     await pushLocalNoteToQf({...edited, qfPostId: null}, {publish: false});
     return;
   }
+
+  // @ai-start
+  // TECH_DEBT #256: edit in place first, so the post keeps its engagement.
+  if (await qfNotes.editPost(existingPostId, edited.content)) return;
+  // @ai-end
 
   const qf = await qfNotes.createNote({
     body: edited.content,

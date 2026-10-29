@@ -1,7 +1,5 @@
 // RFC-021: which widget kinds sync reloads, and the Live Activity gate.
-// @ai Qariah: this upstream suite pins Bayaan's widget set, which needs the
-// flags Qariah turns off (adhkar, the ambient overlay). Run it with upstream's
-// flag values (see test-utils/upstreamFeatureFlags.ts).
+// @ai Qariah: run this upstream suite with upstream's flag values (Qariah turns adhkar and ambient off).
 jest.mock('@/config/featureFlags', () =>
   jest.requireActual('@/test-utils/upstreamFeatureFlags'),
 );
@@ -21,8 +19,7 @@ function withWidgets<T>(
       __esModule: true,
       default: {widgets},
     }));
-    // @ai Qariah: start from upstream's flag values, as the file-level mock
-    // does (this doMock replaces it inside the isolated registry).
+    // @ai Qariah: start from upstream's flag values, as the file-level mock does.
     jest.doMock('@/config/featureFlags', () => {
       const actual = jest.requireActual('@/test-utils/upstreamFeatureFlags');
       return {...actual, featureFlags: {...actual.featureFlags, ...flags}};

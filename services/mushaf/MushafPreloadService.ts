@@ -306,11 +306,8 @@ class MushafPreloadService {
 export const mushafPreloadService = new MushafPreloadService();
 
 // @ai-start
-// A rejected `mushaf-settings` read (a full device, QARIAHV2-20) keeps
-// hasHydrated() false for the whole process, so an unbounded wait left the
-// preload at 'loading' and the screen on an endless spinner. After this long
-// the preload renders with the store's in-memory values. This writes nothing:
-// the hydration-guarded storage refuses every write after a failed read.
+// A failed settings read (QARIAHV2-20) never hydrates: after this long, render with the in-memory values.
+// No write follows: the hydration-guarded storage refuses every write after a failed read.
 export const SETTINGS_HYDRATION_TIMEOUT_MS = 5000;
 let reportedHydrationTimeout = false;
 
@@ -321,8 +318,7 @@ function waitForSettingsHydration(): Promise<void> {
     const timer = setTimeout(() => {
       unsub();
       reportHydrationTimeout();
-      // A read that was only slow can still finish. The text was loaded for
-      // the default rewayah, so follow the saved one when it arrives.
+      // A slow read can still finish: then follow the saved rewayah.
       const unsubLate = persist.onFinishHydration(state => {
         unsubLate();
         if (digitalKhattDataService.rewayah === state.rewayah) return;

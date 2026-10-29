@@ -320,8 +320,32 @@ describe('unclaimed-builds', () => {
     assert.equal(r.lines.length, 2);
     assert.match(
       r.lines[0],
-      /^Build 1769 has no fix record yet\. The Mac loop/,
+      /^Build 1769 has no fix record yet\. Post-sprint Step 14b records it/,
     );
+    // The disabled Mac loop task must not be named as the one that records it.
+    assert.doesNotMatch(r.lines[0], /Mac loop/);
+  });
+  it('gives every noFixBuilds entry a reason in noFixNotes (the real list)', () => {
+    const it0 = item('unclaimed-builds');
+    for (const build of it0.noFixBuilds) {
+      assert.ok(
+        typeof it0.noFixNotes[build] === 'string' &&
+          it0.noFixNotes[build].length > 20,
+        `noFixNotes["${build}"] is missing`,
+      );
+    }
+  });
+  it('records the Sprint 45 to 50 builds in noFixBuilds (the real list)', () => {
+    for (const build of [2579, 2877, 2881, 3369, 3371, 3490, 3506]) {
+      const r = one(item('unclaimed-builds'), {
+        watchBuilds: {
+          candidates: [String(build)],
+          ledgerBuilds: [],
+          labelled: {[build]: 0},
+        },
+      });
+      assert.equal(r.state, 'done', String(build));
+    }
   });
   it('treats 1726 as recorded (noFixBuilds in the real list)', () => {
     const r = one(item('unclaimed-builds'), {

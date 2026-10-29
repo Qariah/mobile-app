@@ -5,8 +5,7 @@
  * Qariah maps "last-played track" onto a reading session: reciter slug + surah
  * number + ayah number (default 1) + ISO timestamp.
  *
- * Endpoints (relative to {apiBase}/auth/v1, composed by the SDK):
- *   GET  /reading-sessions
+ * Endpoint (relative to {apiBase}/auth/v1, composed by the SDK):
  *   POST /reading-sessions       {reciter_id, surah_number, ayah_number, timestamp}
  *
  * Sprint 4 (S4.1) — original hand-rolled client. The pre-S17.2 module
@@ -18,6 +17,9 @@
  * Sprint 17 (S17.2) — migrated onto `@quranjs/api/public`. SDK auto-camelizes
  * responses, so the snake → camel `fromRaw` shim from the original module
  * is dropped.
+ * Divergence batch C3 (SEM-S1, 2026-10-24) — `getLatestReadingSession` was
+ * removed: only the removed QF → cache pull called it. The app pushes reading
+ * sessions; nothing reads them back yet.
  */
 
 import {getQfSdk} from '@/services/auth/sdkClient';
@@ -42,20 +44,6 @@ export interface ReadingSessionPayload {
   timestamp?: string;
 }
 
-interface QfReadingSessionsListResponse {
-  readingSessions?: QfReadingSession[];
-  data?: QfReadingSession[];
-}
-
-function unwrapList(res: unknown): QfReadingSession[] {
-  if (Array.isArray(res)) return res as QfReadingSession[];
-  if (res && typeof res === 'object') {
-    const r = res as QfReadingSessionsListResponse;
-    return r.readingSessions ?? r.data ?? [];
-  }
-  return [];
-}
-
 function toRawBody(p: ReadingSessionPayload): Record<string, unknown> {
   return {
     reciter_id: p.reciterId,
@@ -65,24 +53,11 @@ function toRawBody(p: ReadingSessionPayload): Record<string, unknown> {
   };
 }
 
-export async function getLatestReadingSession(): Promise<QfReadingSession | null> {
-  return withQfCall('/reading-sessions', async () => {
-    const res = await getQfSdk().auth.readingSessions.list();
-    const list = unwrapList(res);
-    if (list.length === 0) return null;
-    // QF list endpoint is "most recent first"; defensive max-by-timestamp.
-    const sorted = [...list].sort((a, b) =>
-      a.timestamp < b.timestamp ? 1 : -1,
-    );
-    return sorted[0];
-  });
-}
-
 /**
  * Creates a new reading session. QF treats reading sessions as append-only —
- * each call lands a fresh row, and `getLatestReadingSession` returns the
- * top-by-timestamp. The pre-S17.2 `existingId` PUT path is collapsed away;
- * the SDK doesn't surface it and QF's docs don't promise an update verb.
+ * each call lands a fresh row, and the list is sorted by timestamp. The
+ * pre-S17.2 `existingId` PUT path is collapsed away; the SDK doesn't surface
+ * it and QF's docs don't promise an update verb.
  */
 export async function upsertReadingSession(
   payload: ReadingSessionPayload,

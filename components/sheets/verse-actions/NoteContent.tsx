@@ -19,8 +19,8 @@ import {
 } from '@/components/share/rewayahVerseSelection';
 import {addSelectionNote} from './selectionAnnotations';
 // @ai-end
-import {useAuthStatus} from '@/services/auth/AuthContext';
-import {pushLocalNoteToQf} from '@/services/userState/notesSync';
+import {useQariahNoteEditor} from '@/components/notes/useQariahNoteEditor';
+import {QariahPublishHint} from '@/components/notes/QariahPublishHint';
 
 interface NoteContentProps {
   // @ai-start
@@ -33,11 +33,7 @@ interface NoteContentProps {
    */
   selection: ReadyVerseSelection;
   // @ai-end
-  /**
-   * Qariah (Sprint 21 round-3): the long-press menu has two entry points
-   * (Add Personal Note, Publish Reflection) that share this component. True
-   * publishes the saved note to QuranReflect.
-   */
+  /** Qariah: true publishes the note to QuranReflect (a Reflection). */
   defaultPublish?: boolean;
   onDone: () => void;
 }
@@ -50,48 +46,29 @@ export const NoteContent: React.FC<NoteContentProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const {t} = useTranslation(['sheets', 'qariah']);
+  const {t} = useTranslation('sheets');
   // @ai-start
   const {rewayah} = selection;
   const isRange = selection.anchors.length > 1;
   // @ai-end
   const [noteText, setNoteText] = useState('');
-  // Qariah (Sprint 21 round-4): the entry point fixes the publish state for
-  // this editor; there is no in-editor toggle.
-  const publish = defaultPublish;
-  const [saving, setSaving] = useState(false);
-
-  const authStatus = useAuthStatus();
-  const signedIn = authStatus === 'authenticated';
+  // Qariah: QF note sync and the Reflection state (components/notes).
+  const qariah = useQariahNoteEditor({
+    source: 'NoteContent',
+    publish: defaultPublish,
+  });
 
   const handleSave = useCallback(async () => {
-    if (!noteText.trim() || saving) return;
+    if (!noteText.trim() || qariah.saving) return;
 
     // @ai-start
     if (selection.anchors.length === 0) return;
-    setSaving(true);
-    let localNote;
-    try {
-      localNote = await addSelectionNote(selection, noteText.trim());
-    } finally {
-      setSaving(false);
-    }
+    await qariah.saveNew(() => addSelectionNote(selection, noteText.trim()));
     // @ai-end
-
-    // Qariah: fire-and-forget QF push (signed-in users only). The note is
-    // already saved locally, so a QF failure does not block the close.
-    // pushLocalNoteToQf writes a `pending:` qfPostId placeholder at once,
-    // so the Reflections collection updates before QF's slow (15-20 s)
-    // publish returns (Sprint 21 round-5.4).
-    if (signedIn && localNote) {
-      pushLocalNoteToQf(localNote, {publish}).catch(err => {
-        if (__DEV__) console.warn('[NoteContent] QF push failed', err);
-      });
-    }
     onDone();
-  }, [selection, noteText, onDone, signedIn, publish, saving]); // @ai
+  }, [selection, noteText, onDone, qariah]); // @ai
 
-  const canSave = noteText.trim().length > 0 && !saving;
+  const canSave = noteText.trim().length > 0 && !qariah.saving;
 
   return (
     <ScrollView
@@ -119,21 +96,10 @@ export const NoteContent: React.FC<NoteContentProps> = ({
         autoFocus
       />
 
-      {/* Qariah (Sprint 21 round-4) — the long-press entry point (Personal
-          Note vs Publish Reflection) defines the type. The Reflection path
-          shows a static row so the reader knows the save will publish. */}
-      {publish && signedIn ? (
-        <View style={styles.publishHint}>
-          <Feather
-            name="users"
-            size={moderateScale(14)}
-            color={theme.colors.textSecondary}
-          />
-          <Text style={styles.publishHintText}>
-            {t('qariah:note.publishingHint')}
-          </Text>
-        </View>
-      ) : null}
+      <QariahPublishHint
+        visible={qariah.publishing}
+        marginBottom={moderateScale(14)}
+      />
 
       <Pressable
         style={({pressed}) => [
@@ -144,17 +110,12 @@ export const NoteContent: React.FC<NoteContentProps> = ({
         onPress={handleSave}
         disabled={!canSave}>
         <Feather
-          name={publish && signedIn ? 'users' : 'save'}
+          name={qariah.saveIcon}
           size={moderateScale(16)}
           color={theme.colors.text}
         />
         <Text style={styles.saveButtonText}>
-          {/* @ai Qariah (QF sync). */}
-          {saving
-            ? t('qariah:note.saving')
-            : publish && signedIn
-              ? t('qariah:verseActions.publishReflection')
-              : t('note.save')}
+          {qariah.saveLabel(false) ?? t('note.save')}
         </Text>
       </Pressable>
     </ScrollView>
@@ -182,26 +143,7 @@ const createStyles = (theme: Theme) =>
       fontSize: moderateScale(15),
       fontFamily: 'Manrope-Regular',
       color: theme.colors.text,
-      marginBottom: moderateScale(12),
-    },
-    publishHint: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: moderateScale(8),
-      backgroundColor: Color(theme.colors.text).alpha(0.04).toString(),
-      borderRadius: moderateScale(12),
-      borderWidth: 1,
-      borderColor: Color(theme.colors.text).alpha(0.06).toString(),
-      paddingVertical: moderateScale(10),
-      paddingHorizontal: moderateScale(14),
-      marginBottom: moderateScale(14),
-    },
-    publishHintText: {
-      flex: 1,
-      fontSize: moderateScale(12),
-      lineHeight: moderateScale(17),
-      fontFamily: 'Manrope-Regular',
-      color: theme.colors.textSecondary,
+      marginBottom: moderateScale(12), // @ai Qariah (Sprint 21 round-4)
     },
     saveButton: {
       flexDirection: 'row',

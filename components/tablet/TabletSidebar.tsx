@@ -1,5 +1,5 @@
 import React, {useCallback, useMemo} from 'react';
-import {View, Pressable, Text, StyleSheet} from 'react-native';
+import {View, Pressable, Text, StyleSheet, Image} from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {useResponsive} from '@/hooks/useResponsive';
 import {
@@ -18,6 +18,7 @@ import Color from 'color';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {TabletDockedPlayer} from '@/components/tablet/TabletDockedPlayer';
 // @ai-start
+import branding from '@/config/branding';
 import {getAppDisplayName} from '@/i18n/qariahAppName'; // Qariah: Arabic name
 import {appLayoutDirection, isRTL} from '@/utils/rtl';
 // @ai-end
@@ -133,6 +134,7 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
   const expanded = orientation === 'landscape';
   const railWidth = expanded ? RAIL_WIDTH_EXPANDED : RAIL_WIDTH_COMPACT;
   const iconSize = 24;
+  const sidebarLogo = branding.sidebarLogo; // @ai Qariah (TECH_DEBT #355)
 
   const hasTrack = usePlayerStore(state => {
     const tracks = state.queue.tracks;
@@ -188,7 +190,25 @@ export const TabletSidebar: React.FC<BottomTabBarProps> = ({
   return (
     <View style={containerStyle}>
       <View style={[styles.header, expanded && styles.headerExpanded]}>
-        <LogoIcon color={theme.colors.text} size={40} isDarkMode={isDarkMode} />
+        {/* @ai Qariah (TECH_DEBT #355): the fork's mark from branding; LogoIcon when unset. */}
+        {sidebarLogo ? (
+          <Image
+            source={
+              isDarkMode
+                ? (sidebarLogo.dark ?? sidebarLogo.light)
+                : sidebarLogo.light
+            }
+            style={styles.logo}
+            resizeMode="contain"
+            testID="tablet-sidebar-logo"
+          />
+        ) : (
+          <LogoIcon
+            color={theme.colors.text}
+            size={40}
+            isDarkMode={isDarkMode}
+          />
+        )}
         {expanded ? (
           <Text style={[styles.brand, {color: theme.colors.text}]}>
             {getAppDisplayName()}
@@ -250,6 +270,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
+  },
+  // @ai Qariah (TECH_DEBT #355): the size of LogoIcon.
+  logo: {
+    width: 40,
+    height: 40,
   },
   brand: {
     fontFamily: 'Manrope-SemiBold',

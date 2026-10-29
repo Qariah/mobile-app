@@ -7,6 +7,9 @@
  * (see services/audio/*): `${rewayat.server}/${paddedSurahNumber}.mp3`. The
  * server URL is a per-rewaya base path (with trailing slash) and the file
  * name is a 3-digit zero-padded surah number.
+ * Qariah (TECH_DEBT #346): the URL comes from the app's own builder, so a
+ * partial upload with `audio_path: 'suffixed'` is checked at its suffixed
+ * file. See scripts/lib/catalog-audio-url.ts.
  *
  * Why this exists:
  *   HEAD-200 with Content-Type: audio/mpeg is necessary but NOT sufficient.
@@ -33,6 +36,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import type {SurahMetadata} from '../data/reciterData';
+import {catalogAudioUrl, serverProblem} from './lib/catalog-audio-url'; // Qariah (TECH_DEBT #346)
 
 interface Rewayat {
   id?: string;
@@ -40,6 +45,7 @@ interface Rewayat {
   server: string;
   surah_list: (number | null)[] | null;
   surah_total?: number;
+  surah_metadata?: SurahMetadata[];
 }
 
 interface Reciter {
@@ -70,12 +76,6 @@ function parseArgs() {
 
 function pad3(n: number): string {
   return String(n).padStart(3, '0');
-}
-
-function audioUrl(server: string, surah: number): string {
-  // Tolerate servers with or without trailing slash.
-  const trimmed = server.endsWith('/') ? server.slice(0, -1) : server;
-  return `${trimmed}/${pad3(surah)}.mp3`;
 }
 
 function pickClient(url: string): typeof https | typeof http {
@@ -224,8 +224,22 @@ async function main() {
     surah: number;
     url: string;
   }> = [];
+  // Qariah (TECH_DEBT #346): a row with no `server` fails alone; a final slash is a warning.
+  const rowFailures: string[] = [];
+  const warnings: string[] = [];
   for (const reciter of catalog) {
     for (const rewayat of reciter.rewayat ?? []) {
+      const problem = serverProblem(rewayat);
+      if (problem === 'missing') {
+        rowFailures.push(`${reciter.name} · ${rewayat?.name} → no server URL`);
+        continue;
+      }
+      if (problem === 'final-slash') {
+        warnings.push(
+          `${reciter.name} · ${rewayat.name}: server "${rewayat.server}" ends with "/". ` +
+            `The app requests server//NNN.mp3; this check requests server/NNN.mp3.`,
+        );
+      }
       const surahs = (rewayat.surah_list ?? []).filter(
         (n): n is number => typeof n === 'number',
       );
@@ -234,7 +248,7 @@ async function main() {
           reciterName: reciter.name,
           rewayatName: rewayat.name,
           surah,
-          url: audioUrl(rewayat.server, surah),
+          url: catalogAudioUrl(rewayat, surah),
         });
       }
     }
@@ -260,10 +274,12 @@ async function main() {
   console.log(
     `  Magic-byte sniff: ${sniff ? 'ON (default)' : 'OFF (--no-sniff)'}\n`,
   );
+  warnings.forEach(w => console.log(`  ⚠ ${w}`));
+  rowFailures.forEach(f => console.log(`  ✗ ${f}`));
 
   let passed = 0;
-  let failed = 0;
-  const failures: string[] = [];
+  let failed = rowFailures.length;
+  const failures: string[] = [...rowFailures];
 
   for (let i = 0; i < checks.length; i++) {
     const {reciterName, rewayatName, surah, url} = checks[i];
@@ -308,8 +324,11 @@ async function main() {
   }
 
   console.log(`\n─────────────────────────────────────────`);
-  console.log(`  Passed: ${passed} / ${totalUrls}`);
-  console.log(`  Failed: ${failed} / ${totalUrls}`);
+  console.log(`  Passed: ${passed} / ${totalUrls + rowFailures.length}`);
+  console.log(`  Failed: ${failed} / ${totalUrls + rowFailures.length}`);
+  if (warnings.length > 0) {
+    console.log(`  Warnings: ${warnings.length} (server with a final slash)`);
+  }
 
   if (failed > 0) {
     console.log(`\nFailed URLs:`);

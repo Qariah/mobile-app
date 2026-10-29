@@ -46,11 +46,12 @@ tags:
 - assertVisible: 'Open Settings'
 - tapOn:
     id: 'notifications-permission-button'
-# The iOS Settings app opens. iOS 27 quirk (2026-10-21, the test iPhone): when the Settings
-# app was not running, it opens at the "Apps" list, not at the app's page. Then go back to
-# the app (it keeps its state) and tap the button again: now the app's page opens.
+# The iOS Settings app opens. Since Sprint 51 (TECH_DEBT #348) iOS 27+ opens the app's
+# notification page directly ("Allow Notifications", off). Before, iOS 27 opened the "Apps"
+# list when the Settings app was not running; then go back to the app (it keeps its state)
+# and tap the button again: now the app's page opens.
 - extendedWaitUntil:
-    visible: 'Notifications, Off|Search Apps'
+    visible: 'Notifications, Off|Search Apps|Allow Notifications'
     timeout: 10000
 - runFlow:
     when:
@@ -60,7 +61,8 @@ tags:
           stopApp: false
       - tapOn:
           id: 'notifications-permission-button'
-# The app's page in Settings: its Notifications row says Off.
+# The app's page in Settings (its Notifications row says Off), or the app's notification page
+# itself (its "Allow Notifications" switch is off).
 - extendedWaitUntil:
-    visible: 'Notifications, Off'
+    visible: 'Notifications, Off|Allow Notifications'
     timeout: 10000

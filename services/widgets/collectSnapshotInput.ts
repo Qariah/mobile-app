@@ -18,10 +18,18 @@ import {
   artworkFileName,
   surahArtworkFileName,
   SnapshotInput,
+  widgetLanguageFor,
 } from './buildSnapshot';
 import {isWidgetEnabled} from './enabledWidgets';
+// @ai Qariah (TECH_DEBT #357): widgets follow the app language.
+import {currentLanguage, getLanguagePreference} from '@/i18n/language';
 
 const OPENING_WORDS = 6;
+// Fixed for the session, like currentLanguage: a new language needs a restart.
+const WIDGET_LANGUAGE = widgetLanguageFor(
+  getLanguagePreference(),
+  currentLanguage,
+);
 const countsForToday = createCountDayTracker();
 
 function openingTextForPage(page: number): string {
@@ -76,5 +84,6 @@ export function collectSnapshotInput(now: Date): SnapshotInput {
       return hasArtwork(file) ? file : null;
     },
     surahOfTheDayId: getSurahOfTheDay(now).id,
+    language: WIDGET_LANGUAGE,
   };
 }

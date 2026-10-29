@@ -7,33 +7,15 @@
  *
  * Sprint 4 (original); Sprint 17 S17.2 — qfApiClient retired in favour of
  * @quranjs/api/public; replaced by qfErrors for typed error classification.
+ * Divergence batch C3 (SEM-S1, 2026-10-24) — the exports that no code
+ * imported (the cache row types, the QF resource types, the preference keys,
+ * `enqueuePreferenceSync`) were removed. The player stores no longer import
+ * the push helpers (PLY-S8, `playerStoreSync.ts`).
  */
 
 export {UserStateProvider, useUserState} from './UserStateContext';
 
-export {
-  enqueueFavoritesSync,
-  enqueueReadingSessionSync,
-  enqueuePreferenceSync,
-} from './syncBus';
-
 export {flushSyncQueue, scheduleSyncFlush} from './syncQueue';
-
-export {QARIAH_PREF_KEYS} from './preferences';
-export type {QariahPrefKey} from './preferences';
-
-// QF resource types — exported for downstream consumers (settings UI, etc.)
-export type {QfCollection} from './collections';
-export type {QfBookmark} from './bookmarks';
-export type {QfReadingSession} from './readingSessions';
-export type {QfPreference} from './preferences';
-
-// Cache row types — exported for hooks that read from the local mirror.
-export type {
-  CachedPreference,
-  CachedReadingSession,
-  CachedBookmark,
-} from './db';
 
 // Errors — callers may want to discriminate auth-required vs other failures.
 // Sprint 17 (S17.2) — moved from qfApiClient.ts → qfErrors.ts; hand-rolled

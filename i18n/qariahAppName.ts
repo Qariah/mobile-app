@@ -5,7 +5,7 @@
 // app is "قارئة" alone in brand places and "تطبيق قارئة" inside a sentence.
 // English stays `branding.appName` ("Qariah").
 //
-// `branding.appName` itself does not change: app.config.ts reads it in Node
+// `branding.appName` itself does not change: app.config.js reads it in Node
 // at config time, and Sentry and analytics read it too. Callers keep passing
 // `{appName: branding.appName}` to `t()`. The `qariahAppName` post-processor
 // below swaps the name in the finished string when the language has its own

@@ -24,7 +24,8 @@ const IOS_PROVISIONAL = 3;
  * - `ask`: show the banner; its button shows the system dialog
  *   (`requestPermissionsAsync()`).
  * - `openSettings`: show the banner; its button opens the system settings of
- *   the app (`Linking.openSettings()`), because the system shows no dialog.
+ *   the app (`openNotificationSettings()`: the notification settings on iOS
+ *   27+, else `Linking.openSettings()`), because the system shows no dialog.
  */
 export type NotificationPermissionAction = 'none' | 'ask' | 'openSettings';
 

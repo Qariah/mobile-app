@@ -144,11 +144,3 @@ export function getQfSdk(): PublicClient {
   });
   return _client;
 }
-
-/**
- * Test-only — reset the cached client. Useful when tests mock env vars after
- * the singleton has been constructed. Not exported from the public index.
- */
-export function _resetSdkClientForTests(): void {
-  _client = null;
-}

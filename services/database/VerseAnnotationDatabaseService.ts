@@ -270,11 +270,7 @@ class VerseAnnotationDatabaseService {
   }
 
   private async ensureReady(): Promise<SQLite.SQLiteDatabase> {
-    // Sprint 38 (S38.2) — lazy-open: self-initialize on first access instead of
-    // throwing. Safe no-op when already booted (this.ready true → initialize()
-    // returns immediately). Mirrors the TafseerDbService pattern (Sprint 35 S35.1)
-    // so VerseAnnotationService can be deferred out of AppInitializer's
-    // non-critical boot batch and still work correctly on first user interaction.
+    // Lazy-open: initialize on first access, so the service can boot deferred.
     if (!this.ready) await this.initialize();
     if (!this.db || !this.ready) {
       throw new Error('VerseAnnotationDatabaseService not initialized');
@@ -359,11 +355,7 @@ class VerseAnnotationDatabaseService {
       // Column already exists
     }
 
-    // Sprint 18 — add qf_note_id + qf_post_id columns for QF Notes sync
-    // (Slice B). Both are nullable. qf_note_id is set when the local row
-    // has been synced to QF; qf_post_id is set when the note has been
-    // published (via auth.v1.notes/{id}/publish → returns postId). Both
-    // idempotent on rerun — duplicate-column errors are swallowed.
+    // Add the nullable QF sync ids (note id after sync, post id after publish). Idempotent.
     for (const col of ['qf_note_id', 'qf_post_id']) {
       try {
         await this.db.execAsync(`ALTER TABLE notes ADD COLUMN ${col} TEXT;`);
@@ -546,12 +538,7 @@ class VerseAnnotationDatabaseService {
     // @ai-end
   }
 
-  /**
-   * Sprint 18 — patch QF sync ids on a local note row. Used by
-   * `services/userState/notes.ts` to record server-side ids after a
-   * create/publish round-trip. Pass `undefined` to leave a field
-   * unchanged; pass `null` to explicitly clear it (e.g. after unpublish).
-   */
+  /** Patch the QF sync ids of a note: `undefined` leaves a field, `null` clears it. */
   async patchNoteQfIds(
     noteId: string,
     ids: {qfNoteId?: string | null; qfPostId?: string | null},
@@ -569,9 +556,7 @@ class VerseAnnotationDatabaseService {
     }
     if (sets.length === 0) return;
     args.push(noteId);
-    // Through the write queue like every other write (upstream #329): a
-    // statement run while applyAnnotationChanges holds its transaction open
-    // would join, and could roll back with, that transaction.
+    // Use the write queue (upstream #329): a bare write can join and roll back with an open transaction.
     await this.serializeWrite(() =>
       db.runAsync(`UPDATE notes SET ${sets.join(', ')} WHERE id = ?`, args),
     );
@@ -585,11 +570,7 @@ class VerseAnnotationDatabaseService {
     return row ? mapNoteRow(row) : null;
   }
 
-  /**
-   * Sprint 18 — lookup by QF Notes API id. Used by the first-sign-in
-   * restore path (`services/userState/notesRestore.ts`) to dedupe QF
-   * notes against any local row that's already been synced.
-   */
+  /** Find a note by its QF Notes id (the restore dedupe uses it). */
   async getNoteByQfNoteId(qfNoteId: string): Promise<VerseNote | null> {
     const db = await this.ensureReady();
     const row = (await db.getFirstAsync(

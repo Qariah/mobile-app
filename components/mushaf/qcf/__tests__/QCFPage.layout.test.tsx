@@ -6,8 +6,8 @@
 //
 // These tests RENDER QCFPage and assert the geometry it actually produces:
 // the root page View and the Skia Canvas must follow the metrics passed in,
-// not the import-time portrait snapshot. Reverting the seven prop lines in
-// `main.tsx` cannot make these pass, because they assert on the props.
+// not the import-time portrait snapshot. Upstream `699dccb5` fixed it with a
+// required `metrics` prop; these tests keep guarding the result.
 //
 // The Skia / gesture / service tree is stubbed the same way
 // components/__tests__/BottomSheetModal.test.tsx stubs gorhom: thin fakes,
@@ -112,12 +112,9 @@ jest.mock('@/services/mushaf/QCFFontLoader', () => ({
 }));
 jest.mock('@/services/mushaf/QCFLayoutCacheService', () => ({
   qcfLayoutCacheService: {
-    // Orientation-independent calibration width — the whole point of the
-    // cache change. 900 matches the stubbed getLongestLine().
-    getPageLayout: () => ({
-      widestRef: 900,
-      lineWidthsAtRef: [{lineIndex: 0, width: 900}],
-    }),
+    // A cache miss: the page measures itself with the stubbed
+    // getLongestLine() (900) and sizes the font from the live content width.
+    getPageLayout: () => undefined,
     setPageLayout: jest.fn(),
   },
 }));
@@ -180,14 +177,12 @@ import {
   canvasBottomOverflow,
   getMushafLayout,
 } from '../../constants';
-import {qcfFontSizeForContentWidth} from '@/services/mushaf/qcfFontSizing';
 
 // Pass C (Sprint 47): upstream's canvas reserves room below the content box
-// for V4 tajweed glyphs (#350): `canvasBottomOverflow(fontSize)`. 900 is the
-// mocked calibration width (`widestRef`).
+// for V4 tajweed glyphs (#350): `canvasBottomOverflow(fontSize)`. The font
+// fills 97% of the content width; 900 is the stubbed line width at size 100.
 const canvasHeightFor = (contentWidth: number, contentHeight: number) =>
-  contentHeight +
-  canvasBottomOverflow(qcfFontSizeForContentWidth(900, contentWidth));
+  contentHeight + canvasBottomOverflow(((contentWidth * 0.97) / 900) * 100);
 
 // Pixel 3 landscape — the orientation the defect showed up in.
 const LANDSCAPE = getMushafLayout({
@@ -199,6 +194,7 @@ const LANDSCAPE = getMushafLayout({
 function renderPage(props: Record<string, unknown> = {}) {
   return render(
     <QCFPage
+      metrics={LANDSCAPE}
       pageNumber={100}
       textColor="#000000"
       dividerColor="#888888"
@@ -214,16 +210,8 @@ function flatten(style: unknown): Record<string, number> {
 }
 
 describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
-  it('sizes the page View from the landscape props, not the portrait constants', () => {
-    const {toJSON} = renderPage({
-      screenWidth: LANDSCAPE.pageWidth,
-      screenHeight: LANDSCAPE.screenHeight,
-      contentWidth: LANDSCAPE.contentWidth,
-      contentHeight: LANDSCAPE.contentHeight,
-      baseLineHeight: LANDSCAPE.baseLineHeight,
-      paddingHorizontal: LANDSCAPE.paddingHorizontal,
-      paddingTop: LANDSCAPE.paddingTop,
-    });
+  it('sizes the page View from the landscape metrics, not the portrait constants', () => {
+    const {toJSON} = renderPage();
 
     const root = toJSON() as any;
     const style = flatten(root.props.style);
@@ -234,16 +222,8 @@ describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
     expect(style.height).not.toBeCloseTo(DEFAULT_SCREEN_HEIGHT, 5);
   });
 
-  it('sizes the Skia Canvas from the landscape props', () => {
-    const {getByTestId} = renderPage({
-      screenWidth: LANDSCAPE.pageWidth,
-      screenHeight: LANDSCAPE.screenHeight,
-      contentWidth: LANDSCAPE.contentWidth,
-      contentHeight: LANDSCAPE.contentHeight,
-      baseLineHeight: LANDSCAPE.baseLineHeight,
-      paddingHorizontal: LANDSCAPE.paddingHorizontal,
-      paddingTop: LANDSCAPE.paddingTop,
-    });
+  it('sizes the Skia Canvas from the landscape metrics', () => {
+    const {getByTestId} = renderPage();
 
     const style = flatten(getByTestId('qcf-canvas').props.style);
     expect(style.width).toBeCloseTo(LANDSCAPE.contentWidth, 5);
@@ -260,24 +240,6 @@ describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
       5,
     );
     expect(style.marginTop).not.toBeCloseTo(DEFAULT_PAGE_PADDING_TOP, 5);
-  });
-
-  it('still renders at the portrait constants when no metrics are passed', () => {
-    // Guards the fallback contract: any caller that passes nothing keeps the
-    // pre-#364 behaviour byte-for-byte.
-    const {toJSON, getByTestId} = renderPage();
-    const root = toJSON() as any;
-    expect(flatten(root.props.style).width).toBeCloseTo(
-      DEFAULT_SCREEN_WIDTH,
-      5,
-    );
-    const canvas = flatten(getByTestId('qcf-canvas').props.style);
-    expect(canvas.width).toBeCloseTo(DEFAULT_CONTENT_WIDTH, 5);
-    expect(canvas.height).toBeCloseTo(
-      canvasHeightFor(DEFAULT_CONTENT_WIDTH, DEFAULT_CONTENT_HEIGHT),
-      5,
-    );
-    expect(canvas.marginTop).toBeCloseTo(DEFAULT_PAGE_PADDING_TOP, 5);
   });
 });
 

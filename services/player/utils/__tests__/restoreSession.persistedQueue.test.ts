@@ -58,11 +58,6 @@ jest.mock('@/services/analytics/AnalyticsService', () => ({
   },
 }));
 
-// recentlyPlayedStore mirrors explicit plays to QF when signed in.
-jest.mock('@/services/userState', () => ({
-  enqueueReadingSessionSync: jest.fn(),
-}));
-
 // Two reciters with one rewayah each, surahs 1-114.
 type FakeRewayat = {id: string; server: string; surah_list: number[]};
 type FakeReciter = {id: string; name: string; rewayat: FakeRewayat[]};
@@ -113,6 +108,13 @@ jest.mock('@/services/downloadService', () => ({
   removeDownload: jest.fn(),
 }));
 
+// @ai TECH_DEBT #276: the synchronous file check when a queued track loads.
+// A file exists unless a test puts it in mockMissingFiles.
+const mockMissingFiles = new Set<string>();
+jest.mock('expo-file-system', () => ({
+  File: jest.fn((uri: string) => ({exists: !mockMissingFiles.has(uri)})),
+}));
+
 jest.mock('@/utils/artworkUtils', () => ({
   getReciterArtwork: (r: {id: string}) => `artwork:${r.id}`,
 }));
@@ -137,7 +139,7 @@ jest.mock('@/utils/track', () => ({
 }));
 
 import * as FileSystem from 'expo-file-system/legacy';
-import {restoreSession} from '../restoreSession';
+import {pendingRestoreLoad, restoreSession} from '../restoreSession';
 import {expoAudioService} from '@/services/audio/ExpoAudioService';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
@@ -148,6 +150,7 @@ import {
 import {RECITERS, type Reciter} from '@/data/reciterData';
 import {SURAHS} from '@/data/surahData';
 import type {Track} from '@/types/audio';
+import {isFromPlaylist, markPlaylistTracks} from '../queueSource'; // @ai Qariah (PLY-13)
 
 /** How the next replace() of the fake player ends. */
 type LoadFailure = 'throw' | 'error-status' | 'silent';
@@ -216,10 +219,37 @@ class FakeAudioPlayer {
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
+/**
+ * Poll until `condition` is true, with real timers. A test waits for the state
+ * it needs, not for a fixed time (TECH_DEBT #358). Fails after `timeoutMs`.
+ */
+async function waitUntil(
+  condition: () => boolean,
+  what: string,
+  timeoutMs = 4000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+    await sleep(2);
+  }
+}
+
 function inject(player: FakeAudioPlayer): void {
   expoAudioService.setPlayer(
     player as unknown as Parameters<typeof expoAudioService.setPlayer>[0],
   );
+}
+
+/**
+ * Block the event loop for `ms`, `afterMs` from now: the timers that fall due
+ * meanwhile run late and together, as on a busy CI runner. Atomics.wait does
+ * not depend on the (fake) clock.
+ */
+function stallEventLoop(afterMs: number, ms: number): void {
+  setTimeout(() => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  }, afterMs);
 }
 
 function catalogReciter(id: string): Reciter {
@@ -318,21 +348,31 @@ async function restart(): Promise<void> {
  */
 async function restartAndRestore(
   failures: LoadFailure[] = [],
+  stall?: {afterMs: number; ms: number},
 ): Promise<FakeAudioPlayer> {
   await restart();
   await restoreSession();
   const next = new FakeAudioPlayer();
   next.failures = failures;
   inject(next);
-  await sleep(150);
+  if (stall) stallEventLoop(stall.afterMs, stall.ms);
+  // TECH_DEBT #358: wait for the restore load to settle, not for a fixed time.
+  // On a busy runner the 100 ms restore timer and a 150 ms sleep both ran
+  // late, in that order, and the sleep ended before the load and the seek.
+  await pendingRestoreLoad();
   return next;
 }
 
 /** The restore load runs before setPlayer and waits for the player. */
 async function restartWithoutPlayer(): Promise<void> {
   await restart();
+  const generation = expoAudioService.getLoadGeneration();
   await restoreSession();
-  await sleep(150);
+  // The restore timer has fired when its load has started: it waits for the player.
+  await waitUntil(
+    () => expoAudioService.getLoadGeneration() > generation,
+    'the restore load to start',
+  );
 }
 
 /** The track that the mini player shows (FloatingPlayer / MiniPlayer). */
@@ -388,6 +428,7 @@ beforeEach(async () => {
     .mocked(FileSystem.getInfoAsync)
     .mockResolvedValue({exists: true, isDirectory: false} as never);
   mockRecitations.splice(0);
+  mockMissingFiles.clear(); // @ai TECH_DEBT #276
   expoAudioService.reset();
   usePlayerStore.getState().reset();
   useRecentlyPlayedStore.getState().reset();
@@ -417,6 +458,16 @@ describe('restoreSession — TECH_DEBT #271 (the device repro)', () => {
     await expectTapOnPlayPlaysShownTrack(p, 18);
     // The restore keeps the user's session: the playlist queue and its order.
     expect(queueIds()).toEqual(['reciter-b-11', 'reciter-a-2']);
+  });
+
+  it('P2: the event loop stalls while the restore load runs (a busy runner) -> the wait still ends after the load and the seek (TECH_DEBT #358)', async () => {
+    await playlistSessionPaused();
+
+    // The stall falls due after the 100 ms restore timer is set and before it
+    // fires. The restore timer and any fixed sleep then run late, together.
+    const p = await restartAndRestore([], {afterMs: 50, ms: 130});
+
+    await expectTapOnPlayPlaysShownTrack(p, 18);
   });
 });
 
@@ -541,6 +592,22 @@ describe('restoreSession — the saved queue is the session (each entry point)',
 
     expect(queueIds()).toEqual(['reciter-b-11', 'reciter-a-7']);
     await expectTapOnPlayPlaysShownTrack(p, 18);
+  });
+
+  // @ai Qariah (PLY-13): the playlist mark stops the next-surah step after a restart too.
+  it('E6b: a one-surah playlist play -> after a restart, the restored track keeps the playlist mark', async () => {
+    startFirstSession();
+    await usePlayerStore
+      .getState()
+      .updateQueue(markPlaylistTracks([catalogTrack('reciter-a', 7)]), 0);
+    progressTick(18);
+    await usePlayerStore.getState().pause();
+
+    await restartAndRestore();
+
+    const {tracks} = usePlayerStore.getState().queue;
+    expect(tracks.map(t => t.id)).toEqual(['reciter-a-7']);
+    expect(isFromPlaylist(tracks[0])).toBe(true);
   });
 
   it('E7: the user cleared the recent tracks (RecitersView) after a play -> the shown track plays', async () => {
@@ -801,7 +868,7 @@ describe('restoreSession — local files (the real URL builder and download stor
     useDownloadStore.setState({downloads: saved}); // the hydration lands
     const p = new FakeAudioPlayer();
     inject(p);
-    await sleep(150);
+    await pendingRestoreLoad();
 
     expect(p.sources).toEqual(['file:///container-new/Documents/a-18.mp3']);
   });
@@ -840,6 +907,109 @@ describe('restoreSession — local files (the real URL builder and download stor
     // The file check runs for the current track only.
     expect(FileSystem.getInfoAsync).toHaveBeenCalledTimes(1);
   });
+
+  // @ai-start TECH_DEBT #276: the other restored tracks get the same file check and URL rebuild as
+  // the current track, when they load.
+  const STALE_HOST = 'https://retired.example.test/rw-a/019.mp3';
+
+  /** Play [18 (stream), 19] in the first session, then the user deletes the download of 19. */
+  async function queueThenDeleteDownload(): Promise<void> {
+    useDownloadStore.setState({
+      downloads: [download('reciter-a', 19, 'rw-a', 'a-19.mp3')],
+    });
+    startFirstSession();
+    await usePlayerStore
+      .getState()
+      .updateQueue(
+        [
+          catalogTrack('reciter-a', 18),
+          downloadedTrack(19, 'a-19.mp3', 'rw-a'),
+        ],
+        0,
+      );
+    await usePlayerStore.getState().pause();
+    // The delete removes the record and the file.
+    useDownloadStore.setState({downloads: []});
+    mockMissingFiles.add('file:///container-new/Documents/a-19.mp3');
+  }
+
+  it('D1: a download deleted after the play -> Next streams that surah, and the queue shows the stream URL', async () => {
+    await queueThenDeleteDownload();
+
+    const p = await restartAndRestore();
+    await usePlayerStore.getState().skipToNext();
+
+    expect(p.sources).toEqual([cdnUrl('rw-a', 18), cdnUrl('rw-a', 19)]);
+    expect(shownTrack()?.url).toBe(cdnUrl('rw-a', 19));
+    expect(usePlayerStore.getState().playback.state).toBe('playing');
+  });
+
+  it('D2: a stream host that the catalog retired -> Next loads the URL that the catalog gives now', async () => {
+    startFirstSession();
+    await usePlayerStore
+      .getState()
+      .updateQueue(
+        [
+          catalogTrack('reciter-a', 18),
+          catalogTrack('reciter-a', 19, STALE_HOST),
+        ],
+        0,
+      );
+    await usePlayerStore.getState().pause();
+
+    const p = await restartAndRestore();
+    await usePlayerStore.getState().skipToNext();
+
+    expect(p.sources).toEqual([cdnUrl('rw-a', 18), cdnUrl('rw-a', 19)]);
+    expect(shownTrack()?.url).toBe(cdnUrl('rw-a', 19));
+  });
+
+  it('D3: after Next loaded a new URL, Pause then Play resumes the same source (no second load)', async () => {
+    await queueThenDeleteDownload();
+    const p = await restartAndRestore();
+    await usePlayerStore.getState().skipToNext();
+    await usePlayerStore.getState().pause();
+
+    await usePlayerStore.getState().play();
+
+    expect(p.replace).toHaveBeenCalledTimes(2);
+    expect(usePlayerStore.getState().playback.state).toBe('playing');
+  });
+
+  it('D4: removing the current track makes the deleted download current -> it streams, and the queue keeps the stream URL', async () => {
+    await queueThenDeleteDownload();
+    const p = await restartAndRestore();
+
+    await usePlayerStore.getState().removeFromQueue([0]);
+
+    expect(p.sources).toEqual([cdnUrl('rw-a', 18), cdnUrl('rw-a', 19)]);
+    expect(usePlayerStore.getState().queue.tracks.map(t => t.url)).toEqual([
+      cdnUrl('rw-a', 19),
+    ]);
+  });
+
+  it('D5: a download whose file still exists keeps its local file at Next', async () => {
+    useDownloadStore.setState({
+      downloads: [download('reciter-a', 19, '', 'a-19.mp3')],
+    });
+    startFirstSession();
+    await usePlayerStore
+      .getState()
+      .updateQueue(
+        [catalogTrack('reciter-a', 18), downloadedTrack(19, 'a-19.mp3', '')],
+        0,
+      );
+    await usePlayerStore.getState().pause();
+
+    const p = await restartAndRestore();
+    await usePlayerStore.getState().skipToNext();
+
+    expect(p.sources).toEqual([
+      cdnUrl('rw-a', 18),
+      'file:///container-new/Documents/a-19.mp3',
+    ]);
+  });
+  // @ai-end
 });
 
 describe('playerStore.play() — the shown track has no source (TECH_DEBT #271)', () => {

@@ -4,6 +4,13 @@ import type {Reciter} from '@/data/reciterData';
 import type {RecentlyPlayedTrack} from '@/services/player/store/recentlyPlayedStore';
 import {SURAHS} from '@/data/surahData';
 import {getJuzForPage, getSurahForPage} from '@/utils/quranPages';
+// @ai Qariah (TECH_DEBT #357): widget names follow the app language, not the device language.
+import {
+  currentLanguage,
+  type AppLanguage,
+  type LanguagePreference,
+} from '@/i18n/language';
+import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {
   WIDGET_SNAPSHOT_VERSION,
   WidgetLastRead,
@@ -40,6 +47,13 @@ export interface SnapshotInput {
   artworkFileFor: (reciterId: string) => string | null;
   surahArtworkFileFor: (surahId: number) => string | null;
   surahOfTheDayId: number;
+  /**
+   * The app language that the widgets must use (`language` in the snapshot).
+   * Absent when the app follows the device language: the widgets then follow
+   * the device too, also after a device language change. The names are in
+   * this session's language either way, as the app shows them.
+   */
+  language?: AppLanguage;
 }
 
 export function artworkFileName(reciterId: string): string {
@@ -71,8 +85,36 @@ function trackArtwork(
   return card ?? (reciterId ? input.artworkFileFor(reciterId) : null);
 }
 
-function surahName(surahId: number): string {
-  return SURAHS[surahId - 1]?.name ?? '';
+function surahName(surahId: number, language: AppLanguage): string {
+  const surah = SURAHS[surahId - 1];
+  return surah ? getSurahDisplayName(surah, language) : '';
+}
+
+// Uploads keep the name the person gave them.
+function reciterName(
+  reciterId: string,
+  name: string,
+  isUserUpload: boolean,
+  language: AppLanguage,
+): string {
+  return isUserUpload
+    ? name
+    : getReciterDisplayName({id: reciterId, name}, language);
+}
+
+function languageOf(input: SnapshotInput): AppLanguage {
+  return input.language ?? currentLanguage;
+}
+
+/**
+ * The language that the snapshot gives the widgets: none when the person
+ * keeps "System default", so the widgets follow the device language.
+ */
+export function widgetLanguageFor(
+  preference: LanguagePreference,
+  language: AppLanguage,
+): AppLanguage | undefined {
+  return preference === 'system' ? undefined : language;
 }
 
 function finiteOr(value: number, fallback: number): number {
@@ -82,12 +124,19 @@ function finiteOr(value: number, fallback: number): number {
 function fromQueueTrack(t: Track, input: SnapshotInput): WidgetTrack {
   const parsed = t.surahId ? parseInt(t.surahId, 10) : 0;
   const surahId = Number.isNaN(parsed) ? 0 : parsed;
+  const language = languageOf(input);
   return {
     surahId,
     surahName:
-      (surahId > 0 && !t.isUserUpload ? surahName(surahId) : '') || t.title,
+      (surahId > 0 && !t.isUserUpload ? surahName(surahId, language) : '') ||
+      t.title,
     reciterId: t.reciterId,
-    reciterName: t.reciterName,
+    reciterName: reciterName(
+      t.reciterId,
+      t.reciterName,
+      t.isUserUpload ?? false,
+      language,
+    ),
     rewayatId: t.rewayatId ?? null,
     artworkFile: trackArtwork(
       surahId,
@@ -100,11 +149,16 @@ function fromQueueTrack(t: Track, input: SnapshotInput): WidgetTrack {
 }
 
 function fromRecent(r: RecentlyPlayedTrack, input: SnapshotInput): WidgetTrack {
+  const language = languageOf(input);
   return {
     surahId: r.surah.id,
-    surahName: r.surah.name,
+    surahName: r.isUserUpload
+      ? r.surah.name
+      : getSurahDisplayName(r.surah, language),
     reciterId: r.reciter.id,
-    reciterName: r.reciter.name,
+    reciterName: r.isUserUpload
+      ? r.reciter.name
+      : getReciterDisplayName(r.reciter, language),
     rewayatId: r.rewayatId || null,
     artworkFile: trackArtwork(
       r.surah.id,
@@ -121,7 +175,11 @@ function toWidgetReciter(
   input: SnapshotInput,
 ): WidgetReciter | null {
   if (!r || r.id === '') return null;
-  return {id: r.id, name: r.name, artworkFile: input.artworkFileFor(r.id)};
+  return {
+    id: r.id,
+    name: getReciterDisplayName(r, languageOf(input)),
+    artworkFile: input.artworkFileFor(r.id),
+  };
 }
 
 function buildLastRead(input: SnapshotInput): WidgetLastRead | null {
@@ -136,7 +194,7 @@ function buildLastRead(input: SnapshotInput): WidgetLastRead | null {
   return {
     page: input.lastReadPage,
     surahId: surah.id,
-    surahName: surah.name,
+    surahName: getSurahDisplayName(surah, languageOf(input)),
     juz: getJuzForPage(input.lastReadPage),
     openingText: input.openingTextForPage(input.lastReadPage),
   };
@@ -176,7 +234,7 @@ export function buildSnapshot(input: SnapshotInput): WidgetSnapshot {
     upNext = [
       {
         surahId: input.surahOfTheDayId,
-        surahName: surahName(input.surahOfTheDayId),
+        surahName: surahName(input.surahOfTheDayId, languageOf(input)),
         reciterId: defaultReciter.id,
         reciterName: defaultReciter.name,
         rewayatId: null,
@@ -210,5 +268,6 @@ export function buildSnapshot(input: SnapshotInput): WidgetSnapshot {
     reciterRecents: buildReciterRecents(allRecent),
     lastRead: buildLastRead(input),
     tasbeeh: input.tasbeeh,
+    ...(input.language === undefined ? {} : {language: input.language}),
   };
 }

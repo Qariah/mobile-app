@@ -1,7 +1,7 @@
 /**
  * Expo config plugin: strip the QF OAuth callback scheme (`com.qariah.app`)
  * from the iOS CFBundleURLTypes that Expo auto-generates from the top-level
- * `scheme` array in app.config.ts.
+ * `scheme` array in app.config.js.
  *
  * WHY (the public-beta sign-in breakage, 2026-06):
  * QF's OAuth client is registered with the redirect URI

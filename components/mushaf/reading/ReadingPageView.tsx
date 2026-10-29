@@ -73,13 +73,7 @@ interface ReadingPageViewProps {
   bgColor: string;
   isBookLayout: boolean;
   onTap?: () => void;
-  /**
-   * @ai TECH_DEBT #265 — the live layout of the reader (`useMushafLayout` in
-   * main.tsx). The page is one pager item: `screenWidth` wide (the width that
-   * the list's `getItemLayout` uses) and as high as the visible reader
-   * (`scrollContainerHeight` in phone landscape, else `screenHeight`).
-   * Without it, the page keeps the size of the window at module load.
-   */
+  /** @ai TECH_DEBT #265 — the live reader layout; without it the page keeps the module-load window size. */
   metrics?: Pick<
     MushafLayoutMetrics,
     | 'screenWidth'
@@ -219,20 +213,12 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
     ? bookContentPadding
     : PAGE_PADDING_HORIZONTAL + 8;
 
-  // @ai-start TECH_DEBT #265 — the page size comes from the live reader
-  // layout. The module-load SCREEN_WIDTH / SCREEN_HEIGHT are the portrait
-  // window, so in landscape the pager placed items one landscape width apart
-  // while each page stayed portrait-sized: the screen showed an empty grey
-  // page. The fallback (no `metrics`) keeps the old size.
+  // @ai-start TECH_DEBT #265 — the page size comes from the live reader layout, not the module-load window.
   const pageWidth = metrics?.screenWidth ?? SCREEN_WIDTH;
   const pageHeight = metrics
     ? (metrics.scrollContainerHeight ?? metrics.screenHeight)
     : SCREEN_HEIGHT;
-  // Phone landscape (`scrollContainerHeight` is set): on a notched or Dynamic
-  // Island iPhone the safe span is `[pageOffsetX, pageOffsetX + pageWidth]`
-  // (see `getMushafLayout`). The page stays one window wide, because the
-  // pager's `getItemLayout` needs that width; only the text moves out of the
-  // cutouts. Elsewhere both insets are 0.
+  // Phone landscape: the text moves out of the cutouts; the page stays one window wide for `getItemLayout`.
   const cutoutLeft = metrics?.scrollContainerHeight ? metrics.pageOffsetX : 0;
   const cutoutRight = metrics?.scrollContainerHeight
     ? Math.max(0, metrics.screenWidth - metrics.pageOffsetX - metrics.pageWidth)
@@ -475,8 +461,7 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
               {scrollContent}
             </ScrollView>
           </View>
-          {/* @ai TECH_DEBT #265 — the edge strips follow the card out of the
-           * landscape cutouts (a no-op when both insets are 0). */}
+          {/* @ai TECH_DEBT #265 — the edge strips follow the card out of the cutouts. */}
           <View
             pointerEvents="none"
             style={[

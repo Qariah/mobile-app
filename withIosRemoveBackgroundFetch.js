@@ -3,7 +3,7 @@
  *
  * WHY (Sprint 48, S48.6):
  * `expo-task-manager` is a "legacy" Expo package, so `expo prebuild` applies
- * its config plugin on its own (even when `app.config.ts` does not list it),
+ * its config plugin on its own (even when `app.config.js` does not list it),
  * and that plugin adds `fetch` to UIBackgroundModes. Qariah uses
  * `expo-background-task` (the `processing` mode and BGTaskScheduler), not the
  * old background fetch, so `fetch` would declare a background mode that no
@@ -12,7 +12,7 @@
  *
  * ORDER: Expo runs the Info.plist mods in the REVERSE order of registration.
  * The auto plugin of `expo-task-manager` is registered after the plugins of
- * `app.config.ts`, so its mod runs first and this mod runs after it.
+ * `app.config.js`, so its mod runs first and this mod runs after it.
  *
  * The committed `ios/Qariah/Info.plist` is also edited directly (the build
  * uses the committed file when no prebuild runs); this plugin keeps a

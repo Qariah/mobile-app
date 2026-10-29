@@ -59,12 +59,7 @@ export default function HomeLayout() {
         <Stack.Screen
           name="browse-all-surahs"
           options={{
-            // Sprint 14 — `BrowseSurahs` renders its own custom Header
-            // (and on iOS-glass also drives the native header title via
-            // `navigation.setOptions`). Without this entry the native
-            // header inherited the route filename ("browse-all-surahs")
-            // AND ran alongside the custom Header — visible as the
-            // duplicate title + double back button bug.
+            // Without this entry the native header shows the route filename beside BrowseSurahs' own header.
             title: t('browse.allSurahs'),
             headerShown: USE_GLASS,
           }}

@@ -2,11 +2,10 @@
 #
 # eas-cloud.sh — run eas-cli from a Mac-less cloud environment.
 #
-# WHY THIS EXISTS: eas-cli's bundled config loader (this version) cannot read a
-# TypeScript app.config.ts. The same workaround is proven in CI
-# (.github/workflows/eas-update-preview.yml): compile app.config.ts → app.config.js
-# with tsc, move the .ts aside so eas-cli falls back to the .js, run the command,
-# then restore. This wrapper does that around any eas subcommand.
+# WHY THIS EXISTS: it blocks the owner-only eas operations (submit, the
+# production profile, --platform all) for a contributor. It used to compile a
+# TypeScript app.config.ts for eas-cli; app.config.js is plain CommonJS again
+# (divergence batch C7, NAT-S1), so eas-cli reads it directly.
 #
 # USAGE:
 #   # JS-only change → publish an OTA bundle to your branch (instant, no native build):
@@ -18,7 +17,7 @@
 #
 # REQUIRES (set as environment secrets in your Claude Cloud env):
 #   EXPO_TOKEN                  scoped robot token (build + update on this project)
-#   EXPO_PUBLIC_EAS_PROJECT_ID  9da1070a-0852-40df-ac56-6f97a1dce359  (also gates OTA on in app.config.ts)
+#   EXPO_PUBLIC_EAS_PROJECT_ID  9da1070a-0852-40df-ac56-6f97a1dce359  (also gates OTA on in app.config.js)
 #
 # DO NOT use this to run: `submit`, `--profile production`, `--platform ios`, or
 # `--platform all` (owner-only, or Web-broken). Android is the contributor target;
@@ -51,24 +50,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-restore() { [ -f app.config.ts.bak ] && mv -f app.config.ts.bak app.config.ts; rm -f app.config.js; }
-trap restore EXIT
-
-echo "eas-cloud: compiling app.config.ts → app.config.js for eas-cli…"
-npx tsc app.config.ts \
-  --module CommonJS \
-  --moduleResolution Node \
-  --target ES2020 \
-  --esModuleInterop \
-  --skipLibCheck \
-  --resolveJsonModule \
-  --ignoreConfig \
-  || true   # tsc may emit type errors; the .js emit is still produced.
-# --ignoreConfig: TS 6 hard-errors (TS5112, no emit) when files are passed on
-# the CLI while tsconfig.json exists; without it app.config.js never appears.
-test -f app.config.js || { echo "eas-cloud: app.config.js was not produced — aborting." >&2; exit 1; }
-mv app.config.ts app.config.ts.bak
 
 echo "eas-cloud: running → eas $*"
 eas "$@"

@@ -40,9 +40,7 @@ function RewayatCard({
     [theme, width, height],
   );
 
-  // Sprint 21 round-4 — per-tile mesh palette matching the Mushaf
-  // surah-tile treatment. Seed on the rewaya's display name so each
-  // rewaya gets a stable, distinct color across reloads.
+  // A stable mesh palette for each rewaya, seeded on its display name.
   const meshPalette = useMemo(
     () => paletteForKey(rewayat.displayName),
     [rewayat.displayName],
@@ -57,9 +55,7 @@ function RewayatCard({
     },
   };
 
-  // Sprint 14 — large Arabic calligraphic glyph (ScheherazadeNew) replaces
-  // the previous grey-square card treatment. Falls back to displayName
-  // (Latin transliteration) when no Arabic mapping exists.
+  // The Arabic glyph; without an Arabic mapping, show the Latin display name.
   const arabicGlyph =
     getRewayatArabic(rewayat.student) ?? getRewayatArabic(rewayat.displayName);
 
@@ -181,12 +177,8 @@ function createStyles(
       fontFamily: 'ScheherazadeNew-Bold',
       color: theme.colors.text,
       textAlign: 'center',
-      // Arabic shaping reads right-to-left; align center so single-word
-      // glyphs sit visually centered in the card.
       writingDirection: 'rtl',
-      // Sprint 14 round 3 fix — give the glyph horizontal breathing room
-      // and let it auto-shrink (adjustsFontSizeToFit on the Text element)
-      // so longer transliterations like السوسي / الدوري don't clip.
+      // Room to shrink (adjustsFontSizeToFit) so long names like السوسي do not clip.
       paddingHorizontal: moderateScale(4),
       width: '100%',
     },

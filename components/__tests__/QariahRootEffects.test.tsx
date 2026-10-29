@@ -10,6 +10,7 @@ import {render} from '@testing-library/react-native';
 import {QariahRootEffects} from '../QariahRootEffects';
 
 const mockLog: string[] = [];
+const mockSentryOptions: Record<string, unknown> = {};
 
 jest.mock('posthog-react-native', () => ({
   usePostHog: () => ({register: jest.fn(), unregister: jest.fn()}),
@@ -18,9 +19,14 @@ jest.mock('posthog-react-native', () => ({
 }));
 jest.mock('expo-router', () => ({usePathname: () => '/'}));
 jest.mock('@sentry/react-native', () => ({
-  captureMessage: (name: string) => mockLog.push(`sentry:${name}`),
+  captureMessage: (name: string, options?: unknown) => {
+    mockSentryOptions[name] = options;
+    mockLog.push(`sentry:${name}`);
+  },
 }));
-jest.mock('@/config/featureFlags', () => ({isFeatureEnabled: () => true}));
+jest.mock('@/config/qariahFeatureFlags', () => ({
+  isQariahFeatureEnabled: () => true,
+}));
 jest.mock('@/modules/qariah-boot-splash', () => ({
   getBootSplashMode: () => 'unavailable',
 }));
@@ -139,5 +145,22 @@ describe('QariahRootEffects', () => {
       'sentry:playback-killed-in-background',
       'playback_killed_in_background',
     ]);
+  });
+
+  // #603: with no fingerprint, Sentry groups by the call site. In a build with
+  // no source map both reports are the same frame, so they shared one issue
+  // (QARIAHV2-1V) and the playback kills read as boot failures.
+  it('groups each next-launch report by its message in Sentry', () => {
+    render(
+      <QariahRootEffects>
+        <FakeAnalyticsConnector />
+      </QariahRootEffects>,
+    );
+    expect(mockSentryOptions['boot-not-completed']).toEqual(
+      expect.objectContaining({fingerprint: ['boot-not-completed']}),
+    );
+    expect(mockSentryOptions['playback-killed-in-background']).toEqual(
+      expect.objectContaining({fingerprint: ['playback-killed-in-background']}),
+    );
   });
 });

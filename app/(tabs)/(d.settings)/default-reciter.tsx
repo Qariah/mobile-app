@@ -1,5 +1,5 @@
 import React, {useState, useCallback, useMemo} from 'react';
-import {View, Text, FlatList, type ListRenderItemInfo} from 'react-native';
+import {View, Text, FlatList} from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {
   ScaledSheet,
@@ -48,8 +48,7 @@ export default function DefaultReciterScreen() {
     () => RECITERS.filter(hasCompleteQuran),
     [hasCompleteQuran],
   );
-  // Qariah: show the full list of complete-Quran reciters by default (sorted
-  // by name); rank by the search query once the user types.
+  // Qariah: all complete-Quran reciters by name; rank by the query once the user types.
   const visibleReciters = useMemo(() => {
     if (searchQuery.trim()) {
       return [...rankReciters(searchQuery, completeReciters)];
@@ -71,7 +70,7 @@ export default function DefaultReciterScreen() {
   );
 
   const renderItem = useCallback(
-    ({item}: ListRenderItemInfo<Reciter>) => (
+    ({item}: {item: Reciter}) => (
       <ReciterItem
         item={item}
         onPress={() => handleReciterSelect(item)}

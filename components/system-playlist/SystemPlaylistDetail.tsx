@@ -15,7 +15,6 @@ import {
   Alert,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  type ListRenderItemInfo,
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
 import {USE_GLASS} from '@/hooks/useGlassProps';
@@ -39,10 +38,17 @@ import Color from 'color';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {getFeaturedReciters} from '@/data/featuredReciters';
 import {SheetManager} from 'react-native-actions-sheet';
-import {useNavigation} from 'expo-router';
+import {useNavigation, useRouter} from 'expo-router';
 import {useHeaderHeight} from 'expo-router/react-navigation';
 import {CollectionStickyHeader} from '@/components/collection/CollectionStickyHeader';
 // @ai-start
+import {Feather} from '@expo/vector-icons';
+import branding from '@/config/branding';
+import {flipX} from '@/utils/rtl';
+import {
+  opensReciterList,
+  surahReciterListRoute,
+} from '@/utils/systemPlaylistSurahPress';
 import {useTranslation} from 'react-i18next';
 import i18n from '@/i18n';
 import {
@@ -165,6 +171,12 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const navigation = useNavigation();
   const iosHeaderHeight = isGlass ? useHeaderHeight() : 0;
+  // @ai branding.systemPlaylistSurahPress: a surah tap can open its reciter list (#555).
+  const router = useRouter();
+  const surahOpensReciterList = opensReciterList(
+    playlist.type,
+    branding.systemPlaylistSurahPress,
+  );
 
   const scrollY = useRef(new RNAnimated.Value(0)).current;
 
@@ -517,6 +529,12 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
       reciter?: Reciter,
       surah?: Surah,
     ) => {
+      // @ai-start
+      if (surahOpensReciterList) {
+        router.push(surahReciterListRoute(track.surahId));
+        return;
+      }
+      // @ai-end
       try {
         let result: {
           tracks: Awaited<ReturnType<typeof createTrack>>[];
@@ -564,6 +582,8 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
       play,
       startNewChain,
       t,
+      surahOpensReciterList,
+      router,
     ],
   );
 
@@ -588,7 +608,7 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
   );
 
   const renderItem = useCallback(
-    ({item, index}: ListRenderItemInfo<PlaylistDataItem>) => {
+    ({item, index}: {item: PlaylistDataItem; index: number}) => {
       const {track, reciter, surah} = item;
 
       if (!surah) {
@@ -600,6 +620,7 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
         return (
           <Pressable
             style={styles.surahOnlyItem}
+            accessibilityRole={surahOpensReciterList ? 'button' : undefined}
             onPress={() => handleSurahPress(track, index)}>
             <View style={styles.surahOnlyContent}>
               <Text style={styles.surahOnlyTitle}>
@@ -610,7 +631,7 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
                   {getSurahMeaning(surah)}
                 </Text>
               )}
-              {selectedReciter && (
+              {selectedReciter && !surahOpensReciterList && (
                 <Text style={styles.reciterInfo}>
                   {t('systemPlaylist.withReciter', {
                     reciter: getReciterDisplayName(selectedReciter),
@@ -618,11 +639,22 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
                 </Text>
               )}
             </View>
-            <View style={styles.playButton}>
-              <Text style={styles.playButtonText}>
-                {t('common:actions.play')}
-              </Text>
-            </View>
+            {/* @ai The tap opens a list, so the row shows a chevron, not "Play". */}
+            {surahOpensReciterList ? (
+              <Feather
+                name="chevron-right"
+                size={moderateScale(18)}
+                color={Color(theme.colors.text).alpha(0.3).toString()}
+                style={flipX}
+                accessible={false}
+              />
+            ) : (
+              <View style={styles.playButton}>
+                <Text style={styles.playButtonText}>
+                  {t('common:actions.play')}
+                </Text>
+              </View>
+            )}
           </Pressable>
         );
       }
@@ -652,6 +684,8 @@ const SystemPlaylistDetail: React.FC<SystemPlaylistDetailProps> = ({
       handleSurahPress,
       handleShowTrackOptions,
       t,
+      surahOpensReciterList,
+      theme,
     ],
   );
 

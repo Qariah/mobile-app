@@ -1,9 +1,10 @@
 // @ai Qariah (TECH_DEBT #243) — Qariah's changes to the startup service list.
 //
 // `services/AppInitializer.ts` keeps upstream's `registerService()` blocks
-// byte-identical. At the end of that file, ONE call applies this config to the
-// registered list, before anything can call `initialize()` (both run at module
-// load). The result is the same list, in the same order, that the old inline
+// byte-identical. `qariahBootStarted()` (services/qariahBoot.ts) applies this
+// config to the registered list as the first step of `bootApp()`, before
+// `appInitializer.initialize()`, the only caller of which is `bootApp()`.
+// The result is the same list, in the same order, that the old inline
 // `if (isFeatureEnabled(...))` guards produced: a removal keeps the relative
 // order of the other services, and a replaced initializer keeps its slot.
 // `services/__tests__/qariahInitConfig.test.ts` pins the list for the shipping
@@ -14,6 +15,7 @@
 
 import * as Font from 'expo-font';
 import {isFeatureEnabled} from '@/config/featureFlags';
+import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 
 /** The two AppInitializer methods that this config uses. */
 export interface QariahInitTarget {
@@ -34,8 +36,8 @@ export function qariahSkippedServices(): string[] {
   // Adhkar Service (Priority 4) and Adhkar Store Data (Priority 6) — gated on
   // `isFeatureEnabled('adhkar')`. Qariah ships with `adhkar: false`
   // (config/featureFlags.ts — no women-audio canon at launch) and the surface
-  // is fully gated in the UI (no nav entry; RecitersView's section is
-  // `isFeatureEnabled('adhkar') && …`). Seeding the Adhkar DB ran
+  // is hidden in the UI (no nav entry; the Listen row is `enabled: false` in
+  // `branding.homeRowConfig`). Seeding the Adhkar DB ran
   // unconditionally on every cold start for a feature nobody can reach; the
   // "Adhkar Store Data" step (loadCategories) was the single slowest
   // non-critical service (~2.5s on a Pixel 3). Skipping them when the flag is
@@ -47,7 +49,7 @@ export function qariahSkippedServices(): string[] {
   }
 
   // Mushaf Preload (Priority 5) — Sprint 30 (B1), gated on
-  // `!isFeatureEnabled('deferMushafPreload')`. When the defer flag is on
+  // `!isQariahFeatureEnabled('deferMushafPreload')`. When the defer flag is on
   // (Qariah default), the service is SKIPPED so the ~2s preload no longer
   // blocks the splash; instead `qariahAfterAudioReady()` (services/qariahBoot.ts,
   // called by `bootApp()` in services/appBoot.ts) fires
@@ -55,12 +57,12 @@ export function qariahSkippedServices(): string[] {
   // never touches the Mushaf font stack, so this is off its critical path.
   // Flip the flag off to restore the legacy splash-blocking behavior.
   // (Cold-start: planning/perf-audit-2026-06-04.md; advances TECH_DEBT #110.)
-  if (isFeatureEnabled('deferMushafPreload')) {
+  if (isQariahFeatureEnabled('deferMushafPreload')) {
     skipped.push('Mushaf Preload');
   }
 
   // Uploads Service (Priority 6) and Verse Annotations (Priority 7) — Sprint 38
-  // (S38.2), gated on `!isFeatureEnabled('deferNonCriticalBootServices')`.
+  // (S38.2), gated on `!isQariahFeatureEnabled('deferNonCriticalBootServices')`.
   // When the defer flag is on (Qariah default), both are SKIPPED so their
   // SQLite opens no longer run in the non-critical batch.
   // - Uploads: UploadsService.initialize() is called lazily at the top of every
@@ -78,7 +80,7 @@ export function qariahSkippedServices(): string[] {
   // Field evidence: Sentry QARIAHV2-G / QARIAHV2-S named 'Uploads Service' and
   // 'Verse Annotations' as `slow_init_service` stragglers on OnePlus 8 Pro /
   // Android 11 (builds 1345/1353). See planning/sprint-38-plan.md (S38.2).
-  if (isFeatureEnabled('deferNonCriticalBootServices')) {
+  if (isQariahFeatureEnabled('deferNonCriticalBootServices')) {
     skipped.push('Uploads Service', 'Verse Annotations');
   }
 
@@ -92,7 +94,7 @@ export function qariahSkippedServices(): string[] {
   // readable on first off-Listen access; `loadDownloadedMeta` then runs on the
   // tafseer surface mount (TafseerContent) instead of at boot. Flip the flag
   // off to restore legacy boot-time opens.
-  if (isFeatureEnabled('lazyOpenFeatureDbs')) {
+  if (isQariahFeatureEnabled('lazyOpenFeatureDbs')) {
     skipped.push('QUL Data', 'Translation DB', 'Tafseer DB', 'WBW Data');
   }
 
@@ -100,8 +102,9 @@ export function qariahSkippedServices(): string[] {
 }
 
 /**
- * Apply Qariah's startup config to the registered services. Call it once, at
- * the end of AppInitializer.ts, after every upstream registration.
+ * Apply Qariah's startup config to the registered services. qariahBootStarted()
+ * calls it before initialize(). It is idempotent: a second call gives the same
+ * list and the same initializers.
  * @ai
  */
 export function applyQariahInitConfig(target: QariahInitTarget): void {
@@ -119,7 +122,7 @@ export function applyQariahInitConfig(target: QariahInitTarget): void {
   // rewaya name in ScheherazadeNew-Bold on the Listen tab), so it always
   // loads blocking. If upstream changes its 'Arabic Fonts' list, update this
   // list too: services/__tests__/qariahInitConfig.test.ts compares the two.
-  if (isFeatureEnabled('deferMushafPreload')) {
+  if (isQariahFeatureEnabled('deferMushafPreload')) {
     target.replaceServiceInitializer('Arabic Fonts', async () => {
       await Font.loadAsync({
         'ScheherazadeNew-Regular': require('@/assets/fonts/ScheherazadeNew-Regular.ttf'),

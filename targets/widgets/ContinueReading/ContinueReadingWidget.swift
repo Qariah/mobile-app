@@ -5,6 +5,8 @@ import WidgetKit
 struct ContinueReadingEntry: TimelineEntry {
   let date: Date
   let lastRead: WidgetLastRead?
+  // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage).
+  var language: String? = nil
 }
 
 struct ContinueReadingProvider: TimelineProvider {
@@ -13,15 +15,18 @@ struct ContinueReadingProvider: TimelineProvider {
   }
 
   func getSnapshot(in context: Context, completion: @escaping (ContinueReadingEntry) -> Void) {
-    completion(ContinueReadingEntry(date: .now, lastRead: SnapshotStore.load()?.lastRead))
+    let snapshot = SnapshotStore.load()
+    completion(ContinueReadingEntry(date: .now, lastRead: snapshot?.lastRead, language: snapshot?.language))
   }
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<ContinueReadingEntry>) -> Void) {
-    let lastRead = SnapshotStore.load()?.lastRead
+    let snapshot = SnapshotStore.load()
+    let lastRead = snapshot?.lastRead
     if let surah = StaticData.surah(lastRead?.surahId ?? 1) {
       ArtworkRequestStore.recordMissing(surahs: [surah], reciterFiles: [])
     }
-    completion(Timeline(entries: [ContinueReadingEntry(date: .now, lastRead: lastRead)], policy: .never))
+    completion(Timeline(entries: [ContinueReadingEntry(date: .now, lastRead: lastRead, language: snapshot?.language)],
+                        policy: .never))
   }
 }
 
@@ -45,8 +50,14 @@ struct ContinueReadingView: View {
 
   private var page: Int { entry.lastRead?.page ?? 1 }
   private var surah: StaticSurah? { StaticData.surah(entry.lastRead?.surahId ?? 1) }
-  private var surahName: String { entry.lastRead?.surahName ?? surah?.name ?? "Al-Fatihah" }
-  private var detail: String { entry.lastRead.map { "Juz \($0.juz)" } ?? "Start reading" }
+  private var surahName: String {
+    entry.lastRead?.surahName ?? surah.map { WidgetLanguage.surahName($0, entry.language) } ?? "Al-Fatihah"
+  }
+  // @ai Qariah (TECH_DEBT #357): String Catalog keys ("Juz %lld", "Start reading"), not plain Strings.
+  private var detail: LocalizedStringKey {
+    guard let lastRead = entry.lastRead else { return "Start reading" }
+    return "Juz \(lastRead.juz)"
+  }
 
   var body: some View {
     content
@@ -55,6 +66,7 @@ struct ContinueReadingView: View {
         if family == .accessoryRectangular { Color.clear } else { WidgetPalette.background }
       }
       .widgetURL(AppLinks.url("mushaf/\(page)"))
+      .widgetLanguage(entry.language)
   }
 
   @ViewBuilder private var content: some View {
@@ -93,7 +105,7 @@ struct ContinueReadingView: View {
   private func pageColumn(showLogo: Bool) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       HStack(alignment: .top) {
-        SurahCard(surah: surah, size: 44)
+        SurahCard(surah: surah, size: 44, language: entry.language)
         if showLogo {
           Spacer(minLength: 0)
           BayaanLogo(size: 14)

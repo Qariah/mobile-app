@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Keyboard,
   Platform,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import {ScaledSheet, moderateScale} from 'react-native-size-matters';
 import {useTheme} from '@/hooks/useTheme';
@@ -53,8 +53,6 @@ import {
 // @ai-end
 
 type RecitationType = 'surah' | 'other';
-
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // @ai-start
 const CATEGORY_OPTIONS: {
@@ -116,7 +114,8 @@ export const OrganizeRecitationSheet = (
   props: SheetProps<'organize-recitation'>,
 ) => {
   const {theme} = useTheme();
-  const styles = createStyles(theme);
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation(['sheets', 'common']);
   const {updateTags, deleteRecitation, customReciters, createCustomReciter} =
     useUploadsStore();
@@ -999,7 +998,7 @@ export const OrganizeRecitationSheet = (
 // @ai-end
 
 // @ai-start
-const createStyles = (theme: Theme) =>
+const createStyles = (theme: Theme, screenHeight: number) =>
   ScaledSheet.create({
     sheetContainer: {
       backgroundColor: theme.colors.background,
@@ -1007,7 +1006,7 @@ const createStyles = (theme: Theme) =>
       borderTopRightRadius: moderateScale(20),
       paddingTop: moderateScale(8),
       paddingBottom: 0,
-      height: SCREEN_HEIGHT,
+      height: screenHeight,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderLeftWidth: StyleSheet.hairlineWidth,
       borderRightWidth: StyleSheet.hairlineWidth,

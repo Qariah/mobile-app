@@ -45,7 +45,7 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fetchPlayAnr, pooledRate} from '../../lib/anr-card.mjs';
-import {cardBuilds} from '../../lib/card-layout.mjs';
+import {anrScoreBuilds} from '../../lib/card-layout.mjs';
 import {labExclusionSQL, sqlList} from '../../lib/lab-exclusion.mjs';
 import {
   addDays,
@@ -102,7 +102,7 @@ export const DEFINITIONS = {
   abArms:
     'the card section A/B block: the arms count enrolled devices only; anrShare = anrDevices / devices of the arm',
   metric:
-    "kind metric, playAnrRate: Google Play userPerceivedAnrRate for the production versionCodes (active-rollout.json card.builds, Android) pooled into one rate by Play (Play Developer Reporting API, filter versionCode = A OR versionCode = B): day = the rate on Play's last published day (dataThrough); d7 and d28 = Play's userPerceivedAnrRate7dUserWeighted and 28dUserWeighted on that day; daily = the rate on each of the 28 days that end at dataThrough (null = not published). frozeWeek = the card section's anr.sentry.week for Android (users who froze in the last 7 complete UTC days and the 7 days before, with the card's verdict; null when it is missing or unavailable). ended = Play's data date is no more than 7 days before the run date, and d28 rounded to 4 decimals is below the limit (false while d28 is null)",
+    "kind metric, playAnrRate: Google Play userPerceivedAnrRate for the production versionCodes (active-rollout.json card.builds, Android, less the builds with anrScore false) pooled into one rate by Play (Play Developer Reporting API, filter versionCode = A OR versionCode = B): day = the rate on Play's last published day (dataThrough); d7 and d28 = Play's userPerceivedAnrRate7dUserWeighted and 28dUserWeighted on that day; daily = the rate on each of the 28 days that end at dataThrough (null = not published). frozeWeek = the card section's anr.sentry.week for Android (users who froze in the last 7 complete UTC days and the 7 days before, with the card's verdict; null when it is missing or unavailable). ended = Play's data date is no more than 7 days before the run date, and d28 rounded to 4 decimals is below the limit (false while d28 is null)",
 };
 
 // ---------------------------------------------------------------------------
@@ -405,11 +405,11 @@ export function shapeAbArms(ab) {
 // Metric: one metric against a limit
 // ---------------------------------------------------------------------------
 
-/** The Android production versionCodes of active-rollout.json card.builds. */
+/** The Android production versionCodes of active-rollout.json card.builds, less `anrScore: false`. */
 export const productionCodes = cfg =>
   [
     ...new Set(
-      cardBuilds(cfg)
+      anrScoreBuilds(cfg)
         .filter(b => b.platform === 'Android')
         .map(b => Number(b.build))
         .filter(Number.isInteger),
@@ -459,6 +459,9 @@ export function frozeWeekOf(cardData) {
     frozeUsers: a.frozeUsers,
     prevUsers: a.prevUsers,
     prevFrozeUsers: a.prevFrozeUsers,
+    ...(a.backgroundUsers === undefined
+      ? {}
+      : {backgroundUsers: a.backgroundUsers}),
     verdict: a.verdict,
   };
 }
@@ -663,17 +666,32 @@ const metricSchema = obj(
     frozeWeek: {
       anyOf: [
         {type: 'null'},
-        obj({
-          from: laDateOrNull,
-          to: laDateOrNull,
-          prevFrom: laDateOrNull,
-          prevTo: laDateOrNull,
-          users: C,
-          frozeUsers: C,
-          prevUsers: C,
-          prevFrozeUsers: C,
-          verdict: {enum: ['BETTER', 'WORSE', 'SAME', 'TOO FEW', 'NO DATA']},
-        }),
+        // backgroundUsers: since 2026-10-24, so it is optional.
+        obj(
+          {
+            from: laDateOrNull,
+            to: laDateOrNull,
+            prevFrom: laDateOrNull,
+            prevTo: laDateOrNull,
+            users: C,
+            frozeUsers: C,
+            prevUsers: C,
+            prevFrozeUsers: C,
+            backgroundUsers: C,
+            verdict: {enum: ['BETTER', 'WORSE', 'SAME', 'TOO FEW', 'NO DATA']},
+          },
+          [
+            'from',
+            'to',
+            'prevFrom',
+            'prevTo',
+            'users',
+            'frozeUsers',
+            'prevUsers',
+            'prevFrozeUsers',
+            'verdict',
+          ],
+        ),
       ],
     },
     ended: {type: 'boolean'},

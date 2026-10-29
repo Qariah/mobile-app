@@ -26,29 +26,12 @@ describe('branding invariants (config/branding.js)', () => {
     expect(serialized.length).toBe(new Set(serialized).size);
   });
 
-  it('homeRowConfig keeps the trending row, switched off (owner decision 2026-10-18, Sprint 48: the row stays as a flag so it can return)', () => {
-    const trending = branding.homeRowConfig.find(
-      (row: {id: string}) => row.id === 'trending',
-    );
-    expect(trending).toBeDefined();
-    expect(trending.enabled).toBe(false);
-  });
-
-  it('homeRowConfig shows "Newly Added" as recitations (Sprint 48): newly-added-recitations is on, right after the reciter row newly-added, which stays registered and off', () => {
-    const ids = branding.homeRowConfig.map((row: {id: string}) => row.id);
+  it('homeRowConfig shows "Newly Added" as recitations (Sprint 48): newly-added-recitations is on', () => {
     const recitations = branding.homeRowConfig.find(
       (row: {id: string}) => row.id === 'newly-added-recitations',
     );
-    const reciters = branding.homeRowConfig.find(
-      (row: {id: string}) => row.id === 'newly-added',
-    );
     expect(recitations).toBeDefined();
     expect(recitations.enabled).toBe(true);
-    expect(reciters).toBeDefined();
-    expect(reciters.enabled).toBe(false);
-    expect(ids.indexOf('newly-added-recitations')).toBe(
-      ids.indexOf('newly-added') + 1,
-    );
   });
 
   it('homeRowConfig shows "Newly Added Recitations" second, right after Continue Listening (owner, 2026-10-20)', () => {
@@ -59,6 +42,21 @@ describe('branding invariants (config/branding.js)', () => {
       'continue-listening',
       'newly-added-recitations',
     ]);
+  });
+
+  it('the tablet sidebar shows the Qariah mark, not the inherited starburst (TECH_DEBT #355: the 3.2.2 iPad screenshots)', () => {
+    const {existsSync} = require('node:fs');
+    const {join} = require('node:path');
+    const descriptor = Object.getOwnPropertyDescriptor(branding, 'sidebarLogo');
+    // A getter: a top-level PNG require() would crash the app.config.js eval.
+    expect(typeof descriptor?.get).toBe('function');
+    expect(branding.sidebarLogo.light).toBeTruthy();
+    expect(branding.sidebarLogo.dark).toBeTruthy();
+    for (const file of ['sidebar-logo.png', 'sidebar-logo-dark.png']) {
+      expect(
+        existsSync(join(__dirname, '..', '..', 'assets', 'branding', file)),
+      ).toBe(true);
+    }
   });
 
   it('the HomeRowId type has the newly-added-recitations id (config/branding.d.ts)', () => {
@@ -76,6 +74,5 @@ describe('branding invariants (config/branding.js)', () => {
     expect(match).not.toBeNull();
     const union = match?.[1] ?? '';
     expect(union).toContain("| 'newly-added-recitations'");
-    expect(union).toContain("| 'newly-added'");
   });
 });

@@ -219,7 +219,14 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   const styles = createSharedStyles(theme);
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
-  const {height: screenHeight, width: screenWidth} = useWindowDimensions();
+  const {height: screenHeight, width: windowWidth} = useWindowDimensions();
+  // @ai Qariah (TECH_DEBT #354): a page is as wide as the pager, not the window (the iPad sidebar).
+  // Under 1 pt of difference (Android float layout) keeps the window width, so a phone does not change.
+  const [pagerWidth, setPagerWidth] = useState(0);
+  const screenWidth =
+    pagerWidth > 0 && Math.abs(pagerWidth - windowWidth) >= 1
+      ? pagerWidth
+      : windowWidth;
   const navigation = useNavigation();
   const headerHeight = isGlass ? useHeaderHeight() : 0;
 
@@ -242,18 +249,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   const [reciter, setReciter] = useState<Reciter | null>(initialReciter);
   const surahs = SURAHS;
 
-  // Qariah (#67 Bug A — Samsung skeleton hang). Single-tab readiness must be
-  // RENDER-DERIVED, not effect-derived. The skeleton gate (`neighborsReady`)
-  // used to lift for single-tab reciters only via an after-commit one-shot
-  // useEffect; Android skips `onContentSizeChange` for a single-tab pager
-  // (the PR #48 class), and the effect itself loses its race window on a slow
-  // OEM device under a cold-reinstall catalog upgrade (A55 tester repro,
-  // 2026-05-30 + 2026-06-08, three sessions — incl. a reciter that rendered
-  // fine in a warm session). For ≤1 tab there is nothing to pre-scroll or
-  // lazy-hide, so the profile mounts READY — the race ceases to exist by
-  // construction. Computed from the same synchronous data the first render
-  // uses; `userUploads` adds a tab when enabled (upstream ships it enabled and
-  // is therefore never single-tab — this is the Qariah-dominant case).
+  // #67: single-tab readiness is render-derived; an effect loses its race on slow Android devices.
   const singleTabAtMount =
     (isFeatureEnabled('userUploads') ? 1 : 0) +
       (initialReciter?.rewayat.length ?? 0) <=
@@ -279,9 +275,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     new RNAnimated.Value(
       initialReciter
         ? (() => {
-            // When userUploads is enabled, "My Uploads" occupies index 0
-            // and rewayat start at index 1; when disabled, rewayat start
-            // at index 0 (no leading-tab offset).
+            // "My Uploads" is at index 0 only when userUploads is on; rewayat follow it.
+            // Find the index of the initial rewayat to set the correct scroll position.
             const offset = isFeatureEnabled('userUploads') ? 1 : 0;
             if (!initialRewayatId) return offset * screenWidth;
             const rewayatIndex = initialReciter.rewayat.findIndex(
@@ -296,7 +291,6 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   ).current;
   const iconsOpacity = useRef(new RNAnimated.Value(1)).current;
   const iconsZIndex = useRef(new RNAnimated.Value(20)).current;
-  // #67: visible immediately for single-tab (matches neighborsReady init).
   const pagerOpacity = useRef(
     new RNAnimated.Value(singleTabAtMount ? 1 : 0),
   ).current;
@@ -366,16 +360,12 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   );
   const [showLovedOnly, setShowLovedOnly] = useState(showLoved);
   const [activeTab, setActiveTab] = useState<string>(initialRewayatId ?? '');
-  // #67: ready-at-mount for single-tab (see singleTabAtMount above).
   const [neighborsReady, setNeighborsReady] = useState(singleTabAtMount);
   const outerScrollRef = useRef<ScrollView>(null);
   const horizontalRef = useRef<ScrollView>(null);
   const currentScrollYRef = useRef(0);
   const renderedTabsRef = useRef(new Set<string>());
-  // #67: single-tab needs no initial pager scroll — marking it scrolled also
-  // closes the poison path where a partial reciter (empty rewayat while the
-  // catalog upgrade is in flight) initialized this ref true and thereby
-  // disabled BOTH neighborsReady lift paths forever.
+  // #67: single-tab needs no initial pager scroll (this also closes the empty-rewayat poison path).
   const pagerScrolledRef = useRef(singleTabAtMount);
   const scrollTargetRef = useRef<string | null>(null);
   const activeTabRef = useRef(initialRewayatId ?? '');
@@ -414,9 +404,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     };
   }, []);
   // @ai-end
-  // Qariah B3 (Sprint 30): narrowed selector, not whole-store — avoids the
-  // playback-tick re-render of the reciter profile. Upstream uses the whole-store
-  // destructure; keep the selector form (only startNewChain is needed here).
+  // Keep the narrowed selector: the whole-store form re-renders the profile on each playback tick.
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const {reciterPreferences, setReciterPreference} = useSettings();
 
@@ -881,16 +869,10 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   );
   const hasUploads = reciterUploads.length > 0;
 
-  // Qariah doesn't ship the user-uploads feature today; the "My Uploads"
-  // tab is hidden behind `featureFlags.userUploads`. Sprint 26 S26.0's
-  // wholesale absorption of upstream Bayaan dropped this gate (the tab
-  // was rendering unconditionally for every reciter despite the flag
-  // being false). Restored 2026-05-25 — see TECH_DEBT row tracking the
-  // S26.0 divergence-loss pattern.
+  // Qariah does not ship user uploads: keep this gate (an upstream take dropped it once).
   const uploadsTabEnabled = isFeatureEnabled('userUploads');
 
-  // Build tabs array: when `userUploads` is enabled, "My Uploads" is at
-  // index 0 and rewayat start at index 1; otherwise rewayat start at 0.
+  // Build tabs array: "My Uploads" first (leftmost), then rewayat tabs.
   const tabs = useMemo(() => {
     const result: Array<{id: string; label: string}> = [];
     if (uploadsTabEnabled) {
@@ -992,8 +974,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   );
 
   // Opacity-gated reveal: scroll pager to initial rewayat tab before showing.
-  // When userUploads is enabled, first rewayat is at index 1 (uploads at 0);
-  // when disabled, first rewayat is at index 0.
+  // Defaults to the first rewayat (index 1 after "My Uploads", else index 0),
+  // but honours initialRewayatId when navigating from a rewayah-specific context.
   const initialTabIndex = useMemo(() => {
     const firstRewayatIndex = uploadsTabEnabled ? 1 : 0;
     if (!initialRewayatId) return firstRewayatIndex;
@@ -1031,26 +1013,9 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     [screenWidth, pagerOpacity, initialTabIndex, scrollX],
   );
 
-  // Android single-tab skeleton-gate fallback (Qariah divergence — DO NOT DROP
-  // on upstream-absorption of this file; see Sprint 24 standing rule #4).
-  // When there's only one tab (or none), the horizontal pager's content width
-  // equals the viewport width exactly. Android's native ScrollView skips the
-  // `onContentSizeChange` callback for content that's both opacity:0 AND
-  // non-scrollable, so the dismissal in handlePagerContentSizeChange never
-  // fires and the skeleton overlay stays mounted forever. iOS's UIScrollView
-  // fires the callback regardless (which is why iOS-only sim verification has
-  // repeatedly missed this). Upstream Bayaan ships userUploads=true so
-  // tabs.length >= 2 always and never hits this edge case; Qariah ships
-  // userUploads=false and most reciters have a single rewayah. (Originally
-  // added Sprint 21; silently lost in Sprint 24's wholesale upstream-take of
-  // ReciterProfile.tsx; restored 2026-06-04.) Since #67 the PRIMARY defense is
-  // render-derived: `neighborsReady` initializes true via `singleTabAtMount`,
-  // so this effect is the self-healing layer for the dynamic case (reciter
-  // resolves single-tab only after mount, e.g. mid-catalog-upgrade).
+  // DO NOT DROP: Android single-tab pagers never fire onContentSizeChange, so lift the gate here (TECH_DEBT #115).
   useEffect(() => {
-    // #67: guard on the OUTCOME (neighborsReady), not on pagerScrolledRef —
-    // a true pagerScrolledRef with a false neighborsReady used to dead-end
-    // this effect permanently (the skeleton-forever poison state).
+    // #67: guard on neighborsReady, not pagerScrolledRef (that state dead-ended this effect).
     if (tabs.length <= 1 && !neighborsReady) {
       pagerScrolledRef.current = true;
       pagerOpacity.setValue(1);
@@ -1058,11 +1023,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     }
   }, [tabs.length, neighborsReady, pagerOpacity]);
 
-  // #67: multi-tab backstop. `handlePagerContentSizeChange` is the only lift
-  // path for ≥2 tabs and Android can skip/miss it; the surah list must never
-  // be gated on a one-shot native callback with no fallback. After the
-  // deadline, position the pager on the initial tab and lift the gate — in
-  // the healthy path the callback wins long before this fires.
+  // #67: multi-tab backstop: Android can miss onContentSizeChange, so lift the gate after a deadline.
   useEffect(() => {
     if (neighborsReady) return;
     const t = setTimeout(() => {
@@ -1076,8 +1037,20 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     return () => clearTimeout(t);
   }, [neighborsReady, initialTabIndex, screenWidth, scrollX, pagerOpacity]);
 
-  // @ai REPORT-ONLY surah-list stall watchdog + its success event (Qariah;
-  // moved to hooks/useContentReadyWatchdog.ts, TECH_DEBT #243).
+  // @ai Qariah (TECH_DEBT #354): a new page width (the first pager layout, an iPad rotation)
+  // keeps the active page in view. Before the reveal, onContentSizeChange scrolls with the new width.
+  const lastPageWidthRef = useRef(screenWidth);
+  useEffect(() => {
+    if (lastPageWidthRef.current === screenWidth) return;
+    lastPageWidthRef.current = screenWidth;
+    if (!pagerScrolledRef.current) return;
+    const idx = tabs.findIndex(tab => tab.id === activeTabRef.current);
+    const targetX = (idx >= 0 ? idx : initialTabIndex) * screenWidth;
+    scrollX.setValue(targetX);
+    horizontalRef.current?.scrollTo({x: targetX, y: 0, animated: false});
+  }, [screenWidth, tabs, initialTabIndex, scrollX]);
+
+  // @ai REPORT-ONLY surah-list stall watchdog (TECH_DEBT #243).
   useReciterProfileSurahsWatchdog({
     neighborsReady,
     reciterId: currentReciterId,
@@ -1300,6 +1273,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             {/* When uploads is active, cap height to viewport so the tall rewayat pages */}
             {/* don't inflate the scrollable area with empty space */}
             <View
+              // @ai Qariah (TECH_DEBT #354): the page width comes from this layout.
+              onLayout={e => setPagerWidth(e.nativeEvent.layout.width)}
               style={
                 activeTab === 'uploads'
                   ? {height: contentMinHeight, overflow: 'hidden'}
@@ -1374,9 +1349,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                   </View>
                 ))}
               </RNAnimated.ScrollView>
-              {/* #67: skeleton is a multi-tab affordance only — single-tab
-                  profiles mount ready (singleTabAtMount) and must never be
-                  able to show (or get stuck on) the skeleton overlay. */}
+              {/* #67: only multi-tab profiles show the skeleton; single-tab ones mount ready. */}
               {!neighborsReady && tabs.length > 1 && (
                 <RNAnimated.View
                   style={{
@@ -1421,6 +1394,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                 numberOfLines={1}
                 ellipsizeMode="tail"
                 style={{
+                  // @ai Qariah (TECH_DEBT #351): the full row width, so Android cuts an RTL name at its end, not its start.
+                  alignSelf: 'stretch',
                   fontSize: moderateScale(16),
                   fontFamily: 'Manrope-Bold',
                   color: theme.colors.text,

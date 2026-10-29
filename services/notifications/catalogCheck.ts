@@ -15,10 +15,23 @@
 //   5. Post the picked candidate. When the post fails, save the snapshot again
 //      with its keys held back, so the next check tries again.
 //   6. Record today (`markNotifiedToday`).
+//
+// The daily limit counts the OS-scheduled notices too (TECH_DEBT #328): on a
+// Friday with the Al-Kahf reminder on, and on the day of a "continue
+// listening" notice, step 3 picks nothing (`scheduledNoticeOnDay`).
+//
+// The cap (review of Sprint 51, Lane N): the first local day on which a
+// taken day held a catalog notice back is in MMKV
+// (`CATALOG_NOTICE_HELD_SINCE_KEY`). From `CATALOG_NOTICE_HOLD_CAP_DAYS` days
+// after it, a taken day does not hold the notice back (`holdCapReached`); the
+// app still posts at most one notice that day. A post removes the day, and so
+// does a check with nothing to hold back.
 import type {Reciter} from '@/data/reciterData';
+import {continueNoticeDays} from './continueListeningStore';
 import {
   createCatalogSnapshotStore,
   diffCatalog,
+  notificationsStorage,
   recitationKeysOf,
   snapshotAfter,
   type CatalogSnapshotStore,
@@ -28,15 +41,41 @@ import {notificationPrefsSource} from './prefsStore';
 import {
   buildRecitationCandidates,
   heldBackKeys,
+  holdCapReached,
   pickNotification,
+  scheduledNoticeOnDay,
   type PickNotificationInput,
 } from './scheduler';
 import type {
+  KeyValueStorage,
   NotificationCandidate,
   NotificationPrefsSource,
   Notifier,
   RecitationKey,
 } from './types';
+
+/** The first local day (`YYYY-MM-DD`) on which a taken day held a catalog notice back. */
+export const CATALOG_NOTICE_HELD_SINCE_KEY = 'catalog_notice_held_since';
+
+const LOCAL_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function readHeldSince(storage: KeyValueStorage): string | null {
+  try {
+    const value = storage.getString(CATALOG_NOTICE_HELD_SINCE_KEY);
+    return typeof value === 'string' && LOCAL_DAY.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeHeldSince(storage: KeyValueStorage, day: string | null): void {
+  try {
+    if (day === null) storage.remove(CATALOG_NOTICE_HELD_SINCE_KEY);
+    else storage.set(CATALOG_NOTICE_HELD_SINCE_KEY, day);
+  } catch {
+    // Best effort: without the day, the cap starts again at the next hold.
+  }
+}
 
 /**
  * What a check did. Each status is a fact that the caller can log; only
@@ -49,7 +88,8 @@ import type {
  * - `first_check`: the first snapshot is saved; no recitation is announced.
  * - `nothing_new`: no new recitation, and no other candidate posted.
  * - `not_posted`: new recitations, but no notice today (the toggles, the
- *   holdout, no permission, the daily limit). The held-back keys come again.
+ *   holdout, no permission, the daily limit, an OS-scheduled notice today).
+ *   The held-back keys come again.
  * - `post_failed`: `notifier.schedule()` failed.
  * - `posted`: one notice posted.
  */
@@ -91,6 +131,13 @@ export interface CatalogCheckDeps {
   extraCandidates?: readonly NotificationCandidate[];
   formatReciterName?: (reciter: Reciter) => string;
   formatSurahName?: (surah: number) => string;
+  /**
+   * The local days of the "continue listening" notices (TECH_DEBT #328).
+   * Default: `continueNoticeDays()` (the MMKV record).
+   */
+  continueNoticeDays?: () => readonly string[];
+  /** The store of `CATALOG_NOTICE_HELD_SINCE_KEY`. Default: `notificationsStorage`. */
+  heldSinceStorage?: KeyValueStorage;
 }
 
 export interface CatalogCheckResult {
@@ -150,6 +197,14 @@ export async function runCatalogCheck(
     return result('permission_unavailable', {newKeys});
   }
 
+  const todayLocal = localDay(now);
+  const heldSinceStorage = deps.heldSinceStorage ?? notificationsStorage;
+  const heldSince = readHeldSince(heldSinceStorage);
+  const scheduledToday = scheduledNoticeOnDay({
+    now,
+    kahfFridayOn: prefs.kahf_friday === true,
+    continueNoticeDays: (deps.continueNoticeDays ?? continueNoticeDays)(),
+  });
   const input: PickNotificationInput = {
     candidates: [
       ...buildRecitationCandidates({
@@ -164,8 +219,11 @@ export async function runCatalogCheck(
     prefs,
     permissionGranted,
     holdout: deps.holdout,
-    todayLocal: localDay(now),
+    todayLocal,
     lastNotifiedDay: prefs.lastNotifiedDay,
+    // The cap: a notice held back for CATALOG_NOTICE_HOLD_CAP_DAYS posts.
+    scheduledNoticeToday:
+      scheduledToday && !holdCapReached(heldSince, todayLocal),
   };
   const picked = pickNotification(input);
   const held = heldBackKeys(input, picked);
@@ -176,6 +234,18 @@ export async function runCatalogCheck(
     // previous snapshot stays: it has none of the held-back keys either.
     if (toSave.size > 0 && !snapshotStore.save(toSave)) {
       return result('save_failed', {newKeys, heldBackKeys: held});
+    }
+    // The held-since day (see the file header). Only a check that compared a
+    // catalog knows what is held back; a post always ends the wait (below).
+    if (!picked) {
+      const heldByTakenDay =
+        held.length > 0 &&
+        input.scheduledNoticeToday === true &&
+        pickNotification({...input, scheduledNoticeToday: false}) !== null;
+      if (held.length === 0) writeHeldSince(heldSinceStorage, null);
+      else if (heldByTakenDay && heldSince === null) {
+        writeHeldSince(heldSinceStorage, todayLocal);
+      }
     }
   }
 
@@ -208,6 +278,7 @@ export async function runCatalogCheck(
   } catch {
     markedToday = false;
   }
+  writeHeldSince(heldSinceStorage, null);
   return result('posted', {
     posted: picked,
     newKeys,

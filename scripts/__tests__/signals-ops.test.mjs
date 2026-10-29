@@ -226,6 +226,7 @@ test('card: collect runs the card script and reports partial on a gap', async ()
   const fixture = load('daily-card.json');
   const ctx = {
     date: '2026-10-18',
+    asOf: '2026-10-18T18:00:00.000Z',
     env: {},
     runScript: async a => {
       args = a;
@@ -233,9 +234,19 @@ test('card: collect runs the card script and reports partial on a gap', async ()
     },
   };
   const r = await card.collect(ctx);
-  assert.deepEqual(args, card.SCRIPT);
+  // The card's windows end at the snapshot's asOf (owner decision A, 2026-10-25).
+  assert.deepEqual(args, [...card.SCRIPT, '--at=2026-10-18T18:00:00.000Z']);
   assert.equal(r.status, 'ok');
-  assert.match(r.data.header.measuredAt, /^\d{4}-\d{2}-\d{2}T/);
+  // An older card JSON has no `at`: measuredAt is asOf.
+  assert.equal(r.data.header.measuredAt, '2026-10-18T18:00:00.000Z');
+  const withAt = await card.collect({
+    ...ctx,
+    runScript: async () => ({
+      ...clone(fixture),
+      at: '2026-10-18T17:59:00.000Z',
+    }),
+  });
+  assert.equal(withAt.data.header.measuredAt, '2026-10-18T17:59:00.000Z');
   const noSentry = await card.collect({
     ...ctx,
     runScript: async () => ({...clone(fixture), crashes: null}),
@@ -317,6 +328,39 @@ test('card: an unavailable platform keeps a fixed reason only, and makes a note'
     /anr\.sentry\.week\.android: unavailable \(the Sentry request failed\)/,
   );
   assert.match(g, /anr\.sentry\.week\.ios: unavailable/);
+});
+
+test('card: background ANRs and the people who left at the splash (2026-10-24)', () => {
+  // An older card JSON has neither key: the data has no backgroundUsers and
+  // an empty leftDuringSplash, and still passes the schema.
+  const old = card.shape(load('daily-card.json'), at);
+  check(card, old);
+  assert.equal('backgroundUsers' in old.anr.sentry.week.android, false);
+  assert.deepEqual(old.leftDuringSplash, []);
+  assert.equal(focus.frozeWeekOf(old).backgroundUsers, undefined);
+
+  const c = clone(load('daily-card.json'));
+  c.anr.sentry.week.android.backgroundUsers = 9;
+  c.anr.sentry.week.ios.backgroundUsers = undefined;
+  c.leftDuringSplash = [
+    {n: 3, platform: 'Android', build: '2027', what: 'left during the splash'},
+  ];
+  const d = card.shape(c, at);
+  check(card, d);
+  assert.equal(d.anr.sentry.week.android.backgroundUsers, 9);
+  assert.equal('backgroundUsers' in d.anr.sentry.week.ios, false);
+  // 1 to 4 people is "<5", as every other count.
+  assert.deepEqual(d.leftDuringSplash, [
+    {installs: SMALL, platform: 'Android', build: '2027'},
+  ]);
+  // Not failures: the failure rows do not change.
+  assert.deepEqual(d.failures, old.failures);
+  assert.equal(focus.frozeWeekOf(d).backgroundUsers, 9);
+  c.anr.sentry.week.android.backgroundUsers = 2;
+  assert.equal(
+    card.shape(c, at).anr.sentry.week.android.backgroundUsers,
+    SMALL,
+  );
 });
 
 test('card: the week suppresses every count from 1 to 4', () => {
@@ -1244,11 +1288,12 @@ test('focus metric: the file check accepts the metric kind and names its problem
 
 test('focus metric: the production versionCodes come from card.builds (Android only)', () => {
   assert.deepEqual(focus.productionCodes(ROLLOUT_CFG), [1717, 2027]);
-  // The committed file names one Android production build since PR #641.
+  // The committed file: 2027 and 1717 (owner 2026-10-25: 1717 counts in
+  // Google's score too).
   const live = JSON.parse(
     readFileSync(join(ROOT, 'docs/operations/active-rollout.json'), 'utf8'),
   );
-  assert.deepEqual(focus.productionCodes(live), [2027]);
+  assert.deepEqual(focus.productionCodes(live), [1717, 2027]);
   assert.deepEqual(
     focus.productionCodes({
       card: {
@@ -1683,20 +1728,27 @@ test('daily-card --anr: the JSON keeps the old fields and adds anr.sentry.week; 
       'android',
       'ios',
     ]);
+    // backgroundUsers: Android only, since 2026-10-24 (not in the share).
     assert.deepEqual(Object.keys(w.android), [
       'users',
       'frozeUsers',
       'prevUsers',
       'prevFrozeUsers',
+      'backgroundUsers',
       'verdict',
       'byBuild',
     ]);
     assert.equal(w.android.users, 1496);
     assert.equal(w.android.frozeUsers, 15);
-    // card.builds names one Android production build since PR #641.
+    // card.builds names one Android production build since PR #641. Since
+    // 2026-10-24 the week also counts the older build that still has users
+    // (1717, Android in the PostHog stub): weekReleases.
     assert.deepEqual(
       w.android.byBuild.map(b => [b.build, b.users, b.frozeUsers]),
-      [['2027', 694, 3]],
+      [
+        ['2027', 694, 3],
+        ['1717', 883, 12],
+      ],
     );
     // The Play line pools the production versionCodes only (G-G4): with no
     // service account there is no Play request at all.

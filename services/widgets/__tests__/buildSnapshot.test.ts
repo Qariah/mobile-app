@@ -4,6 +4,7 @@ import {
   artworkFileName,
   surahArtworkFileName,
   SnapshotInput,
+  widgetLanguageFor,
 } from '../buildSnapshot';
 import {isWidgetSnapshot} from 'bayaan-widgets';
 import type {Track} from '@/types/audio';
@@ -170,6 +171,87 @@ describe('buildSnapshot', () => {
     const snap = buildSnapshot(input({recentTracks: recent}));
     expect(snap.recent).toHaveLength(6);
     expect(snap.reciterRecents.r1.map(t => t.surahId)).toEqual([1, 2, 3]);
+  });
+
+  // @ai Qariah (TECH_DEBT #357): widget names follow the app language.
+  describe('in the app language', () => {
+    const arabicReciter: Reciter = {...reciter, name_arabic: 'AR Mishary'};
+
+    it('writes the language and the names in that language', () => {
+      const recent: RecentlyPlayedTrack[] = [
+        {
+          reciter: arabicReciter,
+          surah: SURAHS[66],
+          rewayatId: 'rw1',
+          progress: 0.5,
+          duration: 100,
+          timestamp: 1,
+        },
+      ];
+      const snap = buildSnapshot(
+        input({
+          language: 'ar',
+          defaultReciter: arabicReciter,
+          queueTracks: [track(18), track(36)],
+          recentTracks: recent,
+          lastReadPage: 295,
+        }),
+      );
+      expect(isWidgetSnapshot(snap)).toBe(true);
+      expect(snap.language).toBe('ar');
+      expect(snap.nowPlaying?.track.surahName).toBe(SURAHS[17].name_arabic);
+      expect(snap.upNext[0]?.surahName).toBe(SURAHS[35].name_arabic);
+      expect(snap.recent[0]?.surahName).toBe(SURAHS[66].name_arabic);
+      expect(snap.recent[0]?.reciterName).toBe('AR Mishary');
+      expect(snap.defaultReciter?.name).toBe('AR Mishary');
+      expect(snap.lastRead?.surahName).toBe(SURAHS[17].name_arabic);
+    });
+
+    it('keeps the English names in English', () => {
+      const snap = buildSnapshot(
+        input({
+          language: 'en',
+          defaultReciter: arabicReciter,
+          queueTracks: [track(18)],
+        }),
+      );
+      expect(snap.language).toBe('en');
+      expect(snap.nowPlaying?.track.surahName).toBe(SURAHS[17].name);
+      expect(snap.nowPlaying?.track.reciterName).toBe(reciter.name);
+      expect(snap.defaultReciter?.name).toBe(reciter.name);
+    });
+
+    it('keeps the names of a user upload', () => {
+      const upload = track(18, {
+        isUserUpload: true,
+        title: 'My recitation',
+        reciterName: 'My name',
+      });
+      const snap = buildSnapshot(
+        input({language: 'ar', queueTracks: [upload]}),
+      );
+      expect(snap.nowPlaying?.track.surahName).toBe('My recitation');
+      expect(snap.nowPlaying?.track.reciterName).toBe('My name');
+    });
+
+    it('writes no language when the app follows the device', () => {
+      const snap = buildSnapshot(input({queueTracks: [track(18)]}));
+      expect(isWidgetSnapshot(snap)).toBe(true);
+      expect('language' in snap).toBe(false);
+      // The names are in the session language (English in the tests).
+      expect(snap.nowPlaying?.track.surahName).toBe(SURAHS[17].name);
+    });
+
+    it('gives the widgets a language only for an explicit choice', () => {
+      expect(widgetLanguageFor('system', 'ar')).toBeUndefined();
+      expect(widgetLanguageFor('ar', 'ar')).toBe('ar');
+      expect(widgetLanguageFor('en', 'en')).toBe('en');
+    });
+
+    it('names the surah of the day in the app language', () => {
+      const snap = buildSnapshot(input({language: 'ar'}));
+      expect(snap.upNext[0]?.surahName).toBe(SURAHS[35].name_arabic);
+    });
   });
 
   it('builds last read with juz and opening text', () => {

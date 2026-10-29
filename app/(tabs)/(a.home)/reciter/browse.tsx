@@ -16,7 +16,7 @@ export default function BrowseScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const {theme} = useTheme();
-  const {t} = useTranslation(['home', 'qariah']);
+  const {t} = useTranslation('home');
   const {
     surahId,
     teacher,
@@ -24,8 +24,6 @@ export default function BrowseScreen() {
     rewayatName,
     country,
     countryName,
-    translation,
-    translationName,
     hasPhoto,
   } = useLocalSearchParams<{
     surahId: string;
@@ -34,8 +32,6 @@ export default function BrowseScreen() {
     rewayatName: string;
     country: string;
     countryName: string;
-    translation: string;
-    translationName: string;
     // RFC-012 — composable Search-tab filter chips. Tiles on the Home
     // tab can deeplink here with chips pre-applied (e.g. `?hasPhoto=1`).
     hasPhoto: string;
@@ -50,14 +46,11 @@ export default function BrowseScreen() {
     ? rewayatName
     : countryName
       ? countryName
-      : translationName
-        ? // @ai Qariah copy (country / translation cards).
-          t('qariah:browse.translationTitle', {language: translationName})
-        : surahId
-          ? t('browse.browseRecitersForSurah', {
-              surah: getSurahDisplayName(SURAHS[parseInt(surahId, 10) - 1]),
-            })
-          : t('browse.browseAll');
+      : surahId
+        ? t('browse.browseRecitersForSurah', {
+            surah: getSurahDisplayName(SURAHS[parseInt(surahId, 10) - 1]),
+          })
+        : t('browse.browseAll');
 
   // Set native header title on iOS
   useLayoutEffect(() => {
@@ -75,7 +68,6 @@ export default function BrowseScreen() {
       initialTeacher={teacher}
       initialStudent={student}
       country={country}
-      translation={translation}
       initialHasPhoto={hasPhoto === '1' || hasPhoto === 'true'}
     />
   );

@@ -19,6 +19,12 @@ describe('isWidgetSnapshot', () => {
     expect(isWidgetSnapshot(bad)).toBe(false);
   });
 
+  // @ai Qariah (TECH_DEBT #357)
+  it('accepts an app language and rejects a non-string one', () => {
+    expect(isWidgetSnapshot({...full, language: 'ar'})).toBe(true);
+    expect(isWidgetSnapshot({...full, language: 7})).toBe(false);
+  });
+
   it('rejects non objects', () => {
     expect(isWidgetSnapshot(null)).toBe(false);
     expect(isWidgetSnapshot('x')).toBe(false);

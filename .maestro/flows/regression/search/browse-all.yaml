@@ -9,10 +9,10 @@ tags:
 - runFlow: ../../../subflows/skip-onboarding.yaml
 - tapOn: '.*Search'
 - tapOn: 'Browse All.*'
-# grid mounted — a "N reciters" count header (full-match regex → wildcard)
+# grid mounted — a "N qariahs" count header ("N reciters" before #535; full-match regex → wildcard)
 - extendedWaitUntil:
-    visible: '.*reciters.*'
+    visible: '.*(qariahs|reciters).*'
     timeout: 6000
 # grid scrolls without crashing
 - scroll
-- assertVisible: '.*reciters.*'
+- assertVisible: '.*(qariahs|reciters).*'

@@ -23,8 +23,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-// Qariah: a bare Linking.openURL rejects unhandled when the OS declines the
-// URL (Sentry QARIAHV2-1Y); openExternalUrl catches it and tells the reader.
+// Qariah: a bare Linking.openURL rejects unhandled when the OS declines the URL (QARIAHV2-1Y).
 import {openExternalUrl} from '@/utils/openExternalUrl';
 import {
   ScaledSheet,

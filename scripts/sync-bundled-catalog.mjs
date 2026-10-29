@@ -2,7 +2,7 @@
 // Refresh the bundled fallback catalog (assets/data/catalog.json) from the live R2 catalog.
 //
 // The app shows the bundled catalog on a first launch with an empty cache
-// (featureFlags.bundleFirstCatalog) and when the killswitch is on. The ops
+// (qariahFeatureFlags.bundleFirstCatalog) and when the killswitch is on. The ops
 // console writes only R2, so the bundled copy goes stale unless somebody runs
 // this before a release build. On 2026-10-18 it was a Sprint 28 copy: it had no
 // Samia Mubarak (added in the live catalog later) and 4 older reciter entries.

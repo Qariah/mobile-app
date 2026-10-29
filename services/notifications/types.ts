@@ -26,8 +26,8 @@ export type NotificationTypePrefs = Record<NotificationType, boolean>;
  * One recitation: `reciterId|rewayahId|surah|from|to`. `from` and `to` are
  * empty for a complete surah (`r1|w1|18||`).
  *
- * The rule is the one of `scripts/catalog-added-at.mjs` (`rangeKey`) and of the
- * ops console: the FIRST `surah_metadata` row of a listed surah gives its
+ * The rule is the one of the ops console (and of the Sprint 48 added_at
+ * backfill, `rangeKey`): the FIRST `surah_metadata` row of a listed surah gives its
  * range, and the row is partial only with `is_full === false` and a `range`.
  * No row, or any other row, is a complete surah. So a range change is a new
  * recitation.

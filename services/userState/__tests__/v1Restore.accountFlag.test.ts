@@ -25,10 +25,8 @@ jest.mock('expo-crypto', () => ({
   CryptoEncoding: {HEX: 'hex'},
   digestStringAsync: async () => 'email-hash-0123456789',
 }));
-jest.mock('@/services/userState', () => ({
+jest.mock('@/services/userState/syncBus', () => ({
   enqueueFavoritesSync: jest.fn(),
-  enqueueReadingSessionSync: jest.fn(),
-  enqueuePreferenceSync: jest.fn(),
 }));
 jest.mock('@/data/reciterData', () => ({RECITERS: []}));
 

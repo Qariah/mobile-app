@@ -77,6 +77,8 @@ import {
 import {forceLTR} from '@/utils/rtl';
 import {invertLtrNativeSlider} from '@/i18n/qariahIosLanguage'; // Qariah
 import {getRecitationStyleLabel} from './recitationStyle';
+import {useTranslation} from 'react-i18next'; // Qariah: the control labels
+import {usePlayerSliderA11y} from './usePlayerSliderA11y'; // Qariah
 // @ai-end
 
 interface TabletPlayerProps {
@@ -123,6 +125,7 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
   const readingColors = useReadingThemeColors();
   const glassColorScheme = useGlassColorScheme();
   const insets = useSafeAreaInsets();
+  const {t} = useTranslation(['common', 'qariah', 'reader', 'sheets']); // @ai Qariah: the control labels
   const {width: windowWidth} = useWindowDimensions();
   const {orientation} = useResponsive();
 
@@ -336,8 +339,7 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
     try {
       if (next) await play();
       else await pause();
-      // @ai Re-sync with the store: play() can return with no audio and no
-      // state change (an early tap that got no player).
+      // @ai Re-sync with the store: play() can return with no audio and no state change.
       setOptimisticIsPlaying(
         usePlayerStore.getState().playback.state === 'playing',
       );
@@ -397,6 +399,25 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
     ];
     updateSettings({repeatMode: next});
   }, [settings.repeatMode, updateSettings]);
+
+  // @ai-start
+  // Qariah (TECH_DEBT #339): the labels of the phone player (Sprint 50 Task 20).
+  const repeatModeLabel = {
+    none: t('qariah:a11y.player.repeatOff'),
+    queue: t('qariah:a11y.player.repeatQueue'),
+    track: t('qariah:a11y.player.repeatTrack'),
+  }[settings.repeatMode];
+  const loveLabel = isLoved
+    ? t('sheets:homeCardOptions.removeFromLoved')
+    : t('sheets:homeCardOptions.addToLoved');
+  const seekSeconds = localizeDigits(SEEK_INTERVAL);
+  const sliderA11y = usePlayerSliderA11y({
+    progress,
+    seekTo,
+    displayTime,
+    formatTime,
+  });
+  // @ai-end
 
   // Theme colors
   const textColor = theme.colors.text;
@@ -535,7 +556,12 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
   );
 
   const renderHeart = () => (
-    <Pressable onPress={handleToggleLoved} style={styles.heartBtn}>
+    <Pressable
+      onPress={handleToggleLoved}
+      accessibilityRole="button" // @ai
+      accessibilityLabel={loveLabel} // @ai
+      testID="player-love" // @ai
+      style={styles.heartBtn}>
       <Animated.View style={loveAnimStyle}>
         <HeartIcon
           size={moderateScale(22)}
@@ -552,6 +578,7 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
         style={styles.slider}
         // Qariah: stays left to right when UIKit runs RTL (iOS Arabic).
         inverted={invertLtrNativeSlider}
+        {...sliderA11y} // @ai
         minimumValue={0}
         maximumValue={progress.duration || 1}
         tapToSeek
@@ -582,6 +609,11 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       <Pressable
         onPress={handleSeekBack}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('qariah:a11y.player.skipBack', {
+          seconds: seekSeconds,
+        })} // @ai
+        testID="player-skip-back" // @ai
         style={[styles.transportSide, trackLoading && styles.disabled]}>
         <View style={styles.seekWrap}>
           <SeekBackwardIcon
@@ -601,6 +633,9 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       <Pressable
         onPress={handlePrev}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('qariah:a11y.player.previous')} // @ai
+        testID="player-previous" // @ai
         style={[styles.transportSide, trackLoading && styles.disabled]}>
         <PreviousIcon
           color={trackLoading ? secondaryColor : textColor}
@@ -610,6 +645,13 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       <Pressable
         onPress={handlePlayPause}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={
+          optimisticIsPlaying
+            ? t('common:actions.pause')
+            : t('common:actions.play')
+        } // @ai the label follows the icon
+        testID="player-play-pause" // @ai
         style={[
           styles.playButton,
           {backgroundColor: Color(textColor).alpha(0.08).toString()},
@@ -623,6 +665,9 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       <Pressable
         onPress={handleNext}
         disabled={trackLoading || isLastTrack}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('common:actions.next')} // @ai
+        testID="player-next" // @ai
         style={[
           styles.transportSide,
           (trackLoading || isLastTrack) && styles.disabled,
@@ -635,6 +680,11 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       <Pressable
         onPress={handleSeekFwd}
         disabled={trackLoading}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('qariah:a11y.player.skipForward', {
+          seconds: seekSeconds,
+        })} // @ai
+        testID="player-skip-forward" // @ai
         style={[styles.transportSide, trackLoading && styles.disabled]}>
         <View style={styles.seekWrap}>
           <SeekForwardIcon
@@ -656,7 +706,12 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
 
   const renderTools = () => (
     <View style={styles.tools}>
-      <Pressable style={styles.tool} onPress={onMushafLayoutPress}>
+      <Pressable
+        style={styles.tool}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('reader:mushaf.settings')} // @ai
+        testID="player-mushaf-settings" // @ai
+        onPress={onMushafLayoutPress}>
         <Ionicons
           name="options-outline"
           size={moderateScale(20)}
@@ -668,6 +723,10 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
           styles.tool,
           playbackRate !== 1 && {backgroundColor: toolActiveBg},
         ]}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:playbackSpeed.title')} // @ai
+        accessibilityValue={{text: localizeDigits(`${playbackRate}x`)}} // @ai
+        testID="player-speed" // @ai
         onPress={onSpeedPress}>
         <Text style={[styles.toolLabel, {color: textColor}]}>
           {localizeDigits(`${playbackRate}x`)}
@@ -678,6 +737,10 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
           styles.tool,
           settings.repeatMode !== 'none' && {backgroundColor: toolActiveBg},
         ]}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:verseActions.repeat')} // @ai
+        accessibilityValue={{text: repeatModeLabel}} // @ai
+        testID="player-repeat" // @ai
         onPress={handleRepeatPress}>
         {settings.repeatMode === 'track' ? (
           <RepeatOneIcon size={moderateScale(20)} color={textColor} />
@@ -687,6 +750,10 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       </Pressable>
       <Pressable
         style={[styles.tool, isTimerActive && {backgroundColor: toolActiveBg}]}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:sleepTimer.title')} // @ai
+        accessibilityState={{selected: isTimerActive}} // @ai
+        testID="player-sleep-timer" // @ai
         onPress={onSleepTimerPress}>
         <TimerIcon
           size={moderateScale(20)}
@@ -700,6 +767,10 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
             styles.tool,
             ambientEnabled && {backgroundColor: toolActiveBg},
           ]}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('sheets:ambient.title')} // @ai
+          accessibilityState={{selected: ambientEnabled}} // @ai
+          testID="player-ambient" // @ai
           onPress={onAmbientPress}>
           <AmbientIcon
             size={moderateScale(20)}
@@ -715,6 +786,10 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
           !followAlongAvailable && {opacity: 0.35},
         ]}
         onPress={onFollowAlongPress}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('sheets:followAlong.title')} // @ai
+        accessibilityState={{selected: followAlongActive}} // @ai
+        testID="player-locate-verse" // @ai
         disabled={!followAlongAvailable}>
         <Ionicons
           name="locate-outline"
@@ -724,6 +799,9 @@ const TabletPlayer: React.FC<TabletPlayerProps> = ({
       </Pressable>
       <Pressable
         style={[styles.tool, showQueue && {backgroundColor: toolActiveBg}]}
+        accessibilityRole="button" // @ai
+        accessibilityLabel={t('common:terms.queue')} // @ai
+        testID="player-queue-button" // @ai
         onPress={handleQueueTap}>
         <QueueIcon size={moderateScale(20)} color={textColor} />
       </Pressable>

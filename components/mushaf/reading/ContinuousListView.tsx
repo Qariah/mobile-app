@@ -6,7 +6,7 @@ import React, {
   useImperativeHandle,
   forwardRef,
 } from 'react';
-import {View} from 'react-native';
+import {View, useWindowDimensions} from 'react-native'; // @ai
 import {
   FlashList,
   type FlashListRef,
@@ -38,7 +38,6 @@ import SurahDivider from '@/components/player/v2/PlayerContent/QuranView/SurahDi
 import BasmalaHeader from '@/components/player/v2/PlayerContent/QuranView/BasmalaHeader';
 import {getTranslationName} from '@/utils/translationLookup';
 import {getAllahNameHighlightColorHex} from '@/constants/mushafAllahHighlight';
-import {SCREEN_WIDTH} from '../constants';
 // @ai-start
 import {useRewayahVerseUnits} from '@/hooks/useRewayahVerseUnits';
 import {parseAnchorKey} from '@/services/mushaf/RewayahVerseUnits';
@@ -354,7 +353,9 @@ const ContinuousListView = forwardRef<
 
     const items = useMemo(() => buildContinuousListItems(), []);
 
-    const contentWidth = SCREEN_WIDTH - moderateScale(16);
+    // @ai TECH_DEBT #278: the live window width, so the rows follow a rotation.
+    const {width: windowWidth} = useWindowDimensions();
+    const contentWidth = windowWidth - moderateScale(16);
 
     // Load annotations for visible surahs
     const loadAnnotationsForSurah = useVerseAnnotationsStore(
@@ -373,21 +374,11 @@ const ContinuousListView = forwardRef<
       return 0;
     }, [initialPage, unitList]);
 
-    // Issue #55 — on the translations/reading list, opening a surah lands PAST
-    // ayah 1 (user must scroll up to reach the beginning). Root cause is the
-    // documented FlashList v2 class (Sprint 23 rule #6): `initialScrollIndex`
-    // mis-lands before item measurement — variable-height translation rows are
-    // taller than FlashList's size estimate, so the cold-mount offset overshoots
-    // the target. Re-issue the scroll once after layout via a 2-rAF defer (the
-    // same correction QuranView uses for its partial-ayah seek). Fires only on
-    // cold mount; explicit navigation goes through the imperative handlers above.
+    // #55: FlashList v2 mis-lands `initialScrollIndex` before measurement. Scroll again after layout (2 rAF).
     const didInitialScrollRef = useRef(false);
     useEffect(() => {
       if (didInitialScrollRef.current) return;
-      // Include index 0 (surah opening at ayah 1): FlashList v2 still mis-lands
-      // it before measurement, so it needs the same 2-rAF correction as any
-      // other index. Excluding `<= 0` left translation/list view stuck below
-      // ayah 1 on cold open (#55); the player path (QuranView) lets 0 through.
+      // Include index 0: FlashList v2 mis-lands it too (#55).
       if (initialScrollIndex == null) return;
       didInitialScrollRef.current = true;
       let inner = 0;
@@ -399,9 +390,7 @@ const ContinuousListView = forwardRef<
               animated: false,
             });
           } catch {
-            // FlashList v2 silently no-ops a pre-measurement scrollToIndex (no
-            // onScrollToIndexFailed); the initialScrollIndex prop already set the
-            // approximate cold position, so a miss here is non-fatal.
+            // A pre-measurement scrollToIndex can fail; the initialScrollIndex prop already set the position.
           }
         });
       });

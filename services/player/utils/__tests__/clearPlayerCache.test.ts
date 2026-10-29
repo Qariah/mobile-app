@@ -59,6 +59,12 @@ jest.mock('../../store/recentlyPlayedStore', () => {
   return {useRecentlyPlayedStore: {getState: () => ({reset})}};
 });
 
+// @ai TECH_DEBT #350: the clear removes the main player's Now Playing entry.
+const mockClearMainPlayer = jest.fn();
+jest.mock('@/services/audio/LockScreenService', () => ({
+  lockScreenService: {clearMainPlayer: () => mockClearMainPlayer()},
+}));
+
 import {clearPlayerCache} from '../storage';
 import {usePlayerStore} from '../../store/playerStore';
 import {expoAudioService} from '@/services/audio/ExpoAudioService';
@@ -116,6 +122,34 @@ describe('clearPlayerCache() while audio plays (#235)', () => {
     const state = usePlayerStore.getState();
     expect(state.queue.tracks).toHaveLength(0);
     expect(state.queue.currentIndex).toBe(-1);
+  });
+
+  // @ai TECH_DEBT #350: Control Center kept an empty Now Playing entry after the clear.
+  it('clears the Now Playing entry after the pause and the reset', async () => {
+    await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
+    await flush();
+
+    await clearPlayerCache();
+
+    expect(mockClearMainPlayer).toHaveBeenCalledTimes(1);
+    expect(mockedAudio.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClearMainPlayer.mock.invocationCallOrder[0],
+    );
+    expect(mockedAudio.cleanup.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClearMainPlayer.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('still clears the Now Playing entry when the pause fails', async () => {
+    await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
+    await flush();
+    mockedAudio.pause.mockImplementation(() =>
+      Promise.reject(new Error('native pause failed')),
+    );
+
+    await clearPlayerCache();
+
+    expect(mockClearMainPlayer).toHaveBeenCalledTimes(1);
   });
 
   it('still resets the queue when the pause fails', async () => {
