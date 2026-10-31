@@ -107,7 +107,11 @@ export function composeSchema(sections = SECTIONS) {
         type: 'object',
         // A section added after the first files (`addedAt`) is optional, so an
         // older file stays valid (the check step validates yesterday's file).
-        required: sections.filter(s => !s.addedAt).map(s => s.name),
+        // A retired section (`retiredAt`) is optional too: older files hold it,
+        // newer files do not.
+        required: sections
+          .filter(s => !s.addedAt && !s.retiredAt)
+          .map(s => s.name),
         additionalProperties: false,
         properties: Object.fromEntries(
           sections.map(s => [s.name, sectionEnvelope(s.schema)]),

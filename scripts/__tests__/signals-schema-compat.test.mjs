@@ -25,3 +25,19 @@ test('the real snapshot of 2026-10-19 (before listens, week and metric) is still
   assert.deepEqual(v.errors, []);
   assert.equal(judge(old).ok, true);
 });
+
+test('a retired section (engagement, 2026-10-30) is optional in the schema and does not run', async () => {
+  const {composeSchema} = await import('../signals/schema.mjs');
+  const {SECTIONS} = await import('../signals/sections/index.mjs');
+  const schema = composeSchema();
+  const eng = SECTIONS.find(s => s.name === 'engagement');
+  assert.equal(eng.retiredAt, '2026-10-30');
+  assert.ok('engagement' in schema.properties.sections.properties);
+  assert.ok(!schema.properties.sections.required.includes('engagement'));
+  // the snapshot runs the sections without retiredAt
+  const src = (await import('node:fs')).readFileSync(
+    new URL('../signals/snapshot.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(src, /SECTIONS\.filter\(s => !s\.retiredAt\)/);
+});

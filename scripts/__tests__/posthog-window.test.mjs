@@ -9,7 +9,12 @@
 
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
-import {isQueryTimeout, withWindowFallback} from '../lib/posthog-window.mjs';
+import {
+  isPostHogBusy,
+  isQueryTimeout,
+  retryBusy,
+  withWindowFallback,
+} from '../lib/posthog-window.mjs';
 
 const TIMEOUT = new Error(
   'PostHog 504: {"type":"server_error","detail":"Query has hit the max execution time"}',
@@ -105,5 +110,39 @@ describe('withWindowFallback', () => {
       }),
       /PostHog 504/,
     );
+  });
+});
+
+describe('PostHog busy retry (moved from ab-card.test.mjs, 2026-10-30)', () => {
+  it('knows 503 and 504 as busy, and nothing else', () => {
+    assert.ok(isPostHogBusy(new Error('PostHog 503: too busy')));
+    assert.ok(isPostHogBusy(new Error('PostHog 504: max execution time')));
+    assert.ok(!isPostHogBusy(new Error('PostHog 500')));
+  });
+  it('retries a busy query once, after the pause', async () => {
+    let calls = 0;
+    let slept = 0;
+    const out = await retryBusy(
+      async () => {
+        calls++;
+        if (calls === 1) throw new Error('PostHog 504: busy');
+        return 'ok';
+      },
+      {waitMs: 5, sleep: async ms => (slept = ms)},
+    );
+    assert.equal(out, 'ok');
+    assert.equal(calls, 2);
+    assert.equal(slept, 5);
+  });
+  it('does not retry an error that is not busy', async () => {
+    let calls = 0;
+    await assert.rejects(
+      retryBusy(async () => {
+        calls++;
+        throw new Error('PostHog 400: bad query');
+      }),
+      /400/,
+    );
+    assert.equal(calls, 1);
   });
 });

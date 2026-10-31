@@ -13,9 +13,9 @@ const normalize = (version: string): string =>
   semver.valid(semver.coerce(version)) ?? version;
 
 describe('data/changelog.json', () => {
-  it('starts with the draft 3.3.0 entry', () => {
+  it('starts with the 3.2.3 entry', () => {
     const [latest] = changelog;
-    expect(latest.version).toBe('3.3.0');
+    expect(latest.version).toBe('3.2.3');
     expect(latest.releaseDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(latest.title.length).toBeGreaterThan(0);
     expect(latest.highlights.length).toBeGreaterThanOrEqual(3);
@@ -23,6 +23,12 @@ describe('data/changelog.json', () => {
     expect(latest.fullChangelog?.features?.length).toBeGreaterThan(0);
     expect(latest.fullChangelog?.improvements?.length).toBeGreaterThan(0);
     expect(latest.fullChangelog?.fixes?.length).toBeGreaterThan(0);
+  });
+
+  it('ends the newest highlights with the Settings feedback pointer (owner rule, 2026-10-30)', () => {
+    const [latest] = changelog;
+    const last = latest.highlights[latest.highlights.length - 1];
+    expect(last.description).toContain('Settings › Feedback › Help & Support');
   });
 
   it('lists the newest release first', () => {

@@ -74,9 +74,56 @@ const rowRe = label =>
     'm',
   );
 
-/** The numbers of a card: {people, journey, active, usage}. Absent parts are null. */
+/**
+ * A two-column table of the card (since 2026-10-30): the lines after `title`
+ * up to the next blank line, each `<label>  <7 days>  <30 days>`.
+ * → [[label, d7, d30]] with the label as printed (leading spaces kept), or null.
+ */
+export function table2(text, title) {
+  const lines = String(text).split('\n');
+  const at = lines.findIndex(l => l.startsWith(title));
+  if (at < 0) return null;
+  const out = [];
+  for (const l of lines.slice(at + 1)) {
+    if (!l.trim()) break;
+    const m = l.match(/^(.*?)\s+([\d,]+)\s+([\d,]+)\s*$/);
+    if (m) out.push([m[1].trimEnd(), num(m[2]), num(m[3])]);
+  }
+  return out.length ? out : null;
+}
+
+const PEOPLE_ROWS = {
+  'All v2 builds': 'total',
+  '  iOS': 'iOS',
+  '  Android': 'Android',
+  '  installed or updated': 'installed',
+};
+
+/** BUILDS → {rows: {label: [d7, d30]}, other: [d7, d30] | null, people: {d7, d30}}, or null. */
+export function parseBuilds(text) {
+  const t = table2(text, 'BUILDS (people)');
+  if (!t) return null;
+  const rows = {};
+  let other = null;
+  const people = {d7: {}, d30: {}};
+  for (const [label, d7, d30] of t) {
+    if (label in PEOPLE_ROWS) {
+      people.d7[PEOPLE_ROWS[label]] = d7;
+      people.d30[PEOPLE_ROWS[label]] = d30;
+    } else if (/^\d+ other builds$/.test(label)) other = [d7, d30];
+    else rows[label] = [d7, d30];
+  }
+  return {rows, other, people};
+}
+
+/**
+ * The numbers of a card: {builds, journeyWindows, people, journey, active,
+ * usage}. builds and journeyWindows are the tables of a card from 2026-10-30;
+ * people and journey are the lines of an older card. Absent parts are null.
+ */
 export function parseCard(text) {
   if (!text) return null;
+  const jw = table2(text, 'JOURNEY');
   const p = text.match(/^([\d,]+) people · iOS ([\d,]+) · Android ([\d,]+)/m);
   const inst = text.match(/^\s+([\d,]+) of them installed or updated it/m);
   const journey = {};
@@ -93,6 +140,10 @@ export function parseCard(text) {
     return Object.keys(out).length ? out : null;
   };
   return {
+    builds: parseBuilds(text),
+    journeyWindows: jw
+      ? Object.fromEntries(jw.map(([label, d7, d30]) => [label, [d7, d30]]))
+      : null,
     people: p
       ? {
           total: num(p[1]),
@@ -131,6 +182,34 @@ export function compareCard(parsed, data) {
     compared++;
     if (!close(snap, card)) diffs.push({field, snapshot: snap ?? null, card});
   };
+  if (parsed.builds) {
+    const lb = data?.liveBuilds;
+    const byLabel = Object.fromEntries(
+      (lb?.rows || []).map(r => [`${r.platform} ${r.build} (${r.version})`, r]),
+    );
+    for (const [label, [d7, d30]] of Object.entries(parsed.builds.rows)) {
+      const r = byLabel[label] || {};
+      cmp(`builds.${label}.d7`, r.d7, d7);
+      cmp(`builds.${label}.d30`, r.d30, d30);
+    }
+    if (parsed.builds.other) {
+      cmp('builds.other.d7', lb?.other?.d7, parsed.builds.other[0]);
+      cmp('builds.other.d30', lb?.other?.d30, parsed.builds.other[1]);
+    }
+    const pw = data?.peopleWindows || {};
+    for (const w of ['d7', 'd30'])
+      for (const [k, n] of Object.entries(parsed.builds.people[w]))
+        cmp(`people.${w}.${k}`, pw[w]?.[k], n);
+  }
+  if (parsed.journeyWindows) {
+    const byLabel = Object.fromEntries(
+      (data?.journeyWindows || []).filter(Boolean).map(s => [s.label, s]),
+    );
+    for (const [label, [d7, d30]] of Object.entries(parsed.journeyWindows)) {
+      cmp(`journey.${label}.d7`, byLabel[label]?.d7, d7);
+      cmp(`journey.${label}.d30`, byLabel[label]?.d30, d30);
+    }
+  }
   if (parsed.people) {
     const pp = data?.people || {};
     for (const k of ['total', 'iOS', 'Android', 'installed'])

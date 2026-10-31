@@ -340,7 +340,9 @@
       "widgetsTitle": "Home Screen Widgets",
       "widgetsBody": "Add Qariah widgets to your Home Screen on iPhone and Android: continue listening or reading, play a surah, and see the ayah of the day.",
       "recitationsTitle": "New Recitations",
-      "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the qariah and the range of a partial recitation."
+      "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the qariah and the range of a partial recitation.",
+      "feedbackTitle": "Tell Us What You Think",
+      "feedbackBody": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support."
     }
   },
   "counts": {

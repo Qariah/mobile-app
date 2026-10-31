@@ -29,6 +29,7 @@ import {
   getLastSeenVersion,
   filterPagesByVersion,
 } from '@/utils/versionUtils';
+import branding from '@/config/branding';
 import {getOnboardingPages, OnboardingPage} from '@/data/onboardingPages';
 import OnboardingPageComponent from './OnboardingPage';
 import DotIndicator, {DOT_INDICATOR_HEIGHT} from './DotIndicator';
@@ -98,7 +99,10 @@ export const WhatsNewModal = forwardRef<WhatsNewModalRef>((_, ref) => {
   useEffect(() => {
     async function checkAndShow() {
       try {
-        const versionChanged = await hasVersionChanged();
+        // @ai Qariah (TECH_DEBT #390): a patch release can show its update pages too.
+        const versionChanged = await hasVersionChanged({
+          includePatch: branding.whatsNewOnPatchUpdate === true,
+        });
         if (versionChanged) {
           const lastSeen = await getLastSeenVersion();
           const filtered = filterPagesByVersion(getOnboardingPages(), lastSeen);

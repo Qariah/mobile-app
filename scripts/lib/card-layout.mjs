@@ -6,21 +6,21 @@
 // people and journey block, ACTIVE and USE. Pure functions, tested in
 // scripts/__tests__/card-layout.test.mjs.
 //
-// Owner layout, 2026-10-11 (the card had grown redundant):
-//   date and data window · the builds counted and not counted · rollout
-//   people (iOS / Android) · the journey (counts only)
+// Owner layout, 2026-10-11, changed 2026-10-30 (after 2027 reached 100%):
+//   date · what is counted · the end of the windows · the rollout (only
+//   while active-rollout.json `active` is true)
+//   BUILDS: people on each v2 build with more than 50 people in the last 7
+//     days, the other builds in one row, every v2 build (7 and 30 days)
+//   JOURNEY: people on every v2 build who reached each step (7 and 30 days)
 //   ACTIVE: DAU / WAU / MAU for today, yesterday, the day before
 //   USE: recitations and pages for the last day / week / month
-// The FREEZES (ANR) block comes from anr-card.mjs (since 2026-10-20; the A/B
-// section of ab-card.mjs prints only with --ab), the ops sections from
-// daily-card.mjs.
+// The FREEZES (ANR) block comes from anr-card.mjs (since 2026-10-20), the ops
+// sections from daily-card.mjs.
 //
-// SCOPE. People, the journey and FAILURES count the production builds only
-// (cardBuilds): every build that serves users in the stores now, on both
-// platforms. On 2026-10-11 that was iOS 1718 (3.2.1) and Android 1717 (3.2.0)
-// + 2027 (3.2.1, staged). The old card counted the release 3.2.1 only, so it
-// left out the 1165 weekly Android users still on 3.2.0. ACTIVE and USE count
-// every version: a person active on an old build is still active.
+// SCOPE. BUILDS, JOURNEY, ACTIVE and USE count every v2 build. FAILURES and
+// FREEZES count the production builds (cardBuilds): every build that serves
+// users in the stores now, on both platforms (active-rollout.json
+// card.builds).
 //
 // A build with `anrScore: false` in card.builds still counts for people, the
 // journey and FAILURES, but it stays out of Google's score: the Play ANR rate
@@ -107,20 +107,10 @@ export function wrap(text, width = WIDTH, indent = '  ') {
  * {date, weekday, windowLabel, builds, ios, android}; ios/android are the
  * rollout texts the loop passes (--ios, --android), or empty.
  */
-export function renderHeader({
-  date,
-  weekday,
-  windowLabel,
-  windowEnd,
-  builds,
-  ios,
-  android,
-}) {
+export function renderHeader({date, weekday, windowEnd, ios, android}) {
   const L = [`QARIAH · ${weekday ? `${weekday} ` : ''}${date}`];
-  L.push(`Counted ${windowLabel}:`);
-  for (const l of buildLines(builds)) L.push(...wrap(`  ${l}`, WIDTH, '    '));
-  L.push('Active and use: all versions');
-  L.push('Never counted: lab devices');
+  // Since 2026-10-30 every block counts every v2 build (BUILDS shows them).
+  L.push('Every v2 build · lab devices left out');
   // Since 2026-10-25 the PostHog numbers end at a fixed time (daily-card.mjs AT).
   if (windowEnd) L.push(`Counts end ${windowEnd} Los Angeles time`);
   if (ios || android) {
@@ -131,26 +121,48 @@ export function renderHeader({
   return L;
 }
 
+const COUNT_W = 7;
+const COUNT30_W = 9;
+const LABEL_W = 22;
+const row2 = (label, a, b) =>
+  `${label.padEnd(LABEL_W)}${String(a ?? '—').padStart(COUNT_W)}${String(b ?? '—').padStart(COUNT30_W)}`;
+
 /**
- * People and the journey: counts only, no bar and no percentage.
- * total, byPlatform {iOS, Android}, installed, steps [{label, n}]
+ * BUILDS (since 2026-10-30): people on each v2 build in the last 7 and 30
+ * days. live: {minPeople, rows [{platform, version, build, d7, d30}], other
+ * {builds, d7, d30} | null} (a row for each build with more than minPeople
+ * people in the last 7 days; the other builds in one row, each person once).
+ * people: {d7, d30}, each {total, iOS, Android, installed}.
  *
  * `installed` is NOT a journey step. The install event fires once, on the
  * first launch after an install or an update, so a person who updated before
  * the window opens the app every day and never sends one in it. On 2026-10-11
- * "Installed" (2598) sat above "Opened" (4656) and read as a broken funnel.
- * It prints as its own line under the people count; the journey starts at
- * Opened.
+ * "Installed" (2598) sat above "Opened" (4656) and read as a broken funnel. It
+ * prints under the people count, not in the journey.
  */
-export function renderJourney({total, byPlatform, installed, steps}) {
-  const L = [
-    `${total} people · iOS ${byPlatform.iOS || 0} · Android ${byPlatform.Android || 0}`,
-  ];
-  if (installed != null)
-    L.push(`  ${installed} of them installed or updated it`);
-  L.push('');
-  for (const s of steps)
-    L.push(`${s.label.padEnd(14)}${String(s.n).padStart(6)}`);
+export function renderBuilds(live, people) {
+  const L = [row2('BUILDS (people)', '7 days', '30 days')];
+  if (!live || !people) return [...L, '  unavailable'];
+  for (const b of live.rows)
+    L.push(row2(`${b.platform} ${b.build} (${b.version})`, b.d7, b.d30));
+  if (live.other)
+    L.push(
+      row2(`${live.other.builds} other builds`, live.other.d7, live.other.d30),
+    );
+  L.push(row2('All v2 builds', people.d7.total, people.d30.total));
+  L.push(row2('  iOS', people.d7.iOS, people.d30.iOS));
+  L.push(row2('  Android', people.d7.Android, people.d30.Android));
+  L.push(
+    row2('  installed or updated', people.d7.installed, people.d30.installed),
+  );
+  return L;
+}
+
+/** JOURNEY: people on every v2 build who reached each step. steps: [{label, d7, d30}]. */
+export function renderJourneyWindows(steps) {
+  const L = [row2('JOURNEY', '7 days', '30 days')];
+  if (!Array.isArray(steps)) return [...L, '  unavailable'];
+  for (const st of steps) L.push(row2(st.label, st.d7, st.d30));
   return L;
 }
 

@@ -24,6 +24,11 @@ import {cell, eventCell, rate} from '../lib/rules.mjs';
 
 export const name = 'engagement';
 export const required = false;
+// Retired on 2026-10-30 (owner: no rollout-specific cards after 2027 reached
+// 100%). The snapshot no longer runs it; the schema keeps it, optional, so
+// older files stay valid. The page's "People and the journey" card shows each
+// build (journey-by-build.mjs).
+export const retiredAt = '2026-10-30';
 // 45 days: D28 needs installs at least 29 full days old, which a 30-day
 // window can never hold (test plan T-SCH-13). The script halves the window
 // once when PostHog times out; data.window records the window it used.

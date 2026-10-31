@@ -451,6 +451,14 @@ export interface QariahBranding extends Branding {
    * at the end of the queue (upstream's behavior). Upstream candidate (a `Branding` field, default off).
    */
   continueToNextSurah?: boolean;
+
+  /**
+   * TECH_DEBT #390: the update pages (`components/modals/WhatsNewOnboarding`) also show after a
+   * patch update (3.2.1 → 3.2.3), so every release can show its release notes. Absent or false:
+   * only a minor or major update shows them (upstream's behavior). Upstream candidate (a
+   * `Branding` field, default off).
+   */
+  whatsNewOnPatchUpdate?: boolean;
 }
 
 declare const branding: QariahBranding;

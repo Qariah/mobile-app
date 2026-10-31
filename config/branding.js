@@ -92,6 +92,9 @@ const branding = {
   /** GitHub #557: at the end of the queue, play the next surah by the same reciter (services/player/utils/queueNextSurah.ts). */
   continueToNextSurah: true,
 
+  /** TECH_DEBT #390: show the update pages after a patch update too (utils/versionUtils.ts `hasVersionChanged`). */
+  whatsNewOnPatchUpdate: true,
+
   /** Listen-tab home-row order and visibility (upstream PR #260). The array order is the visual order. */
   homeRowConfig: [
     // ----- Visible rows -----

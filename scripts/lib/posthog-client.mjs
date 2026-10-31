@@ -87,7 +87,7 @@ export function createPosthogClient({
   /**
    * Run a HogQL query. Resolves to the result rows.
    * Rejects with `PostHog <status>: <body head>`. The `PostHog 5xx` prefix is
-   * load-bearing: lib/posthog-window.mjs and lib/ab-card.mjs match
+   * load-bearing: lib/posthog-window.mjs matches
    * `PostHog 504` and `PostHog 503` to retry a busy query.
    * @param {string} query
    * @param {{limit?:number, cap?:number, capMessage?:(rows:number, cap:number)=>string}} [o]

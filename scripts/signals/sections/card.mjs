@@ -9,8 +9,12 @@
 //
 //   header    the date of the run, measuredAt (the end of the card's windows:
 //             ctx.asOf, 11:00 LA on the run date, since 2026-10-25), the card window, the production builds
-//   people    distinct installs on the production builds in the window
-//   journey   Opened, Past loading, Logged in, Started, Really used
+//   liveBuilds   (since 2026-10-30) people on each v2 build with more than 50
+//                people in the last 7 days, and the other builds in one row
+//   peopleWindows, journeyWindows   (since 2026-10-30) people and the journey
+//                on every v2 build, last 7 and 30 days
+//   people, journey   (until 2026-10-29) the same on the production builds
+//                since the rollout start; older files only
 //   active    DAU / WAU / MAU in trailing windows at run time (all versions)
 //   usage     event totals in the trailing day / week / month (all versions)
 //   failures  journey failures (PostHog) and crashes (Sentry)
@@ -18,7 +22,7 @@
 //             anr.sentry.week: the users who froze in the last 7 complete UTC
 //             days and the 7 days before, with the card's verdict (the
 //             FREEZES (ANR) block; planning/signals-anr-listens-design.md)
-//   ab        the staged build's A/B arms (active-rollout.json abTest)
+//   ab        (until 2026-10-29) the 2027 A/B arms; older files only
 //
 // The section runs the card with --at=ctx.asOf (since 2026-10-25): the card's
 // windows end at asOf (header.measuredAt), not at dataThrough, and count the
@@ -39,19 +43,6 @@ export const SCRIPT = [
   '--no-owner',
 ];
 
-// daily-card.mjs `byPlatform` rows: the platform, the person count, then one
-// column for each of its STEPS in order. The card prints the steps after
-// `installed` as the journey.
-export const COLUMNS = [
-  'platform',
-  'total',
-  'installed',
-  'opened',
-  'past_loading',
-  'logged_in',
-  'started',
-  'used_it',
-];
 export const JOURNEY = [
   {key: 'opened', label: 'Opened'},
   {key: 'past_loading', label: 'Past loading'},
@@ -64,10 +55,12 @@ export const USAGE_KEYS = ['plays', 'heard', 'finished', 'pages'];
 export const PLATFORMS = ['iOS', 'Android'];
 
 export const DEFINITIONS = {
-  people:
-    'distinct installs (PostHog person_id) with any event on a production build of active-rollout.json card.builds, from the window start (startedAt) to header.measuredAt (11:00 LA on the run date, since 2026-10-25; before, the run time), events received by then; lab excluded; iPadOS = iOS; an install with no $os_name counts as Android, as the card does. installed = those of them with Application Installed or Application Updated in the window (not store downloads)',
-  journey:
-    'installs on the production builds that reached each step in the window (the union of the step events): Opened = cold_start_began; Past loading = splash_hidden or screen_content_rendered; Logged in = sign_in_succeeded, or onboarding_completed with signed_in = true (a floor: PostHog does not know who is already signed in); Started = playback_started or mushaf_page_opened; Really used = meaningful_listen, mushaf_page_read or playback_completed',
+  liveBuilds:
+    'distinct installs (PostHog person_id) with any event on a v2 build ($app_build 500 or more) in the last 7 days (d7) and 30 days (d30) that end at header.measuredAt, events received by then, lab excluded. rows = each (platform, build) with more than minPeople installs in d7; other = the remaining builds, each install once (by build number). The platform of an install on a build is iOS when any of its events there says iOS or iPadOS, else Android',
+  peopleWindows:
+    'distinct installs on every v2 build in d7 and d30 (as liveBuilds); total = iOS + Android, the platform of an install = iOS when any of its events says iOS or iPadOS; installed = those of them with Application Installed or Application Updated in the window (not store downloads)',
+  journeyWindows:
+    'installs on every v2 build that reached each step in d7 and d30 (the union of the step events, scripts/lib/journey-steps.mjs): Opened = cold_start_began; Past loading = splash_hidden or screen_content_rendered; Logged in = sign_in_succeeded, or onboarding_completed with signed_in = true (a floor); Started = playback_started or mushaf_page_opened; Really used = meaningful_listen, mushaf_page_read or playback_completed',
   active:
     'distinct installs with any event, all versions, lab excluded, events received by header.measuredAt, in the trailing 24 hours (dau), 7 days (wau) and 30 days (mau) that end at header.measuredAt (Today), 1 day before (Yesterday) and 2 days before (Day before)',
   usage:
@@ -77,7 +70,6 @@ export const DEFINITIONS = {
   crashes:
     'the 5 unresolved Sentry issues of level error or fatal with the most users on the production releases (14 days), less active-rollout.json card.suppressIssues. users = the Sentry userCount of the whole issue, all releases: an upper bound for these builds',
   anr: 'play: Google Play user-perceived ANR rate for the production versionCodes of active-rollout.json card.builds (less the builds with anrScore false; since 2026-10-25) pooled by Play (codes; day, user-weighted 7d and 28d; before 2026-10-20 every v2 versionCode), as Play publishes it; the card prints d7 with two decimals as "Google\'s score" against the 0.47% limit (OVER when d7 rounded to 4 decimals is above 0.0047, else UNDER); dailyUsers = Play distinct users on that day (Play rounds it). sentry: for Android (ApplicationNotResponding), iOS hangs (App Hanging) and iOS killed (WatchdogTermination), on the last complete UTC day: activeUsers = session users, affectedUsers = users with the error, day = their rate (7d and 28d shares have no numerator in the card JSON, so they stay out). sentry.week: the FREEZES (ANR) block of the card. For each platform, users = distinct session users of the production releases (active-rollout.json card.builds, and since 2026-10-24 the older builds of the platform that still have session users) in the 7 complete UTC days from..to, frozeUsers = distinct users with a freeze in them (Android: ApplicationNotResponding that the user saw, not "Background ANR"; iOS: App Hanging or WatchdogTermination; no emulator or simulator), backgroundUsers (Android, this week) = distinct users with a "Background ANR", not in the share or the verdict, prevUsers and prevFrozeUsers = the same for prevFrom..prevTo; byBuild = this week for each production build, newest first; verdict = with a of b this week and c of d the week before, BETTER when 5ad <= 4cb, WORSE when 5ad >= 6cb, else SAME, TOO FEW when a < 5 and c < 5 (computed from the exact counts); a platform is {unavailable: true, reason} when a Sentry request failed, Sentry missed a day of the two weeks, or a week had no session users. appStore: the App Store hang rate of the newest v2 version (s/h). A source that the card prints as "unavailable" (no key) is null; a source that failed is {available: false}; the error text stays out of the data',
-  ab: 'the staged build (active-rollout.json build) and its A/B flag, organic devices since startedAt: users = all devices on the build; enrolled = devices with boot_risk_enrolled; the arms count enrolled devices only. byProcessArm counts devices by the arm of the process that died (a device can count under both arms)',
 };
 
 // ---------------------------------------------------------------------------
@@ -167,11 +159,8 @@ const abProcess = obj({
 });
 
 const schemaProps = {
-  definitions: obj(
-    Object.fromEntries(
-      Object.keys(DEFINITIONS).map(k => [k, {type: 'string'}]),
-    ),
-  ),
+  // Open: the keys changed on 2026-10-30, and older files keep theirs.
+  definitions: {type: 'object', additionalProperties: {type: 'string'}},
   header: obj({
     date: {$ref: '#/$defs/laDate'},
     measuredAt: {type: 'string'},
@@ -187,6 +176,35 @@ const schemaProps = {
       }),
     },
   }),
+  liveBuilds: obj({
+    minPeople: {type: 'integer', minimum: 0},
+    rows: {
+      type: 'array',
+      items: obj({
+        platform: {enum: PLATFORMS},
+        version: {type: 'string'},
+        build: {type: 'string'},
+        d7: C,
+        d30: C,
+      }),
+    },
+    other: {
+      anyOf: [
+        {type: 'null'},
+        obj({builds: {type: 'integer', minimum: 1}, d7: C, d30: C}),
+      ],
+    },
+  }),
+  peopleWindows: obj({
+    d7: obj({total: C, iOS: C, Android: C, installed: C}),
+    d30: obj({total: C, iOS: C, Android: C, installed: C}),
+  }),
+  journeyWindows: {
+    type: 'array',
+    minItems: JOURNEY.length,
+    maxItems: JOURNEY.length,
+    items: obj({key: {type: 'string'}, label: {type: 'string'}, d7: C, d30: C}),
+  },
   people: obj({total: C, iOS: C, Android: C, installed: C}),
   journey: {
     type: 'array',
@@ -327,10 +345,21 @@ const schemaProps = {
     ],
   },
 };
-// leftDuringSplash is optional: a snapshot from before 2026-10-24 has no such key.
+// Optional keys: leftDuringSplash (a file from before 2026-10-24 has none);
+// liveBuilds, peopleWindows and journeyWindows (since 2026-10-30); people,
+// journey and ab (until 2026-10-29; a newer file has none).
+const OPTIONAL = new Set([
+  'leftDuringSplash',
+  'liveBuilds',
+  'peopleWindows',
+  'journeyWindows',
+  'people',
+  'journey',
+  'ab',
+]);
 export const schema = obj(
   schemaProps,
-  Object.keys(schemaProps).filter(k => k !== 'leftDuringSplash'),
+  Object.keys(schemaProps).filter(k => !OPTIONAL.has(k)),
 );
 
 // ---------------------------------------------------------------------------
@@ -347,29 +376,57 @@ const isoDate = v =>
 const FAILED = {available: false};
 
 /** byPlatform rows → people and journey. Throws on a row of the wrong width. */
-export function shapePeople(byPlatform) {
-  const sums = Object.fromEntries(COLUMNS.slice(1).map(k => [k, 0]));
-  const byOs = {iOS: 0, Android: 0};
-  for (const row of byPlatform || []) {
-    if (!Array.isArray(row) || row.length !== COLUMNS.length)
-      throw new Error(
-        `daily-card byPlatform row has ${Array.isArray(row) ? row.length : '?'} columns, expected ${COLUMNS.length} (${COLUMNS.join(', ')}): the card's STEPS changed`,
-      );
-    const r = Object.fromEntries(COLUMNS.map((k, i) => [k, row[i]]));
-    for (const k of COLUMNS.slice(1)) sums[k] += Number(r[k]) || 0;
-    if (r.platform in byOs) byOs[r.platform] += Number(r.total) || 0;
-  }
+/**
+ * The card JSON's liveBuilds, peopleWindows and journeyWindows (daily-card.mjs
+ * collectPeople) → the section's, with the cell rule. Throws when a part is
+ * missing: the card's shape changed.
+ */
+export function shapeBuilds(card) {
+  const live = card?.liveBuilds;
+  const pw = card?.peopleWindows;
+  const jw = card?.journeyWindows;
+  if (
+    !live ||
+    !Array.isArray(live.rows) ||
+    !pw?.d7 ||
+    !pw?.d30 ||
+    !Array.isArray(jw)
+  )
+    throw new Error(
+      'daily-card JSON has no liveBuilds, peopleWindows or journeyWindows: the card changed',
+    );
+  const n = v => cell(Number(v) || 0);
+  const people = w => ({
+    total: n(w.total),
+    iOS: n(w.iOS),
+    Android: n(w.Android),
+    installed: n(w.installed),
+  });
+  const byKey = Object.fromEntries(jw.map(st => [st.key, st]));
   return {
-    people: {
-      total: cell(sums.total),
-      iOS: cell(byOs.iOS),
-      Android: cell(byOs.Android),
-      installed: cell(sums.installed),
+    liveBuilds: {
+      minPeople: Number(live.minPeople) || 0,
+      rows: live.rows.map(b => ({
+        platform: b.platform,
+        version: String(b.version ?? ''),
+        build: String(b.build),
+        d7: n(b.d7),
+        d30: n(b.d30),
+      })),
+      other: live.other
+        ? {
+            builds: Number(live.other.builds) || 1,
+            d7: n(live.other.d7),
+            d30: n(live.other.d30),
+          }
+        : null,
     },
-    journey: JOURNEY.map(s => ({
-      key: s.key,
-      label: s.label,
-      installs: cell(sums[s.key]),
+    peopleWindows: {d7: people(pw.d7), d30: people(pw.d30)},
+    journeyWindows: JOURNEY.map(st => ({
+      key: st.key,
+      label: st.label,
+      d7: n(byKey[st.key]?.d7),
+      d30: n(byKey[st.key]?.d30),
     })),
   };
 }
@@ -477,46 +534,6 @@ export function shapeAnr(anr) {
   return {play, sentry, appStore};
 }
 
-const abGroupOf = g => ({
-  devices: cell(Number(g?.devices) || 0),
-  anrDevices: cell(Number(g?.anr) || 0),
-  fallbackDevices: cell(Number(g?.fallback) || 0),
-  stalledDevices: cell(Number(g?.stalled) || 0),
-  noBootDevices: cell(Number(g?.noBoot) || 0),
-});
-const abProcessOf = p => {
-  const ran = Number(p?.ran) || 0;
-  return {
-    anrDevices: cell(Number(p?.anr) || 0),
-    ranDevices: cell(ran),
-    exits: eventCell(Number(p?.exits) || 0, ran),
-    anrInSplashDevices: cell(Number(p?.anrInSplash) || 0),
-    anrAfterSplashDevices: cell(Number(p?.anrAfterSplash) || 0),
-  };
-};
-
-export function shapeAb(ab) {
-  if (!ab) return null;
-  const build = String(ab.ab?.build ?? '');
-  const flag = String(ab.ab?.flag ?? '');
-  if (ab.error) return {build, flag, available: false};
-  const g = ab.groups || {};
-  const p = ab.byProcessArm || {};
-  return {
-    build,
-    flag,
-    users: cell(Number(ab.users) || 0),
-    enrolled: cell(Number(ab.enrolled) || 0),
-    arms: {treatment: abGroupOf(g.treatment), control: abGroupOf(g.control)},
-    noArm: abGroupOf(g.noArm),
-    notEnrolled: abGroupOf(g.notEnrolled),
-    byProcessArm: {
-      treatment: abProcessOf(p.treatment),
-      control: abProcessOf(p.control),
-    },
-  };
-}
-
 /**
  * The daily-card JSON → the section data.
  * @param {object} card the parsed stdout of daily-card.mjs --json
@@ -524,25 +541,21 @@ export function shapeAb(ab) {
  *   measuredAt = the end of the card's windows (the card's `at`, ctx.asOf)
  */
 export function shape(card, {date, measuredAt}) {
-  const win = card.win || {};
-  const start = String(win.sql || win.label || '').match(/(\d{4}-\d{2}-\d{2})/);
-  const {people, journey} = shapePeople(card.byPlatform);
   return {
     definitions: DEFINITIONS,
     header: {
       date,
       measuredAt: String(measuredAt),
-      windowLabel: String(win.label || ''),
-      windowStart: start ? start[1] : null,
-      windowDays: Number.isInteger(win.days) ? win.days : null,
+      windowLabel: 'last 7 and 30 days',
+      windowStart: null,
+      windowDays: 7,
       builds: (card.builds || []).map(b => ({
         platform: b.platform,
         version: String(b.version),
         build: String(b.build),
       })),
     },
-    people,
-    journey,
+    ...shapeBuilds(card),
     active: Array.isArray(card.active)
       ? card.active.map(r => ({
           label: r.label,
@@ -582,7 +595,6 @@ export function shape(card, {date, measuredAt}) {
         }))
       : null,
     anr: shapeAnr(card.anr),
-    ab: shapeAb(card.ab),
   };
 }
 
@@ -623,7 +635,6 @@ export function gaps(data) {
           out.push(`anr.sentry.week.${p}: unavailable (${w[p].reason})`);
   }
   part(appStore, 'appStore', 'no APP_STORE_CONNECT_API_KEY_ID');
-  if (data.ab?.available === false) out.push('ab: the A/B query failed');
   return out;
 }
 

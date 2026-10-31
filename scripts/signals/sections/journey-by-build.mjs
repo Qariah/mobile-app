@@ -4,7 +4,8 @@
 // v2 build, for the Engagement page card "People and the journey" (owner
 // decisions 2026-10-25, D1 and D2).
 //
-// Two windows of LA days that end at dataThrough:
+// Three windows of LA days that end at dataThrough:
+//   d7      the last 7 days (since 2026-10-30; older files have none)
 //   d30     the last 30 days
 //   launch  since the v2 launch, 2026-08-02 (active-rollout.json
 //           previousRollout_3_2_0.startedAt: the first v2 release to
@@ -49,7 +50,7 @@ const KEYS = JOURNEY.map(s => s.key);
 
 export const DEFINITIONS = {
   windows:
-    'LA days ending at dataThrough: d30 = the last 30 days; launch = from 2026-08-02 (the first v2 release to production on both stores). Events received by asOf, lab devices excluded, v2 = $app_build 500 or more',
+    'LA days ending at dataThrough: d7 = the last 7 days (since 2026-10-30); d30 = the last 30 days; launch = from 2026-08-02 (the first v2 release to production on both stores). Events received by asOf, lab devices excluded, v2 = $app_build 500 or more',
   installs:
     'distinct installs (PostHog person_id) with any event on the build in the window. The platform of an install on a build is iOS when any of its events there says iOS or iPadOS, else Android. A person who updated counts under each build they used, so the rows add up to more than all',
   journey:
@@ -110,9 +111,10 @@ export const schema = {
     minInstalls: {type: 'integer'},
     windows: {
       type: 'object',
+      // d7 arrived on 2026-10-30: optional, so older files stay valid.
       required: ['d30', 'launch'],
       additionalProperties: false,
-      properties: {d30: windowSchema, launch: windowSchema},
+      properties: {d7: windowSchema, d30: windowSchema, launch: windowSchema},
     },
   },
 };
@@ -299,6 +301,7 @@ export async function collect(ctx) {
   const to = ctx.dataThrough;
   const production = cardBuilds(ctx.cfg);
   const windows = {
+    d7: {from: addDays(to, -6), to},
     d30: {from: addDays(to, -29), to},
     launch: {from: V2_LAUNCH, to},
   };

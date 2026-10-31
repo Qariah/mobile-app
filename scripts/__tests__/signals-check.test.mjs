@@ -202,3 +202,103 @@ test('parseArgs', () => {
     /after today/,
   );
 });
+
+// The card from 2026-10-30: BUILDS and JOURNEY in two columns, every v2 build.
+const CARD_2026_10_30 = [
+  'QARIAH · Fri 2026-10-30',
+  'Every v2 build · lab devices left out',
+  'Counts end 11:00 Los Angeles time',
+  '',
+  'BUILDS (people)        7 days  30 days',
+  'iOS 1718 (3.2.1)         1621     4539',
+  'Android 2027 (3.2.1)     1206     1984',
+  'Android 1717 (3.2.0)      189     2457',
+  '19 other builds             3       44',
+  'All v2 builds            3011     8352',
+  '  iOS                    1641     4573',
+  '  Android                1370     3779',
+  '  installed or updated   1439     5996',
+  '',
+  'JOURNEY                7 days  30 days',
+  'Opened                   2932     8263',
+  'Past loading             2937     8270',
+  'Logged in                 134      540',
+  'Started                  2168     5757',
+  'Really used              2053     5435',
+  '',
+  'ACTIVE           DAU    WAU    MAU',
+  'Today            473   3011   8352',
+].join('\n');
+
+test('parseCard reads the BUILDS and JOURNEY tables of the card from 2026-10-30', () => {
+  const p = parseCard(CARD_2026_10_30);
+  assert.deepEqual(p.builds.rows, {
+    'iOS 1718 (3.2.1)': [1621, 4539],
+    'Android 2027 (3.2.1)': [1206, 1984],
+    'Android 1717 (3.2.0)': [189, 2457],
+  });
+  assert.deepEqual(p.builds.other, [3, 44]);
+  assert.deepEqual(p.builds.people, {
+    d7: {total: 3011, iOS: 1641, Android: 1370, installed: 1439},
+    d30: {total: 8352, iOS: 4573, Android: 3779, installed: 5996},
+  });
+  assert.deepEqual(p.journeyWindows.Opened, [2932, 8263]);
+  assert.deepEqual(p.journeyWindows['Really used'], [2053, 5435]);
+  // the old lines are not there
+  assert.equal(p.people, null);
+  assert.equal(p.journey, null);
+  assert.deepEqual(p.active.Today, [473, 3011, 8352]);
+});
+
+test('compareCard matches the new tables with the snapshot, and lists a build the snapshot lacks', () => {
+  const data = {
+    liveBuilds: {
+      minPeople: 50,
+      rows: [
+        {platform: 'iOS', version: '3.2.1', build: '1718', d7: 1621, d30: 4539},
+        {
+          platform: 'Android',
+          version: '3.2.1',
+          build: '2027',
+          d7: 1206,
+          d30: 1984,
+        },
+        {
+          platform: 'Android',
+          version: '3.2.0',
+          build: '1717',
+          d7: 189,
+          d30: 2457,
+        },
+      ],
+      other: {builds: 19, d7: '<5', d30: 44},
+    },
+    peopleWindows: {
+      d7: {total: 3011, iOS: 1641, Android: 1370, installed: 1439},
+      d30: {total: 8352, iOS: 4573, Android: 3779, installed: 5996},
+    },
+    journeyWindows: [
+      {key: 'opened', label: 'Opened', d7: 2932, d30: 8263},
+      {key: 'past_loading', label: 'Past loading', d7: 2937, d30: 8270},
+      {key: 'logged_in', label: 'Logged in', d7: 134, d30: 540},
+      {key: 'started', label: 'Started', d7: 2168, d30: 5757},
+      {key: 'used_it', label: 'Really used', d7: 2053, d30: 5435},
+    ],
+    active: [{label: 'Today', dau: 473, wau: 3011, mau: 8352}],
+  };
+  const r = compareCard(parseCard(CARD_2026_10_30), data);
+  assert.deepEqual(r.diffs, []);
+  assert.equal(r.match, true);
+  // 6 build values + 2 other + 8 people + 10 journey + 3 active
+  assert.equal(r.compared, 29);
+  const less = {
+    ...data,
+    liveBuilds: {...data.liveBuilds, rows: data.liveBuilds.rows.slice(0, 2)},
+  };
+  const r2 = compareCard(parseCard(CARD_2026_10_30), less);
+  assert.equal(r2.match, false);
+  assert.deepEqual(
+    r2.diffs.map(d => d.field),
+    ['builds.Android 1717 (3.2.0).d7', 'builds.Android 1717 (3.2.0).d30'],
+  );
+});

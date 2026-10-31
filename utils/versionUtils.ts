@@ -73,8 +73,11 @@ export function isMinorOrMajorUpdate(
 /**
  * Check if the app version has changed since the last launch
  * Only returns true for minor/major updates, not patches
+ * @ai Qariah (TECH_DEBT #390): `includePatch` also returns true for a patch update.
  */
-export async function hasVersionChanged(): Promise<boolean> {
+export async function hasVersionChanged(
+  options: {includePatch?: boolean} = {},
+): Promise<boolean> {
   try {
     const currentVersion = getCurrentVersion();
     const lastSeenVersion = await getLastSeenVersion();
@@ -97,7 +100,9 @@ export async function hasVersionChanged(): Promise<boolean> {
     }
 
     // Only show for minor/major updates
-    const shouldShow = isMinorOrMajorUpdate(lastSeenVersion, currentVersion);
+    const shouldShow =
+      options.includePatch === true ||
+      isMinorOrMajorUpdate(lastSeenVersion, currentVersion);
     console.log('[VersionUtils] Is minor/major update:', shouldShow);
 
     // If it's just a patch, mark as seen silently

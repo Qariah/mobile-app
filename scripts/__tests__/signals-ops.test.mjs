@@ -76,24 +76,46 @@ test('card: shape keeps the card numbers and suppresses only 1 to 4', () => {
   const d = card.shape(load('daily-card.json'), at);
   check(card, d);
   assert.equal(d.header.measuredAt, AT);
-  // People and journey: the sums of the two platform rows.
-  assert.deepEqual(d.people, {
-    total: 6471,
-    iOS: 3615,
-    Android: 2856,
-    installed: 4144,
+  // BUILDS, people and the journey (since 2026-10-30), 7 and 30 days.
+  assert.deepEqual(d.liveBuilds, {
+    minPeople: 50,
+    rows: [
+      {platform: 'iOS', version: '3.2.1', build: '1718', d7: 1621, d30: 4539},
+      {
+        platform: 'Android',
+        version: '3.2.1',
+        build: '2027',
+        d7: 1206,
+        d30: 1984,
+      },
+      {
+        platform: 'Android',
+        version: '3.2.0',
+        build: '1717',
+        d7: 189,
+        d30: 2457,
+      },
+    ],
+    // 3 people in 7 days → "<5"
+    other: {builds: 19, d7: SMALL, d30: 44},
+  });
+  assert.deepEqual(d.peopleWindows, {
+    d7: {total: 3011, iOS: 1641, Android: 1370, installed: 1439},
+    d30: {total: 8352, iOS: 4573, Android: 3779, installed: 5996},
   });
   assert.deepEqual(
-    d.journey.map(s => [s.label, s.installs]),
+    d.journeyWindows.map(s => [s.label, s.d7, s.d30]),
     [
-      ['Opened', 6428],
-      ['Past loading', 6293],
-      ['Logged in', 373],
-      ['Started', 4483],
-      ['Really used', 4242],
+      ['Opened', 2932, 8263],
+      ['Past loading', 2937, 8270],
+      ['Logged in', 134, 540],
+      ['Started', 2168, 5757],
+      ['Really used', 2053, 5435],
     ],
   );
-  assert.equal(d.header.windowStart, '2026-09-28');
+  // The old fields and the A/B are gone (optional for older files).
+  for (const k of ['people', 'journey', 'ab']) assert.equal(k in d, false);
+  assert.equal(d.header.windowLabel, 'last 7 and 30 days');
   assert.deepEqual(
     d.header.builds.map(b => b.build),
     ['1718', '1717', '2027'],
@@ -162,10 +184,6 @@ test('card: shape keeps the card numbers and suppresses only 1 to 4', () => {
       byBuild: [{build: '1718', users: 2049, frozeUsers: SMALL}],
     },
   });
-  // A/B: 4 ANR devices in treatment → "<5"; exits follow their devices.
-  assert.equal(d.ab.arms.treatment.devices, 17);
-  assert.equal(d.ab.arms.treatment.anrDevices, SMALL);
-  assert.equal(d.ab.byProcessArm.treatment.exits, 43);
   assert.deepEqual(card.gaps(d), []);
 });
 
@@ -177,7 +195,6 @@ test('card: a missing or failed source is null or {available: false}, never a ze
   c.anr.play = {error: 'Unexpected token -----BEGIN PRIVATE KEY-----MIIEv'};
   c.anr.sentry = null;
   c.anr.appStore = {version: '3.2.1', p50: 0, p90: 1.2};
-  c.ab = {ab: {build: '2027', flag: 'f'}, error: 'PostHog 504 SELECT secret'};
   c.failures = [];
   const d = card.shape(c, at);
   check(card, d, 'partial');
@@ -185,8 +202,7 @@ test('card: a missing or failed source is null or {available: false}, never a ze
   assert.equal(d.active, null);
   assert.equal(d.anr.sentry, null);
   assert.deepEqual(d.anr.play, {available: false});
-  assert.deepEqual(d.ab, {build: '2027', flag: 'f', available: false});
-  assertNoText(d, 'PRIVATE KEY', 'MIIEv', 'SELECT secret');
+  assertNoText(d, 'PRIVATE KEY', 'MIIEv');
   const notes = card.gaps(d);
   assertNoText(notes, 'PRIVATE KEY', 'SELECT secret');
   const g = notes.join('\n');
@@ -195,29 +211,33 @@ test('card: a missing or failed source is null or {available: false}, never a ze
     '^crashes: ',
     '^anr.play: the request failed',
     '^anr.sentry: unavailable',
-    '^ab: the A/B query failed',
   ])
     assert.match(g, new RegExp(want, 'm'));
 });
 
-test('card: an empty card is zeros; a changed STEPS list fails loudly', () => {
+test('card: an empty card is zeros; a card without the builds fails loudly', () => {
+  const zero = {total: 0, iOS: 0, Android: 0, installed: 0};
   const d = card.shape(
     {
-      byPlatform: [],
+      liveBuilds: {minPeople: 50, rows: [], other: null},
+      peopleWindows: {d7: zero, d30: zero},
+      journeyWindows: [],
       usage: [],
       active: [],
       failures: [],
       crashes: [],
       anr: {},
-      ab: null,
     },
     at,
   );
   check(card, d, 'partial');
-  assert.deepEqual(d.people, {total: 0, iOS: 0, Android: 0, installed: 0});
+  assert.deepEqual(d.peopleWindows.d7, zero);
+  assert.deepEqual(d.liveBuilds, {minPeople: 50, rows: [], other: null});
+  assert.equal(d.journeyWindows[0].d30, 0);
+  // the old card JSON (byPlatform) is refused
   assert.throws(
-    () => card.shapePeople([['iOS', 10, 5, 5]]),
-    /columns, expected 8/,
+    () => card.shape({byPlatform: [], usage: [], anr: {}}, at),
+    /no liveBuilds, peopleWindows or journeyWindows/,
   );
 });
 
@@ -1151,10 +1171,26 @@ test('focus: incident and experiment kinds, and a bad file', async () => {
   assert.equal(inc.data.focus.issue, 'QARIAHV2-20');
   assert.deepEqual(inc.data.measures[0].users.slice(-2), [SMALL, 6]);
 
+  // The card has no A/B block since 2026-10-30; an experiment focus reads one
+  // when a card section gives it (the shape of the 2027 A/B).
+  const arm = (devices, anrDevices) => ({
+    devices,
+    anrDevices,
+    fallbackDevices: 0,
+    stalledDevices: 0,
+    noBootDevices: 0,
+  });
+  const AB = {
+    build: '2027',
+    flag: 'nonblocking_splash_v2',
+    users: 300,
+    enrolled: 34,
+    arms: {treatment: arm(17, SMALL), control: arm(17, 5)},
+  };
   const exp = await focus.collect({
     ...base,
     root: join(FIX, 'focus-experiment'),
-    sections: {card: {status: 'ok', data: cardData()}},
+    sections: {card: {status: 'ok', data: {...cardData(), ab: AB}}},
   });
   assert.equal(exp.status, 'ok');
   check(focus, exp.data);

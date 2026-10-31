@@ -295,25 +295,6 @@ describe('renderAnrCard (FREEZES (ANR), 44 columns)', () => {
       /^Android {2}5 of 707 users froze \(0\.7%\)$/m,
     );
   });
-  it('prints one ⛔ line for each FAILED condition directly under the header', () => {
-    const lines = renderAnrCard(
-      {play, sentry: {week: week()}},
-      {staged: true, abFailed: ['treatment ANR', 'fallback launch']},
-    );
-    assert.equal(lines[0], 'FREEZES (ANR) · last 7 days');
-    assert.equal(lines[1], '⛔ A/B: treatment ANR FAILED · see page');
-    assert.equal(lines[2], '⛔ A/B: fallback launch FAILED · see page');
-    assert.match(lines[3], /^Android/);
-    assert.ok(!text({play, sentry: {week: week()}}).includes('⛔'));
-  });
-  it('prints `A/B check: no data` while the blocking check has NO DATA', () => {
-    const lines = renderAnrCard(
-      {play, sentry: {week: week()}},
-      {abNoData: true},
-    );
-    assert.equal(lines[1], 'A/B check: no data');
-    assert.ok(!text({play, sentry: {week: week()}}).includes('A/B check'));
-  });
   it('prints the background ANRs on their own line, not in the share', () => {
     const w = week();
     w.android.backgroundUsers = 9;
@@ -393,14 +374,7 @@ describe('renderAnrCard (FREEZES (ANR), 44 columns)', () => {
       prevUsers: 123456,
       prevFrozeUsers: 99999,
     };
-    const t = text(
-      {play, sentry: {week: w}},
-      {
-        staged: true,
-        abFailed: ['treatment ANR', 'crash from 2027', 'fallback launch'],
-        abNoData: true,
-      },
-    );
+    const t = text({play, sentry: {week: w}}, {staged: true});
     for (const line of t.split('\n')) assert.ok([...line].length <= 44, line);
   });
 });
@@ -411,11 +385,6 @@ describe('freezeOptions', () => {
     {platform: 'Android', build: '1717'},
     {platform: 'Android', build: '2027'},
   ];
-  const conds = [
-    {label: 'treatment ANR', state: 'FAIL'},
-    {label: 'crash from 2027', state: 'NO DATA'},
-    {label: 'fallback launch', state: 'FAIL'},
-  ];
   it('staged = active and two Android production builds', () => {
     assert.equal(freezeOptions({active: true, builds}).staged, true);
     assert.equal(freezeOptions({active: false, builds}).staged, false);
@@ -423,20 +392,6 @@ describe('freezeOptions', () => {
       freezeOptions({active: true, builds: builds.slice(0, 2)}).staged,
       false,
     );
-  });
-  it('names the FAIL conditions and NO DATA only while the rollout is active', () => {
-    const on = freezeOptions({active: true, builds, abConditions: conds});
-    assert.deepEqual(on.abFailed, ['treatment ANR', 'fallback launch']);
-    assert.equal(on.abNoData, true);
-    const off = freezeOptions({active: false, builds, abConditions: conds});
-    assert.deepEqual(off.abFailed, []);
-    assert.equal(off.abNoData, false);
-    const pass = freezeOptions({
-      active: true,
-      builds,
-      abConditions: conds.map(c => ({...c, state: 'PASS'})),
-    });
-    assert.deepEqual([pass.abFailed, pass.abNoData], [[], false]);
   });
 });
 

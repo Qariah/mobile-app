@@ -228,7 +228,12 @@ async function main() {
     tz: OWNER_TZ,
     git: gitInfo(env),
     rules: RULES,
-    sections: await runSections(SECTIONS, ctx, {only: args.only}),
+    // A retired section (retiredAt) stays in the schema but does not run.
+    sections: await runSections(
+      SECTIONS.filter(s => !s.retiredAt),
+      ctx,
+      {only: args.only},
+    ),
   };
 
   if (env.SIGNALS_INJECT_SMALL)

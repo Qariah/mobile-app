@@ -13,29 +13,27 @@
 // that actually matter during a ramp: how many people, and did it work for them.
 // This prints those first and everything else only when it is not fine.
 //
-// THE LAYOUT (owner, 2026-10-11; the ANR block changed 2026-10-20): header
-// (date, what is counted, rollout), people and the journey, ACTIVE, USE,
-// FAILURES, FREEZES (ANR), the ops sections, NEEDS YOU last.
+// THE LAYOUT (owner, 2026-10-11; the ANR block changed 2026-10-20; BUILDS
+// and the 7 and 30 day columns 2026-10-30): header (date, what is counted, the
+// rollout only while active-rollout.json `active` is true), BUILDS, JOURNEY,
+// ACTIVE, USE, FAILURES, FREEZES (ANR), the ops sections, NEEDS YOU last.
 // scripts/lib/card-layout.mjs explains what each block counts. FREEZES (ANR)
-// replaces the three ANR sections and the A/B section: one line of users who
-// froze per platform with a verdict, and Google's score
-// (scripts/lib/anr-card.mjs, planning/signals-anr-listens-design.md). The A/B
-// section prints only with --ab; while the rollout is active, a blocking stop
-// condition that FAILS puts one ⛔ line at the top of FREEZES (ANR).
+// is one line of users who froze per platform with a verdict, and Google's
+// score (scripts/lib/anr-card.mjs, planning/signals-anr-listens-design.md).
+// The A/B section of the 2027 rollout was removed on 2026-10-30.
 //
 // WHAT IT IS NOT. `rollout-engagement.mjs` stays the diagnostic instrument —
 // cohorts, activation, retention, per-OS splits, threshold alerts. This is the
 // headline. When they disagree, engagement is the one to debug.
 //
-//   node scripts/daily-card.mjs                      # since launch
-//   node scripts/daily-card.mjs --since=14d
+//   node scripts/daily-card.mjs
+//   node scripts/daily-card.mjs --at=2026-10-30T18:00:00.000Z  # the end of the windows
 //   node scripts/daily-card.mjs --ios='20% ▲ rising' --android='50%'
+//                                                    # the rollout lines; printed
+//                                                    # only while `active` is true
 //   node scripts/daily-card.mjs --json
 //   node scripts/daily-card.mjs --anr                # the FREEZES (ANR) block only
 //   node scripts/daily-card.mjs --no-anr             # the card without it
-//   node scripts/daily-card.mjs --ab                 # the A/B section only, with
-//                                                    # its BLOCKING lines
-//                                                    # (scripts/lib/ab-card.mjs)
 //   node scripts/daily-card.mjs --no-ab              # accepted; does nothing (G-C8)
 //   node scripts/daily-card.mjs --release-watch      # the RELEASE WATCH section only
 //   node scripts/daily-card.mjs --no-owner           # the card without NEEDS YOU
@@ -92,17 +90,12 @@ import {STEPS, stepCond} from './lib/journey-steps.mjs';
 import {asOfFor, laDate} from './signals/lib/rules.mjs';
 import {createPosthogClient, posthogConfig} from './lib/posthog-client.mjs';
 import {
-  abConfig,
-  blockingStopConditions,
-  collectAbModel,
-  renderAbCard,
-} from './lib/ab-card.mjs';
-import {
   anrScoreBuilds,
   cardBuilds,
   renderActive,
   renderHeader,
-  renderJourney,
+  renderBuilds,
+  renderJourneyWindows,
   renderUse,
   wrap,
 } from './lib/card-layout.mjs';
@@ -215,36 +208,6 @@ function loadConfig() {
   }
 }
 
-function windowClause(cfg) {
-  const since = String(ARGS.since || 'launch');
-  if (since === 'launch') {
-    const start = (cfg && cfg.startedAt) || '2026-01-01';
-    // Calendar days elapsed, floored at 1 — it is only ever the divisor for the
-    // per-day rates, and a zero here would print Infinity on launch day itself.
-    const days = Math.max(
-      1,
-      Math.ceil(
-        (AT.getTime() - new Date(`${start}T00:00:00`).getTime()) / 86_400_000,
-      ),
-    );
-    return {
-      sql: `timestamp >= toDateTime('${start} 00:00:00') AND timestamp <= ${AT_SQL}`,
-      // startedAt is the start of the current rollout (3.2.1, vc2027, on
-      // 2026-09-28), not the v2 launch (2026-08-02): the label said "launch"
-      // until 2026-10-25.
-      label: `since rollout start (${start})`,
-      days,
-    };
-  }
-  const m = since.match(/^(\d+)d$/);
-  if (!m) throw new Error(`--since must be "launch" or "<N>d", got "${since}"`);
-  return {
-    sql: `timestamp > ${AT_SQL} - INTERVAL ${m[1]} DAY AND timestamp <= ${AT_SQL}`,
-    label: `last ${m[1]} days`,
-    days: Number(m[1]),
-  };
-}
-
 // The three trailing windows of ACTIVE and USE, ending at AT, one day before
 // and two days before. Trailing windows, not calendar days: "Today" is the 24 h
 // to AT (11:00 LA), so it is a full day at any hour.
@@ -257,33 +220,115 @@ const trailing = (days, shift = 0) =>
   `timestamp > ${AT_SQL} - INTERVAL ${days + shift} DAY AND timestamp <= ` +
   (shift ? `${AT_SQL} - INTERVAL ${shift} DAY` : AT_SQL);
 
+// --- builds and people (since 2026-10-30) ------------------------------------
+//
+// Owner decisions 2026-10-30, after 2027 reached 100%: no numbers for one
+// rollout. BUILDS has a row for each v2 build with more than LIVE_MIN_PEOPLE
+// people in the last 7 days, and one row for the other builds (each person
+// once). People and the journey count every v2 build. Two windows end at AT:
+// the last 7 days and the last 30 days. Before, people and the journey
+// counted the builds of active-rollout.json card.builds since the rollout
+// start (2026-09-28).
+//
+// EVERY number is derived from a PER-USER subquery, never from grouping raw
+// events: $os_name is not set on every event, so grouping events puts one
+// person under both platforms (a 329-person release once printed as "340
+// people · iPhone 219 · Android 121"). An install is iOS when any of its
+// events says iOS or iPadOS, else Android.
+const LIVE_MIN_PEOPLE = 50;
+const V2_MIN_BUILD = 500;
+const IN_7_DAYS = `timestamp > ${AT_SQL} - INTERVAL 7 DAY`;
+const V2_30_DAYS = `timestamp > ${AT_SQL} - INTERVAL 30 DAY AND timestamp <= ${AT_SQL}
+       AND ${RECEIVED} AND ${labExclusionSQL()}
+       AND toIntOrZero(toString(properties.$app_build)) >= ${V2_MIN_BUILD}`;
+const IS_IOS = `countIf(properties.$os_name IN ('iOS', 'iPadOS')) > 0`;
+
+async function collectPeople() {
+  const buildRows = await hogql(`SELECT plat, build, any(ver) AS version,
+       countIf(d7 > 0) AS p7, count() AS p30
+     FROM (
+       SELECT person_id, toString(properties.$app_build) AS build,
+         if(${IS_IOS}, 'iOS', 'Android') AS plat,
+         any(toString(properties.$app_version)) AS ver,
+         countIf(${IN_7_DAYS}) AS d7
+       FROM events WHERE ${V2_30_DAYS}
+       GROUP BY person_id, build)
+     GROUP BY plat, build ORDER BY p7 DESC, p30 DESC LIMIT ${ROW_CAP}`);
+  const all = buildRows.map(r => ({
+    platform: String(r[0]),
+    build: String(r[1]),
+    version: String(r[2] ?? ''),
+    d7: Number(r[3]),
+    d30: Number(r[4]),
+  }));
+  const order = {iOS: 0, Android: 1};
+  const shown = all
+    .filter(b => b.d7 > LIVE_MIN_PEOPLE)
+    .sort((a, b) => order[a.platform] - order[b.platform] || b.d7 - a.d7);
+  // The other builds by build number: a beta number can exist on both
+  // platforms, and an event without $os_name names no platform.
+  const shownNumbers = [...new Set(shown.map(b => b.build))];
+  const isOther = shownNumbers.length
+    ? `toString(properties.$app_build) NOT IN (${sqlList(shownNumbers)})`
+    : 'true';
+  const stepCols = STEPS.flatMap(st => [
+    `countIf(${stepCond(st)}) AS ${st.key}30`,
+    `countIf((${stepCond(st)}) AND ${IN_7_DAYS}) AS ${st.key}7`,
+  ]).join(',\n         ');
+  const reach = STEPS.flatMap(st => [
+    `countIf(${st.key}7 > 0)`,
+    `countIf(${st.key}30 > 0)`,
+  ]).join(', ');
+  const rows = await hogql(`SELECT plat, countIf(a7 > 0), count(),
+       countIf(o7 > 0), countIf(o30 > 0), ${reach}
+     FROM (
+       SELECT person_id, if(${IS_IOS}, 'iOS', 'Android') AS plat,
+         countIf(${IN_7_DAYS}) AS a7,
+         countIf(${isOther}) AS o30,
+         countIf((${isOther}) AND ${IN_7_DAYS}) AS o7,
+         ${stepCols}
+       FROM events WHERE ${V2_30_DAYS}
+       GROUP BY person_id)
+     GROUP BY plat LIMIT ${ROW_CAP}`);
+  const byPlat = Object.fromEntries(
+    rows.map(r => [String(r[0]), r.map(Number)]),
+  );
+  const sum = i => rows.reduce((a, r) => a + Number(r[i]), 0);
+  const plat = (p, i) => (byPlat[p] ? byPlat[p][i] : 0);
+  const step = (key, w) =>
+    5 + STEPS.findIndex(st => st.key === key) * 2 + (w === 'd7' ? 0 : 1);
+  const window = (w, i) => ({
+    total: sum(i),
+    iOS: plat('iOS', i),
+    Android: plat('Android', i),
+    installed: sum(step('installed', w)),
+  });
+  const otherBuilds = all.length - shown.length;
+  return {
+    liveBuilds: {
+      minPeople: LIVE_MIN_PEOPLE,
+      rows: shown,
+      other: otherBuilds
+        ? {builds: otherBuilds, d7: sum(3), d30: sum(4)}
+        : null,
+    },
+    peopleWindows: {d7: window('d7', 1), d30: window('d30', 2)},
+    journeyWindows: STEPS.filter(st => st.key !== 'installed').map(st => ({
+      key: st.key,
+      label: st.label,
+      d7: sum(step(st.key, 'd7')),
+      d30: sum(step(st.key, 'd30')),
+    })),
+  };
+}
+
 async function collect(cfg) {
   const builds = cardBuilds(cfg);
   if (!builds.length)
     throw new Error(
       'active-rollout.json names no production build (card.builds, sentryRelease)',
     );
-  const win = windowClause(cfg);
   const scope = `properties.$app_build IN (${sqlList(builds.map(b => b.build))}) AND ${labExclusionSQL()}`;
-
-  // EVERY number here is derived from a PER-USER subquery, never from grouping
-  // raw events. Bucketing per event double-counts anyone whose events disagree:
-  // $os_name is not set on every event, so the same person lands in both the
-  // iOS and Android groups and the platform columns sum to MORE than the
-  // population. That is how a 329-person release first printed as "340 people ·
-  // iPhone 219 · Android 121". Resolve identity once per person, then
-  // aggregate. iPadOS is iOS: before 2026-10-11 an iPad counted as Android.
-  const perUserCols = STEPS.map(
-    s => `countIf(${stepCond(s)}) AS ${s.key}`,
-  ).join(',\n         ');
-  const reachCols = STEPS.map(s => `countIf(${s.key} > 0) AS ${s.key}`).join(
-    ',\n       ',
-  );
-  const PER_USER = `SELECT person_id,
-         multiIf(any(properties.$os_name) IN ('iOS', 'iPadOS'), 'iOS', 'Android') AS platform,
-         ${perUserCols}
-       FROM events WHERE ${win.sql} AND ${scope} AND ${RECEIVED}
-       GROUP BY person_id`;
 
   // ACTIVE and USE count EVERY version, unlike the rest of the card. Scoping
   // them to the counted builds would measure rollout ADOPTION, not activity: a
@@ -312,10 +357,8 @@ async function collect(cfg) {
        AND event IN (${sqlList(USAGE.flatMap(u => u.events))})
      GROUP BY event LIMIT ${ROW_CAP}`;
 
-  const [byPlatform, usageRows, activeRows] = await Promise.all([
-    hogql(`SELECT platform, count() AS total,
-       ${reachCols}
-     FROM (${PER_USER}) GROUP BY platform ORDER BY total DESC LIMIT ${ROW_CAP}`),
+  const [people, usageRows, activeRows] = await Promise.all([
+    collectPeople(),
     hogql(usageQuery),
     hogql(activeQuery),
   ]);
@@ -398,7 +441,7 @@ async function collect(cfg) {
           AND (opened = 0 OR past = 0)
      ) GROUP BY build, platform, kind ORDER BY n DESC LIMIT ${ROW_CAP}`);
 
-  return {builds, win, byPlatform, stuck, usage, active};
+  return {builds, ...people, stuck, usage, active};
 }
 
 // --- failures ----------------------------------------------------------------
@@ -592,35 +635,12 @@ async function collectAnr(cfg) {
 }
 
 // The FREEZES (ANR) block options: a staged rollout runs while `active` is
-// true and two Android production builds serve users; while active, a
-// blocking A/B stop condition that FAILS is one ⛔ line, and NO DATA is the
-// line `A/B check: no data` (ab is null when no rollout is active).
-const anrOptions = (cfg, ab) =>
+// true and two Android production builds serve users.
+const anrOptions = cfg =>
   freezeOptions({
     active: !!(cfg && cfg.active === true),
     builds: cardBuilds(cfg),
-    abConditions: ab ? blockingStopConditions(ab) : [],
   });
-
-// --- A/B -----------------------------------------------------------------------
-//
-// The staged build's A/B (active-rollout.json → abTest). Null — and no section —
-// when no rollout is active or the JSON does not name the flag.
-function collectAb(cfg) {
-  const ab = abConfig(cfg);
-  if (!ab) return null;
-  return collectAbModel(ab, {
-    hogql,
-    sentry: {token: SENTRY_TOKEN, org: SENTRY_ORG, host: SENTRY_HOST},
-    // The files the build changed (GitHub REST compare; the cloud clone is
-    // shallow, so git cannot answer). Null when the JSON names no base.
-    changedFiles: ({baseSha, buildSha}) => {
-      if (!baseSha || !buildSha) return null;
-      const r = ghApi(`repos/${GH_REPO}/compare/${baseSha}...${buildSha}`);
-      return r && Array.isArray(r.files) ? r.files.map(f => f.filename) : null;
-    },
-  });
-}
 
 // --- ops sections (feedback graph) -------------------------------------------
 //
@@ -1003,20 +1023,14 @@ function ownerLines(owner) {
 // bottom: the header, people and the journey, ACTIVE, USE, FAILURES, FREEZES
 // (ANR), the ops sections, NEEDS YOU.
 function render(
-  {builds, win, byPlatform, usage, active, stuck},
+  {liveBuilds, peopleWindows, journeyWindows, usage, active, stuck},
   failures,
   crashes,
   cfg,
   anr,
   owner,
-  ab,
 ) {
   const L = [];
-  const platforms = byPlatform.map(r => ({
-    name: String(r[0]),
-    total: Number(r[1]),
-    steps: Object.fromEntries(STEPS.map((s, i) => [s.key, Number(r[i + 2])])),
-  }));
 
   // The owner's date, not toISOString(): the loop runs in the evening Pacific,
   // which is already tomorrow in UTC, and a card stamped with tomorrow's date
@@ -1027,30 +1041,20 @@ function render(
     weekday: 'short',
     timeZone: OWNER_TZ,
   });
+  // The rollout lines print only while a rollout is active (owner, 2026-10-30).
+  const rollout = !!(cfg && cfg.active === true);
   L.push(
     ...renderHeader({
       date: today,
       weekday,
-      windowLabel: win.label,
       windowEnd: AT_LA,
-      builds,
-      ios: ARGS.ios || (cfg && cfg._cardIos),
-      android: ARGS.android || (cfg && cfg._cardAndroid),
+      ios: rollout ? ARGS.ios || cfg._cardIos : null,
+      android: rollout ? ARGS.android || cfg._cardAndroid : null,
     }),
   );
 
-  L.push('');
-  L.push(
-    ...renderJourney({
-      total: platforms.reduce((a, p) => a + p.total, 0),
-      byPlatform: Object.fromEntries(platforms.map(p => [p.name, p.total])),
-      installed: platforms.reduce((a, p) => a + p.steps.installed, 0),
-      steps: STEPS.filter(s => s.key !== 'installed').map(s => ({
-        label: s.label,
-        n: platforms.reduce((a, p) => a + p.steps[s.key], 0),
-      })),
-    }),
-  );
+  L.push('', ...renderBuilds(liveBuilds, peopleWindows));
+  L.push('', ...renderJourneyWindows(journeyWindows));
   L.push('', ...renderActive(active));
   L.push('', ...renderUse(usage));
 
@@ -1087,9 +1091,7 @@ function render(
   for (const [platform, n] of left)
     L.push(`  (${n} ${platform} left at the splash, 7d)`);
 
-  // The A/B section no longer prints here (--ab prints it); a blocking FAIL
-  // shows as the ⛔ line at the top of FREEZES (ANR).
-  if (anr) L.push('', ...renderAnrCard(anr, anrOptions(cfg, ab)));
+  if (anr) L.push('', ...renderAnrCard(anr, anrOptions(cfg)));
   if (!ARGS['no-ops']) L.push(...opsBlock(cfg));
   // NEEDS YOU comes last (owner, 2026-10-11).
   if (owner) {
@@ -1120,28 +1122,15 @@ async function main() {
   }
 
   if (ARGS.anr) {
-    const [anr, ab] = await Promise.all([
-      collectAnr(cfg),
-      ARGS.json ? null : collectAb(cfg),
-    ]);
+    const anr = await collectAnr(cfg);
     if (ARGS.json) console.log(JSON.stringify(anr, null, 2));
-    else {
-      emit(renderAnrCard(anr, anrOptions(cfg, ab)).join('\n'));
-    }
+    else emit(renderAnrCard(anr, anrOptions(cfg)).join('\n'));
     return;
   }
 
-  if (ARGS.ab) {
-    const ab = await collectAb(cfg);
-    if (ARGS.json) console.log(JSON.stringify(ab, null, 2));
-    else emit(ab ? renderAbCard(ab).join('\n') : 'A/B · no active A/B');
-    return;
-  }
-
-  const [data, anr, ab] = await Promise.all([
+  const [data, anr] = await Promise.all([
     collect(cfg),
     ARGS['no-anr'] ? null : collectAnr(cfg),
-    collectAb(cfg),
   ]);
   const owner = ARGS['no-owner'] ? null : ownerActions();
 
@@ -1161,7 +1150,6 @@ async function main() {
           crashesFailedRequests: sentryFailedRequests,
           anr,
           owner,
-          ab,
         },
         null,
         2,
@@ -1169,7 +1157,7 @@ async function main() {
     );
     return;
   }
-  emit(render(data, failures, crashes, cfg, anr, owner, ab));
+  emit(render(data, failures, crashes, cfg, anr, owner));
 }
 
 main().catch(e => {

@@ -14,13 +14,18 @@ import {
   getCurrentVersion,
   isMinorOrMajorUpdate,
 } from '@/utils/versionUtils';
+import branding from '@/config/branding';
 import en from '@/i18n/locales/en/qariah.json';
 import ar from '@/i18n/locales/ar/qariah.json';
+import enSettings from '@/i18n/locales/en/settings.json';
+import arSettings from '@/i18n/locales/ar/settings.json';
+import enCommon from '@/i18n/locales/en/common.json';
+import arCommon from '@/i18n/locales/ar/common.json';
 
 // The version of the running app (the Expo config version in the app).
 jest.mock('@/utils/versionUtils', () => ({
   ...jest.requireActual('@/utils/versionUtils'),
-  getCurrentVersion: jest.fn(() => '3.3.0'),
+  getCurrentVersion: jest.fn(() => '3.2.3'),
 }));
 const mockedCurrentVersion = getCurrentVersion as jest.MockedFunction<
   typeof getCurrentVersion
@@ -30,6 +35,7 @@ const RELEASE_IDS = [
   'qariah-3-3-arabic',
   'qariah-3-3-widgets',
   'qariah-3-3-recitations',
+  'qariah-3-3-feedback',
 ];
 
 const ids = (pages: {id: string}[]) => pages.map(page => page.id);
@@ -42,11 +48,11 @@ function shown(current: string, lastSeen: string | null): string[] {
 
 describe('the Qariah release pages', () => {
   beforeEach(() => {
-    mockedCurrentVersion.mockReturnValue('3.3.0');
+    mockedCurrentVersion.mockReturnValue('3.2.3');
   });
 
-  it('are draft pages for 3.3.0, shown only after an upgrade', () => {
-    expect(QARIAH_RELEASE_PAGES_VERSION).toBe('3.3.0');
+  it('are the pages of 3.2.3, shown only after an upgrade', () => {
+    expect(QARIAH_RELEASE_PAGES_VERSION).toBe('3.2.3');
     const pages = getQariahReleasePages();
     expect(ids(pages)).toEqual(RELEASE_IDS);
     for (const page of pages) {
@@ -64,12 +70,17 @@ describe('the Qariah release pages', () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
-  it('show when a 3.3.0 app upgrades from production 3.2.1', () => {
-    expect(shown('3.3.0', '3.2.1')).toEqual(RELEASE_IDS);
-    // The onboarding shows pages only for a minor or major upgrade.
+  it('show when 3.2.3 upgrades from production 3.2.1, a patch upgrade (TECH_DEBT #390)', () => {
+    expect(shown('3.2.3', '3.2.1')).toEqual(RELEASE_IDS);
+    // A patch upgrade: the onboarding shows pages only because of the seam.
     expect(isMinorOrMajorUpdate('3.2.1', QARIAH_RELEASE_PAGES_VERSION)).toBe(
-      true,
+      false,
     );
+    expect(branding.whatsNewOnPatchUpdate).toBe(true);
+  });
+
+  it('show when a 3.2.2 beta tester upgrades to 3.2.3', () => {
+    expect(shown('3.2.3', '3.2.2')).toEqual(RELEASE_IDS);
   });
 
   it('do not show in a 3.2.2 beta, also after a minor upgrade from 3.1.x', () => {
@@ -78,29 +89,47 @@ describe('the Qariah release pages', () => {
     expect(isMinorOrMajorUpdate('3.2.1', '3.2.2')).toBe(false);
   });
 
-  it('show in a later release too, for a user who skipped 3.3.0', () => {
+  it('show in a later release too, for a user who skipped 3.2.3', () => {
     expect(shown('3.4.0', '3.2.1')).toEqual(RELEASE_IDS);
   });
 
-  it('do not show again after the user saw 3.3.0', () => {
-    expect(shown('3.3.0', '3.3.0')).toEqual([]);
+  it('do not show again after the user saw 3.2.3', () => {
+    expect(shown('3.2.3', '3.2.3')).toEqual([]);
   });
 
   it('are left out of the first-launch tour of a fresh install', () => {
-    const tour = shown('3.3.0', null);
+    const tour = shown('3.2.3', null);
     expect(tour.length).toBeGreaterThan(0);
     for (const id of RELEASE_IDS) expect(tour).not.toContain(id);
   });
 
   it('compare the app version with the release version', () => {
+    expect(isReleasePagesVersion('3.2.3')).toBe(true);
+    expect(isReleasePagesVersion('3.2.4')).toBe(true);
     expect(isReleasePagesVersion('3.3.0')).toBe(true);
-    expect(isReleasePagesVersion('3.3.1')).toBe(true);
     expect(isReleasePagesVersion('4.0')).toBe(true);
     expect(isReleasePagesVersion('3.2.2')).toBe(false);
     expect(isReleasePagesVersion('1.0.0')).toBe(false);
     expect(isReleasePagesVersion('not a version')).toBe(false);
     expect(getQariahReleasePages('3.2.2')).toEqual([]);
-    expect(ids(getQariahReleasePages('3.3.0'))).toEqual(RELEASE_IDS);
+    expect(ids(getQariahReleasePages('3.2.3'))).toEqual(RELEASE_IDS);
+  });
+
+  it('end with the feedback page, which names the Settings labels exactly', () => {
+    const pages = getQariahReleasePages();
+    expect(pages[pages.length - 1].id).toBe('qariah-3-3-feedback');
+    const path = (common: typeof enCommon, settings: typeof enSettings) =>
+      [
+        common.tabs.settings,
+        settings.index.sections.feedback,
+        settings.index.items.support.title,
+      ].join(' › ');
+    expect(en.onboarding.release_3_3.feedbackBody).toContain(
+      path(enCommon, enSettings),
+    );
+    expect(ar.onboarding.release_3_3.feedbackBody).toContain(
+      path(arCommon, arSettings),
+    );
   });
 
   it('use Ionicons names and no custom icon', () => {

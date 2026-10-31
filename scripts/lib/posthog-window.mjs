@@ -49,3 +49,21 @@ export async function withWindowFallback(days, query) {
     };
   }
 }
+
+// PostHog answers 504 (max execution time) or 503 (too busy) under load. On
+// 2026-10-08 the 20:10 UTC cloud run printed `unavailable (PostHog 504…)` and a
+// rerun a few minutes later worked, so each query gets one retry after a pause.
+// (Moved here from ab-card.mjs, removed with the 2027 A/B on 2026-10-30.)
+export const isPostHogBusy = err =>
+  isQueryTimeout(err) ||
+  /\bPostHog 503\b/.test(String(err && (err.message || err)));
+
+export async function retryBusy(run, {waitMs = 30_000, sleep} = {}) {
+  try {
+    return await run();
+  } catch (e) {
+    if (!isPostHogBusy(e)) throw e;
+    await (sleep || (ms => new Promise(r => setTimeout(r, ms))))(waitMs);
+    return run();
+  }
+}

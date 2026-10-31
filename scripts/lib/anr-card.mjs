@@ -256,22 +256,12 @@ function wrapTo(text, indent) {
  * The options of renderAnrCard from the rollout state.
  *   active        active-rollout.json `active === true`
  *   builds        the production builds (card-layout.mjs cardBuilds)
- *   abConditions  ab-card.mjs blockingStopConditions() of the A/B model ([]
- *                 when no A/B runs)
- * → {staged, abFailed, abNoData}, all off while the rollout is not active:
- *   staged = two or more Android production builds; abFailed = the labels of
- *   the FAIL conditions; abNoData = a blocking condition has NO DATA.
+ * → {staged}: two or more Android production builds while the rollout is
+ *   active. (The A/B lines of the 2027 rollout were removed on 2026-10-30.)
  */
-export function freezeOptions({active, builds = [], abConditions = []}) {
+export function freezeOptions({active, builds = []}) {
   const android = builds.filter(b => b.platform === 'Android');
-  const on = !!active;
-  return {
-    staged: on && android.length >= 2,
-    abFailed: on
-      ? abConditions.filter(c => c.state === 'FAIL').map(c => c.label)
-      : [],
-    abNoData: on && abConditions.some(c => c.state === 'NO DATA'),
-  };
+  return {staged: !!active && android.length >= 2};
 }
 
 /**
@@ -284,23 +274,12 @@ export function freezeOptions({active, builds = [], abConditions = []}) {
  *   line, never 0.
  * opts.staged:   a staged rollout runs (active-rollout.json `active: true` and
  *   two Android production builds): one more line gives each build's share.
- * opts.abFailed: the labels of the blocking A/B stop conditions that FAIL
- *   while the rollout is active: one ⛔ line for each, directly under the
- *   header.
- * opts.abNoData: while active, a blocking condition has NO DATA: the line
- *   `A/B check: no data` under the header.
  * The App Store hang rate stays in the JSON only (the Engagement page shows
  * it under Details).
  */
-export function renderAnrCard(
-  model,
-  {staged = false, abFailed = [], abNoData = false} = {},
-) {
+export function renderAnrCard(model, {staged = false} = {}) {
   const {play, sentry} = model || {};
   const L = ['FREEZES (ANR) · last 7 days'];
-  for (const label of abFailed)
-    L.push(...wrapTo(`⛔ A/B: ${label} FAILED · see page`, '  '));
-  if (abNoData) L.push('A/B check: no data');
   const week = sentry && sentry.week && !sentry.week.error ? sentry.week : null;
 
   const platform = (label, p) => {

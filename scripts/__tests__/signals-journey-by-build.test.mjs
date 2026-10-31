@@ -218,7 +218,8 @@ test('journeyByBuild: collect gives both windows, passes the schema, and caps th
   };
   const r = await jbb.collect(ctx);
   assert.equal(r.status, 'ok');
-  assert.deepEqual(Object.keys(r.data.windows), ['d30', 'launch']);
+  assert.deepEqual(Object.keys(r.data.windows), ['d7', 'd30', 'launch']);
+  assert.equal(r.data.windows.d7.from, '2026-10-18');
   assert.equal(r.data.windows.d30.from, '2026-09-25');
   assert.equal(r.data.windows.launch.from, '2026-08-02');
   assert.equal(r.data.productionVersion, '3.2.1');
@@ -226,6 +227,8 @@ test('journeyByBuild: collect gives both windows, passes the schema, and caps th
   assert.deepEqual(
     calls.map(c => [c[0], c[1].limit]),
     [
+      ['builds', jbb.ROW_LIMIT],
+      ['groups', 10],
       ['builds', jbb.ROW_LIMIT],
       ['groups', 10],
       ['builds', jbb.ROW_LIMIT],

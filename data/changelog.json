@@ -1,7 +1,7 @@
 [
   {
-    "version": "3.3.0",
-    "releaseDate": "2026-10-20",
+    "version": "3.2.3",
+    "releaseDate": "2026-11-01",
     "title": "Qariah in Arabic, widgets and new recitations",
     "highlights": [
       {
@@ -11,30 +11,43 @@
       },
       {
         "title": "Home Screen widgets",
-        "description": "Add Qariah widgets to your Home Screen on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day.",
+        "description": "Add Qariah widgets to your Home Screen on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day. The play button works when the app is closed.",
         "icon": "grid-outline"
       },
       {
-        "title": "Newly Added recitations",
-        "description": "The Newly Added row on the Listen tab now lists the newest recitations, with the surah and the qariah. Tap one to play it.",
+        "title": "New recitations, smoother listening",
+        "description": "The Newly Added row on the Listen tab lists the newest recitations. Complete recitations come first, and when a surah ends, the next surah by the same Qariah plays.",
         "icon": "sparkles-outline"
+      },
+      {
+        "title": "Tell us what you think",
+        "description": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support.",
+        "icon": "chatbubbles-outline"
       }
     ],
     "fullChangelog": {
       "features": [
         "Most of the app in Arabic, with a right-to-left layout. It follows your phone's language; change it in Settings › Language",
         "Qariah names and bios in Arabic",
-        "Home Screen widgets on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day"
+        "Home Screen widgets on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day. The play button works when the app is closed",
+        "A shared link to a Qariah or a surah opens in the app"
       ],
       "improvements": [
-        "The Newly Added row on the Listen tab lists the newest recitations first, with the surah, the qariah and the ayah range of a partial recitation",
+        "The Newly Added row on the Listen tab lists the newest recitations first, with the surah, the Qariah and the ayah range of a partial recitation",
+        "Complete recitations are listed before partial ones",
+        "When a surah ends, the next surah by the same Qariah plays. A playlist with one surah stops at its end",
+        "A surah in a curated playlist opens the list of Qariahs who recite it",
+        "\"Arabic text only\" is the first option in Mushaf Settings",
+        "You can edit a reflection in place",
+        "iPad: the Qariah rows, the sidebar and the player fit the screen, and the country and riwayah pages show every Qariah",
         "You stay signed in to your Quran Foundation account through network errors and server outages"
       ],
       "fixes": [
         "iPhone and iPad: the Mushaf reader turns smoothly between portrait and landscape, without a cropped or squeezed page",
         "Android: in landscape, each Mushaf page lines up with the screen on phones with a camera cutout",
         "A link to a Mushaf page or a surah opens it in the reader that is already open, and a link no longer opens a second reader",
-        "Android: Play on the Continue Listening widget resumes where you stopped, not at the start of the surah"
+        "Android: Play on the Continue Listening widget resumes where you stopped, not at the start of the surah",
+        "Shuffle shows its message, and Clear cache no longer leaves an empty Qariah card in Control Center"
       ]
     }
   },
