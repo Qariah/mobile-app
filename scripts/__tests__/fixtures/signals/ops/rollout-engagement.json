@@ -1,0 +1,606 @@
+{
+ "release": "3.2.1",
+ "verdict": "OK",
+ "rolloutActive": true,
+ "alerts": [],
+ "warns": [],
+ "builds": [
+  {
+   "build": "1718",
+   "notMeasurable": false,
+   "users": 4516,
+   "labUsers": 0,
+   "androidUsers": 0,
+   "events": 723769,
+   "firstSeen": "2026-09-19T03:03:18.278000Z",
+   "lastSeen": "2026-10-19T03:01:04.320000Z",
+   "steps": [
+    {
+     "step": "installed",
+     "users": 3044,
+     "pct": 0.6740478299379983,
+     "instrumented": true
+    },
+    {
+     "step": "launched",
+     "users": 4511,
+     "pct": 0.9988928255093003,
+     "instrumented": true
+    },
+    {
+     "step": "past_splash",
+     "users": 4422,
+     "pct": 0.979185119574845,
+     "instrumented": true
+    },
+    {
+     "step": "onboarded",
+     "users": 2299,
+     "pct": 0.5090788308237378,
+     "instrumented": true
+    },
+    {
+     "step": "browsed",
+     "users": 2567,
+     "pct": 0.5684233835252436,
+     "instrumented": true
+    },
+    {
+     "step": "engaged",
+     "users": 2925,
+     "pct": 0.6476970770593445,
+     "instrumented": true
+    },
+    {
+     "step": "got_value",
+     "users": 2770,
+     "pct": 0.6133746678476528,
+     "instrumented": true
+    }
+   ],
+   "core": [
+    {
+     "event": "meaningful_listen",
+     "users": 2477,
+     "events": 42680,
+     "pct": 0.5484942426926483,
+     "instrumented": true
+    },
+    {
+     "event": "mushaf_page_read",
+     "users": 822,
+     "events": 14709,
+     "pct": 0.1820194862710363,
+     "instrumented": true
+    },
+    {
+     "event": "playback_completed",
+     "users": 1705,
+     "events": 40709,
+     "pct": 0.3775465013286094,
+     "instrumented": true
+    }
+   ],
+   "anyValueUsers": 2770,
+   "anyValuePct": 0.6133746678476528,
+   "activation": 0.6152441807393884,
+   "activationSample": 4382,
+   "splashReach": 0.980270450011084,
+   "retention": 0.46582984658298465,
+   "retentionSample": 4302,
+   "cohorts": [
+    {
+     "day": "2026-09-19",
+     "users": 343,
+     "valueUsers": 264,
+     "matured": 343,
+     "maturedValue": 264,
+     "returned": 260,
+     "osVersions": {
+      "26.1": {
+       "users": 2,
+       "valueUsers": 2
+      },
+      "18.7.8": {
+       "users": 17,
+       "valueUsers": 14
+      },
+      "26.6.2": {
+       "users": 97,
+       "valueUsers": 73
+      },
+      "26.6.1": {
+       "users": 70,
+       "valueUsers": 56
+      },
+      "18.5": {
+       "users": 9,
+       "valueUsers": 7
+      },
+      "18.7.7": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "26.5.2": {
+       "users": 25,
+       "valueUsers": 17
+      },
+      "26.5": {
+       "users": 14,
+       "valueUsers": 11
+      },
+      "26.3.1": {
+       "users": 4,
+       "valueUsers": 2
+      },
+      "26.2.1": {
+       "users": 6,
+       "valueUsers": 6
+      },
+      "27.0.1": {
+       "users": 4,
+       "valueUsers": 4
+      },
+      "26.7": {
+       "users": 7,
+       "valueUsers": 3
+      },
+      "16.7.16": {
+       "users": 4,
+       "valueUsers": 3
+      },
+      "26.7.1": {
+       "users": 3,
+       "valueUsers": 3
+      },
+      "26.6": {
+       "users": 21,
+       "valueUsers": 15
+      },
+      "18.6.2": {
+       "users": 7,
+       "valueUsers": 6
+      },
+      "27.0": {
+       "users": 10,
+       "valueUsers": 8
+      },
+      "17.5.1": {
+       "users": 3,
+       "valueUsers": 2
+      },
+      "26.4": {
+       "users": 3,
+       "valueUsers": 3
+      },
+      "18.7.10": {
+       "users": 5,
+       "valueUsers": 2
+      },
+      "18.7.9": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "17.6.1": {
+       "users": 4,
+       "valueUsers": 4
+      },
+      "15.8.2": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "16.2": {
+       "users": 2,
+       "valueUsers": 1
+      },
+      "26.0": {
+       "users": 4,
+       "valueUsers": 4
+      },
+      "18.4.1": {
+       "users": 1,
+       "valueUsers": 0
+      },
+      "26.4.1": {
+       "users": 2,
+       "valueUsers": 2
+      },
+      "26.4.2": {
+       "users": 2,
+       "valueUsers": 1
+      },
+      "18.7.3": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "18.7.2": {
+       "users": 2,
+       "valueUsers": 1
+      },
+      "18.1.1": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "16.0.3": {
+       "users": 1,
+       "valueUsers": 0
+      },
+      "15.8.8": {
+       "users": 2,
+       "valueUsers": 2
+      },
+      "18.0": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "16.0.2": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "18.3.2": {
+       "users": 2,
+       "valueUsers": 2
+      },
+      "26.3": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "26.2": {
+       "users": 2,
+       "valueUsers": 2
+      }
+     }
+    }
+   ],
+   "notInstrumented": []
+  },
+  {
+   "build": "2027",
+   "notMeasurable": false,
+   "users": 761,
+   "labUsers": 25,
+   "androidUsers": 761,
+   "events": 73958,
+   "firstSeen": "2026-09-27T23:41:36.401000Z",
+   "lastSeen": "2026-10-19T02:49:33.572000Z",
+   "steps": [
+    {
+     "step": "installed",
+     "users": 761,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "launched",
+     "users": 714,
+     "pct": 0.938239159001314,
+     "instrumented": true
+    },
+    {
+     "step": "past_splash",
+     "users": 710,
+     "pct": 0.9329829172141918,
+     "instrumented": true
+    },
+    {
+     "step": "onboarded",
+     "users": 363,
+     "pct": 0.47700394218134035,
+     "instrumented": true
+    },
+    {
+     "step": "browsed",
+     "users": 465,
+     "pct": 0.6110381077529566,
+     "instrumented": true
+    },
+    {
+     "step": "engaged",
+     "users": 557,
+     "pct": 0.7319316688567674,
+     "instrumented": true
+    },
+    {
+     "step": "got_value",
+     "users": 521,
+     "pct": 0.6846254927726675,
+     "instrumented": true
+    }
+   ],
+   "core": [
+    {
+     "event": "meaningful_listen",
+     "users": 456,
+     "events": 4047,
+     "pct": 0.5992115637319316,
+     "instrumented": true
+    },
+    {
+     "event": "mushaf_page_read",
+     "users": 168,
+     "events": 1538,
+     "pct": 0.22076215505913271,
+     "instrumented": true
+    },
+    {
+     "event": "playback_completed",
+     "users": 282,
+     "events": 2505,
+     "pct": 0.37056504599211565,
+     "instrumented": true
+    }
+   ],
+   "anyValueUsers": 521,
+   "anyValuePct": 0.6846254927726675,
+   "activation": 0.7033639143730887,
+   "activationSample": 654,
+   "splashReach": 0.9943977591036415,
+   "retention": 0.39184397163120566,
+   "retentionSample": 564,
+   "cohorts": [
+    {
+     "day": "2026-10-04",
+     "users": 7,
+     "valueUsers": 6,
+     "matured": 7,
+     "maturedValue": 6,
+     "returned": 1,
+     "osVersions": {
+      "10": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "11": {
+       "users": 2,
+       "valueUsers": 1
+      },
+      "12": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "13": {
+       "users": 2,
+       "valueUsers": 2
+      },
+      "16": {
+       "users": 1,
+       "valueUsers": 1
+      }
+     }
+    }
+   ],
+   "notInstrumented": []
+  },
+  {
+   "build": "2579",
+   "notMeasurable": false,
+   "users": 2,
+   "labUsers": 157,
+   "androidUsers": 0,
+   "events": 1619,
+   "firstSeen": "2026-10-17T05:48:15.388000Z",
+   "lastSeen": "2026-10-18T18:11:32.411000Z",
+   "steps": [
+    {
+     "step": "installed",
+     "users": 2,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "launched",
+     "users": 2,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "past_splash",
+     "users": 2,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "onboarded",
+     "users": 0,
+     "pct": 0,
+     "instrumented": true
+    },
+    {
+     "step": "browsed",
+     "users": 1,
+     "pct": 0.5,
+     "instrumented": true
+    },
+    {
+     "step": "engaged",
+     "users": 2,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "got_value",
+     "users": 2,
+     "pct": 1,
+     "instrumented": true
+    }
+   ],
+   "core": [
+    {
+     "event": "meaningful_listen",
+     "users": 0,
+     "events": 0,
+     "pct": 0,
+     "instrumented": false
+    },
+    {
+     "event": "mushaf_page_read",
+     "users": 2,
+     "events": 18,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "event": "playback_completed",
+     "users": 0,
+     "events": 0,
+     "pct": 0,
+     "instrumented": false
+    }
+   ],
+   "anyValueUsers": 2,
+   "anyValuePct": 1,
+   "activation": null,
+   "activationSample": 2,
+   "splashReach": 1,
+   "retention": null,
+   "retentionSample": 0,
+   "cohorts": [
+    {
+     "day": "2026-10-17",
+     "users": 2,
+     "valueUsers": 2,
+     "matured": 2,
+     "maturedValue": 2,
+     "returned": 0,
+     "osVersions": {
+      "26.6.2": {
+       "users": 1,
+       "valueUsers": 1
+      },
+      "27.0.1": {
+       "users": 1,
+       "valueUsers": 1
+      }
+     }
+    }
+   ],
+   "notInstrumented": [
+    "meaningful_listen",
+    "playback_completed"
+   ]
+  },
+  {
+   "build": "2620",
+   "notMeasurable": false,
+   "users": 1,
+   "labUsers": 46,
+   "androidUsers": 0,
+   "events": 450,
+   "firstSeen": "2026-10-18T13:25:12.960000Z",
+   "lastSeen": "2026-10-19T00:45:44.513000Z",
+   "steps": [
+    {
+     "step": "installed",
+     "users": 1,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "launched",
+     "users": 1,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "past_splash",
+     "users": 1,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "onboarded",
+     "users": 0,
+     "pct": 0,
+     "instrumented": true
+    },
+    {
+     "step": "browsed",
+     "users": 0,
+     "pct": 0,
+     "instrumented": true
+    },
+    {
+     "step": "engaged",
+     "users": 1,
+     "pct": 1,
+     "instrumented": true
+    },
+    {
+     "step": "got_value",
+     "users": 0,
+     "pct": 0,
+     "instrumented": false
+    }
+   ],
+   "core": [
+    {
+     "event": "meaningful_listen",
+     "users": 0,
+     "events": 0,
+     "pct": 0,
+     "instrumented": false
+    },
+    {
+     "event": "mushaf_page_read",
+     "users": 0,
+     "events": 0,
+     "pct": 0,
+     "instrumented": false
+    },
+    {
+     "event": "playback_completed",
+     "users": 0,
+     "events": 0,
+     "pct": 0,
+     "instrumented": false
+    }
+   ],
+   "anyValueUsers": 0,
+   "anyValuePct": 0,
+   "activation": null,
+   "activationSample": 0,
+   "splashReach": 1,
+   "retention": null,
+   "retentionSample": 0,
+   "cohorts": [
+    {
+     "day": "2026-10-18",
+     "users": 1,
+     "valueUsers": 0,
+     "matured": 0,
+     "maturedValue": 0,
+     "returned": 0,
+     "osVersions": {
+      "27.0.1": {
+       "users": 1,
+       "valueUsers": 0
+      }
+     }
+    }
+   ],
+   "notInstrumented": [
+    "got_value",
+    "meaningful_listen",
+    "mushaf_page_read",
+    "playback_completed"
+   ]
+  },
+  {
+   "build": "2877",
+   "notMeasurable": true,
+   "users": 0,
+   "labUsers": 36,
+   "events": 618,
+   "firstSeen": "2026-10-18T19:48:47.272000Z",
+   "lastSeen": "2026-10-18T23:14:50.344000Z"
+  }
+ ],
+ "volume": null,
+ "volumeSkipped": "pass --fraction=<live rollout %> to enable the sanity check",
+ "caveats": [],
+ "window": {
+  "days": 30,
+  "requestedDays": 30,
+  "retried": false
+ }
+}

@@ -1,0 +1,42 @@
+# Open a reciter profile from the Search tab.
+# Env: QUERY (typed into the search box), RECITER (regex for the result row),
+# and the labels L_SEARCH, L_BACK, L_SEARCH_BOX, L_JUZ (see run.sh).
+appId: com.qariah.app
+---
+- tapOn: ${L_SEARCH}
+# The Search tab keeps its stack: go back to the search box first.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - repeat:
+          while:
+            visible: ${L_BACK}
+          times: 4
+          commands:
+            - tapOn: ${L_BACK}
+      - tapOn: ${L_SEARCH_BOX}
+# Android: the back arrow has no label, and the search box keeps its last text
+# (then its hint no longer matches), so use the back key and tap the box by its
+# place.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - repeat:
+          while:
+            notVisible: '${L_SEARCH_BOX}|${L_CANCEL}'
+          times: 4
+          commands:
+            - back
+      - tapOn:
+          point: 40%,10%
+- eraseText: 30
+- inputText: ${QUERY}
+- extendedWaitUntil:
+    visible: ${RECITER}
+    timeout: 10000
+- tapOn: ${RECITER}
+- extendedWaitUntil:
+    visible: ${L_JUZ}
+    timeout: 15000

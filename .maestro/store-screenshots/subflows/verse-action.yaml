@@ -1,0 +1,11 @@
+# In the Mushaf reader: long-press the verse at POINT (for example '50%,44%')
+# and tap the verse action ACTION (a regex, for example '.*Bookmark').
+appId: com.qariah.app
+---
+- longPressOn:
+    point: ${POINT}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: ${ACTION}
+- waitForAnimationToEnd:
+    timeout: 3000

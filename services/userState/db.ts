@@ -1,0 +1,256 @@
+/**
+ * SQLite offline write queue for QF user-state.
+ *
+ * Pattern mirrors services/database/DatabaseService.ts: a module-level db
+ * handle, idempotent init mutex, WAL mode for concurrent reads.
+ *
+ * Database file: `userState.db`. Kept separate from `playlists.db` so schema
+ * evolution doesn't risk corrupting playlists. The `meta` table holds
+ * `schema_version` (added day-one — Sprint 3 retro recommendation).
+ *
+ * Schema v1 tables:
+ *   - meta                    : key/value (schema_version, etc.)
+ *   - sync_queue              : pending QF writes (offline + retry)
+ *   - cache_preferences, cache_reading_sessions, cache_bookmarks : legacy.
+ *     No code writes or reads them since 2026-10-24 (divergence batch C3,
+ *     SEM-S1). They stay in the schema so that the account-switch cleanup
+ *     still empties the rows that older builds wrote. Drop them in the next
+ *     schema migration.
+ *
+ * Sprint 4 (S4.2).
+ */
+
+import * as SQLite from 'expo-sqlite';
+import * as Crypto from 'expo-crypto';
+
+export const USER_STATE_DB_NAME = 'userState.db';
+export const SCHEMA_VERSION = 1;
+
+export type SyncResource = 'preference' | 'reading_session';
+export type SyncOperation = 'create' | 'update' | 'delete';
+
+export interface SyncQueueRow {
+  id: string;
+  resource: SyncResource;
+  operation: SyncOperation;
+  /** JSON-encoded payload — shape depends on `resource`. */
+  payload: string;
+  createdAt: number;
+  attempts: number;
+  lastError: string | null;
+}
+
+let db: SQLite.SQLiteDatabase | null = null;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Idempotent open + migrate. Safe to call multiple times concurrently.
+ */
+export function initUserStateDb(): Promise<void> {
+  if (db) return Promise.resolve();
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    try {
+      db = await SQLite.openDatabaseAsync(USER_STATE_DB_NAME);
+      await db.execAsync('PRAGMA journal_mode = WAL;');
+      await createTables(db);
+      await applyMigrations(db);
+    } catch (e) {
+      // Reset so a subsequent call can retry.
+      db = null;
+      initPromise = null;
+      throw e;
+    }
+  })();
+  return initPromise;
+}
+
+async function createTables(database: SQLite.SQLiteDatabase): Promise<void> {
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id          TEXT PRIMARY KEY,
+      resource    TEXT NOT NULL,
+      operation   TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      last_error  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at
+      ON sync_queue(created_at);
+    -- Legacy cache tables: no writer or reader (see the file header).
+    CREATE TABLE IF NOT EXISTS cache_preferences (
+      key       TEXT PRIMARY KEY,
+      value     TEXT NOT NULL,
+      synced_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS cache_reading_sessions (
+      id           TEXT PRIMARY KEY,
+      reciter_id   TEXT,
+      surah_number INTEGER,
+      ayah_number  INTEGER,
+      updated_at   INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS cache_bookmarks (
+      id            TEXT PRIMARY KEY,
+      collection_id TEXT,
+      verse_key     TEXT NOT NULL,
+      surah_number  INTEGER NOT NULL,
+      ayah_number   INTEGER NOT NULL,
+      synced_at     INTEGER NOT NULL
+    );
+  `);
+}
+
+interface MetaRow {
+  value: string;
+}
+
+async function applyMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
+  const row = await database.getFirstAsync<MetaRow>(
+    `SELECT value FROM meta WHERE key = 'schema_version'`,
+  );
+  const current = row ? parseInt(row.value, 10) : 0;
+  if (current === SCHEMA_VERSION) return;
+
+  // Future migrations chain ALTERs here, fenced by `if (current < N)`.
+  // No migrations needed for v1 (initial schema).
+
+  await database.runAsync(
+    `INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)`,
+    [String(SCHEMA_VERSION)],
+  );
+}
+
+function requireDb(): SQLite.SQLiteDatabase {
+  if (!db) {
+    throw new Error(
+      'userState DB not initialized — call initUserStateDb() first',
+    );
+  }
+  return db;
+}
+
+// ─────────────────────────── Sync queue ────────────────────────────
+
+export interface EnqueueInput {
+  resource: SyncResource;
+  operation: SyncOperation;
+  /** Will be JSON.stringify'd before storage. */
+  payload: unknown;
+}
+
+export async function enqueueWrite(input: EnqueueInput): Promise<string> {
+  const database = requireDb();
+  const id = Crypto.randomUUID();
+  await database.runAsync(
+    `INSERT INTO sync_queue (id, resource, operation, payload, created_at, attempts)
+     VALUES (?, ?, ?, ?, ?, 0)`,
+    [
+      id,
+      input.resource,
+      input.operation,
+      JSON.stringify(input.payload),
+      Date.now(),
+    ],
+  );
+  return id;
+}
+
+interface SyncQueueDbRow {
+  id: string;
+  resource: string;
+  operation: string;
+  payload: string;
+  created_at: number;
+  attempts: number;
+  last_error: string | null;
+}
+
+function mapSyncQueueRow(r: SyncQueueDbRow): SyncQueueRow {
+  return {
+    id: r.id,
+    resource: r.resource as SyncResource,
+    operation: r.operation as SyncOperation,
+    payload: r.payload,
+    createdAt: r.created_at,
+    attempts: r.attempts,
+    lastError: r.last_error,
+  };
+}
+
+export async function dequeueWrites(limit = 50): Promise<SyncQueueRow[]> {
+  const database = requireDb();
+  const rows = await database.getAllAsync<SyncQueueDbRow>(
+    `SELECT id, resource, operation, payload, created_at, attempts, last_error
+     FROM sync_queue
+     WHERE attempts < 3
+     ORDER BY created_at ASC
+     LIMIT ?`,
+    [limit],
+  );
+  return rows.map(mapSyncQueueRow);
+}
+
+export async function markWriteComplete(id: string): Promise<void> {
+  const database = requireDb();
+  await database.runAsync(`DELETE FROM sync_queue WHERE id = ?`, [id]);
+}
+
+export async function markWriteFailed(
+  id: string,
+  error: string,
+): Promise<void> {
+  const database = requireDb();
+  await database.runAsync(
+    `UPDATE sync_queue
+     SET attempts = attempts + 1, last_error = ?
+     WHERE id = ?`,
+    [error.slice(0, 500), id],
+  );
+}
+
+/**
+ * Coalesces queued writes for a given (resource, operation, key) tuple. The
+ * preferences resource is the obvious candidate: rapid favorites toggles
+ * shouldn't queue 10 writes — only the latest matters. Caller passes a
+ * coalesce-key extracted from the payload; rows older than the new one with
+ * the same key are deleted before insert.
+ *
+ * No-op if no matching rows exist.
+ */
+export async function coalescePreferenceWrite(key: string): Promise<void> {
+  const database = requireDb();
+  // Delete pending preference writes for the same key — newest will be
+  // inserted by the next enqueueWrite() call.
+  await database.runAsync(
+    `DELETE FROM sync_queue
+     WHERE resource = 'preference'
+       AND attempts = 0
+       AND json_extract(payload, '$.key') = ?`,
+    [key],
+  );
+}
+
+// @ai-start
+/**
+ * M4 (TECH_DEBT #244) — account-switch cleanup (`accountCleanup.ts`). Deletes
+ * the queued writes and the legacy QF cache rows of the previous account when
+ * a different account signs in. Without this, the next account on the device
+ * sent the previous account's queued reading sessions and preferences with
+ * its own token.
+ */
+export async function clearAccountSyncState(): Promise<void> {
+  const database = requireDb();
+  await database.execAsync(`
+    DELETE FROM sync_queue;
+    DELETE FROM cache_preferences;
+    DELETE FROM cache_reading_sessions;
+    DELETE FROM cache_bookmarks;
+  `);
+}
+// @ai-end

@@ -1,0 +1,25 @@
+{
+  "_comment": "The focus of the daily brief (planning/signals-plan.md, planning/signals-phase1-design.md). scripts/signals/sections/focus.mjs reads this file every day and computes each measure for each build. kind: rollout (versionCodes + releases), incident (sentryIssue), experiment (the card's A/B block). Measure ids: rollout = playAnrRate, playUsers, sentryAnrUsers, posthogActive7d; incident = sentryIssueDaily; experiment = abArms. The owner sets the focus; endCondition says when it is done. The section gives numbers only, no verdict (the verdict is Phase 2).",
+  "kind": "rollout",
+  "title": "Android vc2027 against vc1717 on ANR",
+  "versionCodes": [1717, 2027],
+  "releases": {
+    "1717": "com.qariah.app@3.2.0+1717",
+    "2027": "com.qariah.app@3.2.1+2027"
+  },
+  "measures": [
+    {
+      "id": "playAnrRate",
+      "label": "Play user-perceived ANR rate (day, 7d, 28d) per versionCode"
+    },
+    {"id": "playUsers", "label": "Play distinct users per versionCode"},
+    {"id": "sentryAnrUsers", "label": "Sentry ANR users per release"},
+    {
+      "id": "posthogActive7d",
+      "label": "PostHog installs active in 7 days per build"
+    }
+  ],
+  "endCondition": "vc2027 at 100% in Play production",
+  "setBy": "owner",
+  "setAt": "2026-10-18"
+}

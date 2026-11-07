@@ -1,0 +1,187 @@
+{
+  "common": {
+    "tabs": {
+      "home": "Listen",
+      "surahs": "Mushaf"
+    },
+    "counts": {
+      "reciters_one": "{{count}} qariah",
+      "reciters_other": "{{count}} qariahs"
+    },
+    "terms": {
+      "reciter": "Qariah",
+      "reciters": "Qariahs"
+    }
+  },
+  "home": {
+    "home": {
+      "exploreByRewayah": "Browse by Rewaya",
+      "featuredReciters": "Featured Qariahs"
+    },
+    "browse": {
+      "browseRecitersForSurah": "Browse Qariahs - {{surah}}",
+      "recitersFound_one": "{{count}} qariah found with current filters",
+      "recitersFound_other": "{{count}} qariahs found with current filters",
+      "searchReciters": "Search qariahs..."
+    },
+    "browseAllHero": {
+      "labels": {
+        "allReciters": "All Qariahs"
+      },
+      "titles": {
+        "allRecitersAwait": "All Qariahs Await",
+        "everyReciter": "Explore Every Qariah",
+        "oneTap": "Every Qariah, One Tap"
+      }
+    },
+    "filters": {
+      "title": "Filter Qariahs"
+    },
+    "randomHero": {
+      "finding": "Finding random recitations from different qariahs..."
+    },
+    "reciterBrowse": {
+      "noneFound": "No qariahs found",
+      "title": "Browse Qariahs"
+    },
+    "search": {
+      "placeholder": "Search surahs or qariahs"
+    }
+  },
+  "settings": {
+    "about": {
+      "alhamdulillahBody": "All praise belongs to Allah, who revealed His Book and made it easy to remember. Qariah was built out of love for the Qur'an and for the women whose voices carry it. We ask Allah to accept this small effort and make it a source of good for our daughters and for the whole Ummah.",
+      "missionBody": "{{appName}} celebrates the recitation of the Holy Qur'an by women — contemporary and historical, gathered from across the world and across many narrations. We've brought over 60 qariahs into one calm, beautiful space, so that every listener — and especially the next generation of girls — can hear the Qur'an in a voice that feels like their own.",
+      "commitmentBody": "We're committed to honoring these qariahs, and the Book they recite, with the care it deserves. {{appName}} will stay a respectful, thoughtfully curated home for the Qur'an, and we'll keep adding qariahs and refining the experience, insha'Allah. Thank you for being part of this journey. May Allah accept it from us all.",
+      "features": {
+        "highQualityAudio": {
+          "description": "Crystal clear recitations from the world's best Qariahs with optimized streaming"
+        }
+      }
+    },
+    "index": {
+      "items": {
+        "github": {
+          "description": "{{appName}} is open source. Star, report issues, or submit a PR"
+        },
+        "defaultReciter": {
+          "description": "Choose your preferred qariah",
+          "title": "Default Qariah"
+        },
+        "reciterChoice": {
+          "description": "Customize qariah selection",
+          "title": "Qariah Choice"
+        }
+      }
+    },
+    "defaultReciter": {
+      "completeOnly": "Only qariahs with the complete Quran are shown",
+      "changeHeader": "Change Default Qariah",
+      "noResults": "No qariahs found",
+      "searchPlaceholder": "Search qariahs..."
+    },
+    "layout": {
+      "defaultReciter": "Default Qariah",
+      "reciterChoice": "Qariah Choice"
+    },
+    "reciterChoice": {
+      "askEveryTimeDescription": "Choose a qariah each time you play",
+      "browseAll": "Browse All Qariahs",
+      "browseAllDescription": "Search through our complete collection of qariahs",
+      "subtitle": "Choose how you want to select qariahs when playing Surahs",
+      "useDefault": "Use Default Qariah",
+      "useDefaultDescription": "Always use your selected default qariah"
+    }
+  },
+  "collection": {
+    "notesScreen": {
+      "emptySubtitle": "Add personal notes to verses to see them here."
+    },
+    "favoriteRecitersScreen": {
+      "addReciters": "Add Qariahs",
+      "emptySubtitle": "Add qariahs to see them here",
+      "emptyTitle": "No favorite qariahs yet",
+      "searchPlaceholder": "Search favorite qariahs",
+      "title": "Favorite Qariahs"
+    },
+    "reciterDownloads": {
+      "empty": "No downloads for this qariah"
+    },
+    "searchModal": {
+      "emptySubtitle": "Search playlists, qariahs, surahs, rewayat, and downloads",
+      "placeholder": "Search playlists, qariahs, surahs, rewayat...",
+      "unknownReciter": "Unknown Qariah"
+    },
+    "systemPlaylist": {
+      "noReciterMessage": "Could not find a qariah with all surahs in this playlist. Please try a different playlist.",
+      "noReciterTitle": "No Qariah Available"
+    }
+  },
+  "content": {
+    "errors": {
+      "timestampsUnavailable": "Timestamps unavailable for this qariah on this surah. Try a different qariah."
+    },
+    "onboarding": {
+      "carplay": {
+        "description": "Play your qariahs, surahs, playlists and downloads from your car’s screen, or just ask with your voice."
+      },
+      "highlighting": {
+        "description": "Each ayah highlights in sync with the recitation so you never lose your place. Available for most of your favorite qariahs, and coming to all qariahs soon."
+      }
+    },
+    "systemPlaylists": {
+      "selectReciters": "Select qariahs to play"
+    }
+  },
+  "player": {
+    "reciterProfile": {
+      "thisReciter": "this qariah"
+    }
+  },
+  "reader": {
+    "playback": {
+      "fromBeginning": "{{surah}} plays from the beginning without verse tracking for this qariah.",
+      "rangeUnplayable": "This selection has no verses to play for this qariah. Try a different qariah or range.",
+      "timestampsUnavailable": "Timestamps unavailable for this qariah on this surah. Try a different qariah.",
+      "untracked": "{{surah}} plays without verse highlighting for this qariah.",
+      "verseTimingUnavailable": "Verse-by-verse playback isn't available for this qariah on this surah. Try a different qariah."
+    },
+    "playerBar": {
+      "changeReciter": "Change qariah",
+      "changeReciterButton": "Change Qariah"
+    }
+  },
+  "sheets": {
+    "addToCollection": {
+      "addFavoriteReciter": "Add Favorite Qariah"
+    },
+    "favoriteReciters": {
+      "title": "Favorite Qariahs"
+    },
+    "followAlong": {
+      "description": "Verse-by-verse playback is not supported by the current qariah. Try one of these qariahs instead:"
+    },
+    "homeCardOptions": {
+      "addReciterToFavorites": "Add qariah to favorites",
+      "goToReciter": "Go to qariah",
+      "removeReciterFromFavorites": "Remove qariah from favorites"
+    },
+    "mushafPlayer": {
+      "reciter": "Qariah",
+      "reciterPickerSubtitle": "Qariahs with verse-by-verse audio"
+    },
+    "options": {
+      "goToReciter": "Go to Qariah"
+    },
+    "reciterPicker": {
+      "empty": "No qariahs found",
+      "searchPlaceholder": "Search qariahs..."
+    },
+    "selectReciter": {
+      "browseAll": "Browse All Qariahs",
+      "random": "Random Qariah",
+      "title": "Select Qariah",
+      "useDefault": "Use Default Qariah"
+    }
+  }
+}

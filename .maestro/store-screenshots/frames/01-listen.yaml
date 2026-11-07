@@ -1,0 +1,12 @@
+# Frame 1: Listen home (Continue Listening, then Newly Added Recitations).
+appId: com.qariah.app
+---
+- stopApp
+- launchApp:
+    clearState: false
+- runFlow: ../subflows/home.yaml
+- tapOn: ${L_LISTEN}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 4000}
+- takeScreenshot: ${OUT}/01-listen

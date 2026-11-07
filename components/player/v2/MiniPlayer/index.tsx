@@ -1,0 +1,170 @@
+import React, {useCallback, useMemo, useRef} from 'react';
+import {View, Text, Pressable, StyleSheet} from 'react-native';
+import {useTheme} from '@/hooks/useTheme';
+import {usePlayerActions} from '@/hooks/usePlayerActions';
+import {usePlayerStore} from '@/services/player/store/playerStore';
+import {expandPlayerSheet} from '@/services/player/sheetRef';
+import {PlayIcon, PauseIcon} from '@/components/Icons';
+import {LoadingIndicator} from '@/components/LoadingIndicator';
+import {ReciterImage} from '@/components/ReciterImage';
+import Color from 'color';
+// @ai-start
+import {useTranslation} from 'react-i18next';
+import {getTrackDisplayTitle, getTrackArtistDisplay} from '@/i18n/format';
+import {appLayoutDirection} from '@/utils/rtl';
+import {trackArtworkUrl} from '@/utils/trackArtworkUrl'; // TECH_DEBT #262
+// @ai-end
+
+// @ai-start
+function MiniPlayerInner() {
+  const {theme} = useTheme();
+  const {t} = useTranslation(['player', 'common']);
+  const {play, pause} = usePlayerActions();
+  const playbackState = usePlayerStore(state => state.playback.state);
+  const queueTracks = usePlayerStore(state => state.queue.tracks);
+  const currentIndex = usePlayerStore(state => state.queue.currentIndex);
+  const trackLoading = usePlayerStore(state => state.loading.trackLoading);
+  const stateRestoring = usePlayerStore(state => state.loading.stateRestoring);
+  const prevTrackIdRef = useRef<string | null>(null);
+
+  const currentTrack = useMemo(
+    () => queueTracks?.[currentIndex],
+    [queueTracks, currentIndex],
+  );
+
+  const isLoadingNewTrack = useMemo(() => {
+    const isTrackChanging = currentTrack?.id !== prevTrackIdRef.current;
+    if (currentTrack?.id) {
+      prevTrackIdRef.current = currentTrack.id;
+    }
+    return (trackLoading && isTrackChanging) || playbackState === 'buffering';
+  }, [trackLoading, playbackState, currentTrack?.id]);
+
+  const handlePlayPause = useCallback(async () => {
+    if (playbackState === 'playing') {
+      await pause();
+    } else {
+      await play();
+    }
+  }, [playbackState, pause, play]);
+
+  const handlePress = useCallback(() => {
+    expandPlayerSheet();
+  }, []);
+
+  if (stateRestoring || !currentTrack) return null;
+
+  const textColor = theme.colors.text;
+
+  return (
+    // a11y — plain View row (not a grouping Pressable) so the play/pause
+    // control is INDIVIDUALLY focusable by VoiceOver; the expand action lives
+    // on the inner body only.
+    <View style={[styles.row, appLayoutDirection]} testID="mini-player-bar">
+      <Pressable
+        onPress={handlePress}
+        style={styles.body}
+        accessibilityRole="button"
+        accessibilityLabel={`${getTrackDisplayTitle(currentTrack)}, ${getTrackArtistDisplay(currentTrack)}`}
+        accessibilityHint={t('a11y.openPlayer')}
+        testID="mini-player-expand">
+        <ReciterImage
+          imageUrl={trackArtworkUrl(currentTrack)} // @ai TECH_DEBT #262
+          reciterName={currentTrack.reciterName}
+          style={styles.artwork}
+        />
+
+        <View style={styles.trackInfo}>
+          <Text style={[styles.title, {color: textColor}]} numberOfLines={1}>
+            {getTrackDisplayTitle(currentTrack)}
+          </Text>
+          <Text
+            style={[
+              styles.subtitle,
+              {color: Color(textColor).alpha(0.5).toString()},
+            ]}
+            numberOfLines={1}>
+            {getTrackArtistDisplay(currentTrack)}
+          </Text>
+        </View>
+      </Pressable>
+
+      <Pressable
+        onPress={handlePlayPause}
+        style={styles.playButton}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel={t(
+          playbackState === 'playing'
+            ? 'common:actions.pause'
+            : 'common:actions.play',
+        )}
+        accessibilityState={{busy: isLoadingNewTrack}}
+        testID="mini-player-play-pause">
+        {isLoadingNewTrack ? (
+          <LoadingIndicator color={textColor} />
+        ) : playbackState === 'playing' ? (
+          <PauseIcon color={textColor} size={22} />
+        ) : (
+          <PlayIcon color={textColor} size={22} />
+        )}
+      </Pressable>
+    </View>
+  );
+}
+// @ai-end
+
+export const MiniPlayer: React.FC = React.memo(MiniPlayerInner);
+
+// @ai-start
+const styles = StyleSheet.create({
+  row: {
+    // @ai #421 — fill the accessory height: the native frame (about 46pt) does not size to content.
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  body: {
+    // a11y — expand-to-full-player hit target (artwork + track info). Same
+    // `gap` as the row it was split out of, so the artwork|trackInfo rhythm is
+    // unchanged: this refactor is a11y-only, with no visual delta.
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  artwork: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  trackInfo: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  title: {
+    textAlign: 'left',
+    fontSize: 13,
+    fontFamily: 'Manrope-SemiBold',
+  },
+  subtitle: {
+    textAlign: 'left',
+    fontSize: 11,
+    fontFamily: 'Manrope-Medium',
+  },
+  playButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+});
+// @ai-end

@@ -1,0 +1,14 @@
+# Stage-1: Mushaf opens and renders past the DigitalKhatt spinner.
+# NOTE: Mushaf page content is Skia-rendered (canvas, no a11y text nodes), so we
+# assert the RN chrome that frames a loaded page rather than the ayah text itself.
+appId: com.qariah.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../subflows/skip-onboarding.yaml
+- tapOn: "Mushaf"
+- extendedWaitUntil:
+    visible: ".*Al-Fatihah.*"   # iOS exposes the header as "1, , Al-Fatihah, The Opener"
+    timeout: 8000

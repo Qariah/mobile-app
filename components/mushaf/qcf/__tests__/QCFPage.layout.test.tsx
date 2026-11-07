@@ -1,0 +1,268 @@
+// @ai
+// Regression guard for GH #364 — the QCF renderer drew every page at the
+// module-level PORTRAIT constants in `components/mushaf/constants.ts`,
+// because `main.tsx` passed it no layout metrics. In phone landscape that
+// rendered the page at roughly half scale in the left half of the screen.
+//
+// These tests RENDER QCFPage and assert the geometry it actually produces:
+// the root page View and the Skia Canvas must follow the metrics passed in,
+// not the import-time portrait snapshot. Upstream `699dccb5` fixed it with a
+// required `metrics` prop; these tests keep guarding the result.
+//
+// The Skia / gesture / service tree is stubbed the same way
+// components/__tests__/BottomSheetModal.test.tsx stubs gorhom: thin fakes,
+// so the assertions are about layout arithmetic rather than native drawing.
+
+import React from 'react';
+import {render} from '@testing-library/react-native';
+
+// --- native + heavy-tree stubs ---------------------------------------------
+
+jest.mock('@shopify/react-native-skia', () => {
+  const ReactLocal = require('react');
+  const {View} = require('react-native');
+  const makeParagraph = () => ({
+    layout: jest.fn(),
+    getLongestLine: () => 900,
+    getRectsForRange: () => [],
+    getGlyphPositionAtCoordinate: () => 0,
+    dispose: jest.fn(),
+  });
+  const builder = {
+    reset: jest.fn(),
+    pushStyle: jest.fn(),
+    addText: jest.fn(),
+    pop: jest.fn(),
+    build: () => makeParagraph(),
+  };
+  return {
+    Canvas: ({children, style}: any) =>
+      ReactLocal.createElement(View, {testID: 'qcf-canvas', style}, children),
+    Group: ({children}: any) => ReactLocal.createElement(View, null, children),
+    Paragraph: () => null,
+    RoundedRect: () => null,
+    TextAlign: {Center: 'center'},
+    TextDirection: {RTL: 'rtl'},
+    TextHeightBehavior: {DisableAll: 'disableAll'},
+    Skia: {
+      Color: (c: string) => c,
+      ParagraphBuilder: {Make: () => builder},
+      Font: () => ({
+        getGlyphIDs: () => [1],
+        getGlyphWidths: () => [100],
+      }),
+    },
+  };
+});
+
+jest.mock('react-native-gesture-handler', () => {
+  const ReactLocal = require('react');
+  const chain: any = new Proxy({}, {get: () => () => chain});
+  return {
+    GestureDetector: ({children}: any) =>
+      ReactLocal.createElement(ReactLocal.Fragment, null, children),
+    Gesture: {
+      Tap: () => chain,
+      LongPress: () => chain,
+      Pan: () => chain,
+      Exclusive: () => chain,
+      Simultaneous: () => chain,
+    },
+  };
+});
+
+jest.mock('react-native-worklets', () => ({runOnJS: (fn: any) => fn}));
+jest.mock('expo-haptics', () => ({
+  impactAsync: jest.fn(),
+  ImpactFeedbackStyle: {Medium: 'medium'},
+}));
+jest.mock('react-native-actions-sheet', () => ({
+  SheetManager: {show: jest.fn(), hide: jest.fn()},
+}));
+
+jest.mock('@/services/mushaf/DigitalKhattDataService', () => ({
+  BASMALLAH_TEXT: 'basmallah',
+  digitalKhattDataService: {
+    getPageLines: () => [{line_type: 'ayah', line_number: 1, surah_number: 2}],
+  },
+}));
+jest.mock('@/services/mushaf/QCFDataService', () => ({
+  qcfDataService: {
+    getWordsForLine: () => [{code: '', verseKey: '2:1'}],
+    getOrderedVerseKeysForPage: () => ['2:1'],
+  },
+}));
+jest.mock('@/services/mushaf/QCFLineService', () => ({
+  buildQCFLineRenderModel: () => ({
+    renderedText: 'x',
+    verseSegments: [],
+  }),
+  buildQCFLineAllahNameMap: () => null,
+  findQCFVerseAtCharIndex: () => null,
+}));
+jest.mock('@/services/mushaf/QCFFontLoader', () => ({
+  // Pass C (Sprint 47): upstream's V4 tajweed font variants (#350).
+  getQCFFontVariant: () => 'v2',
+  qcfFontFamilyForPage: () => 'QCF_P100',
+  qcfFontLoader: {
+    isReady: () => true,
+    ensure: () => Promise.resolve(),
+    prefetch: jest.fn(),
+  },
+}));
+jest.mock('@/services/mushaf/QCFLayoutCacheService', () => ({
+  qcfLayoutCacheService: {
+    // A cache miss: the page measures itself with the stubbed
+    // getLongestLine() (900) and sizes the font from the live content width.
+    getPageLayout: () => undefined,
+    setPageLayout: jest.fn(),
+  },
+}));
+jest.mock('@/services/mushaf/MushafPreloadService', () => ({
+  mushafPreloadService: {quranCommonTypeface: {}},
+}));
+jest.mock('@/services/mushaf/AllahNameHighlightService', () => ({
+  getTextAllahNameCharMap: () => null,
+}));
+jest.mock('@/services/mushaf/ThemeDataService', () => ({
+  themeDataService: {getThemeForVerse: () => null},
+}));
+jest.mock('@/hooks/useMushafFontMgr', () => ({useMushafFontMgr: () => ({})}));
+jest.mock('@/hooks/useTheme', () => ({
+  useTheme: () => ({theme: {isDarkMode: false, colors: {text: '#000'}}}),
+}));
+jest.mock('@/utils/skiaTextWeight', () => ({
+  createTextStrokePaint: () => null,
+  getArabicTextWeightStrokeWidth: () => 0,
+}));
+jest.mock('@/constants/mushafAllahHighlight', () => ({
+  getAllahNameHighlightColorHex: () => '#gold',
+}));
+jest.mock('../../skia/SkiaSurahHeader', () => () => null);
+
+const mockSettingsState = {
+  arabicTextWeight: 'normal',
+  showThemes: false,
+  showAllahNameHighlight: false,
+  allahNameHighlightColor: 'gold',
+};
+jest.mock('@/store/mushafSettingsStore', () => ({
+  useMushafSettingsStore: (sel: any) => sel(mockSettingsState),
+}));
+jest.mock('@/store/mushafPlayerStore', () => ({
+  useMushafPlayerStore: (sel: any) =>
+    sel({currentVerseKey: null, playbackState: 'idle'}),
+  // Upstream #329: QCFPage reads the playing verses through this hook.
+  usePlaybackVerseKeys: () => [],
+}));
+const mockSelectionState = {
+  selectedVerseKeys: [],
+  selectedPageNumber: null,
+  selectVerse: jest.fn(),
+  selectVerseRange: jest.fn(),
+};
+jest.mock('@/store/mushafVerseSelectionStore', () => {
+  const hook: any = (sel: any) => sel(mockSelectionState);
+  hook.getState = () => mockSelectionState;
+  return {useMushafVerseSelectionStore: hook};
+});
+
+import QCFPage from '../QCFPage';
+import {
+  SCREEN_WIDTH as DEFAULT_SCREEN_WIDTH,
+  SCREEN_HEIGHT as DEFAULT_SCREEN_HEIGHT,
+  CONTENT_WIDTH as DEFAULT_CONTENT_WIDTH,
+  CONTENT_HEIGHT as DEFAULT_CONTENT_HEIGHT,
+  PAGE_PADDING_TOP as DEFAULT_PAGE_PADDING_TOP,
+  canvasBottomOverflow,
+  getMushafLayout,
+} from '../../constants';
+
+// Pass C (Sprint 47): upstream's canvas reserves room below the content box
+// for V4 tajweed glyphs (#350): `canvasBottomOverflow(fontSize)`. The font
+// fills 97% of the content width; 900 is the stubbed line width at size 100.
+const canvasHeightFor = (contentWidth: number, contentHeight: number) =>
+  contentHeight + canvasBottomOverflow(((contentWidth * 0.97) / 900) * 100);
+
+// Pixel 3 landscape — the orientation the defect showed up in.
+const LANDSCAPE = getMushafLayout({
+  width: 785.5,
+  height: 392.7,
+  isTablet: false,
+});
+
+function renderPage(props: Record<string, unknown> = {}) {
+  return render(
+    <QCFPage
+      metrics={LANDSCAPE}
+      pageNumber={100}
+      textColor="#000000"
+      dividerColor="#888888"
+      {...props}
+    />,
+  );
+}
+
+function flatten(style: unknown): Record<string, number> {
+  return Array.isArray(style)
+    ? Object.assign({}, ...style.map(flatten))
+    : ((style ?? {}) as Record<string, number>);
+}
+
+describe('QCFPage geometry follows the metrics it is given (GH #364)', () => {
+  it('sizes the page View from the landscape metrics, not the portrait constants', () => {
+    const {toJSON} = renderPage();
+
+    const root = toJSON() as any;
+    const style = flatten(root.props.style);
+    expect(style.width).toBeCloseTo(LANDSCAPE.pageWidth, 5);
+    expect(style.height).toBeCloseTo(LANDSCAPE.screenHeight, 5);
+    // The defect: these were the portrait snapshot.
+    expect(style.width).not.toBeCloseTo(DEFAULT_SCREEN_WIDTH, 5);
+    expect(style.height).not.toBeCloseTo(DEFAULT_SCREEN_HEIGHT, 5);
+  });
+
+  it('sizes the Skia Canvas from the landscape metrics', () => {
+    const {getByTestId} = renderPage();
+
+    const style = flatten(getByTestId('qcf-canvas').props.style);
+    expect(style.width).toBeCloseTo(LANDSCAPE.contentWidth, 5);
+    expect(style.height).toBeCloseTo(
+      canvasHeightFor(LANDSCAPE.contentWidth, LANDSCAPE.contentHeight),
+      5,
+    );
+    expect(style.marginTop).toBeCloseTo(LANDSCAPE.paddingTop, 5);
+    expect(style.marginLeft).toBeCloseTo(LANDSCAPE.paddingHorizontal, 5);
+
+    expect(style.width).not.toBeCloseTo(DEFAULT_CONTENT_WIDTH, 5);
+    expect(style.height).not.toBeCloseTo(
+      canvasHeightFor(DEFAULT_CONTENT_WIDTH, DEFAULT_CONTENT_HEIGHT),
+      5,
+    );
+    expect(style.marginTop).not.toBeCloseTo(DEFAULT_PAGE_PADDING_TOP, 5);
+  });
+});
+
+// @ai — TECH_DEBT #272: the rotation stage counts each commit of a page as a
+// draw and drops its portrait snapshot. A page whose font is ready must not
+// set `fontReady` again when the font load ends: on the 2026-10-18 device
+// run that one empty commit after each mount dropped the snapshot at the
+// Mushaf 1440 turns. React skips such a render in this test renderer (and
+// not on the device), so the guard reads the source.
+describe('QCFPage commits (TECH_DEBT #272)', () => {
+  it('sets fontReady after the font load only for a page that was not ready', () => {
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'QCFPage.tsx'),
+      'utf8',
+    );
+    // Pass C (Sprint 47): upstream replaced `fontReady` with a `loadedFont`
+    // state (font variants, #350); the guard is the same.
+    expect(source).toMatch(
+      /const wasReady = qcfFontLoader\.isReady\(\s*pageNumber,\s*fontMgr,\s*fontVariant,?\s*\);/,
+    );
+    expect(source).toMatch(
+      /if \(!cancelled && !wasReady\) \{\s*setLoadedFont\(/,
+    );
+    expect(source).not.toMatch(/if \(!cancelled\) setLoadedFont\(/);
+  });
+});

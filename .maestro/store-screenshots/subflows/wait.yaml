@@ -1,0 +1,8 @@
+# Wait MS milliseconds. Maestro has no plain sleep: wait for a text that
+# never appears.
+appId: com.qariah.app
+---
+- extendedWaitUntil:
+    visible: 'this text never appears 1f3a'
+    timeout: ${MS}
+    optional: true

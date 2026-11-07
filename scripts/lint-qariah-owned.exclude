@@ -1,0 +1,12 @@
+# Files that scripts/lint-qariah-owned.mjs must not lint (TECH_DEBT #236).
+#
+# The script lints the Qariah-owned files: the tracked files that are not in the
+# upstream tree at the pinned commit (scripts/lint-qariah-owned.upstream-sha).
+# Use this list only for a Qariah-owned file with a lint error that cannot be
+# fixed now. Add its path below, one path for each line, and say why in a
+# comment. Do not change an upstream file to satisfy the lint.
+#
+# The script warns about a line that matches no Qariah-owned file (the file is
+# gone, renamed, or now upstream). Remove such a line.
+#
+# Format: a repository path (not a pattern). `#` starts a comment.

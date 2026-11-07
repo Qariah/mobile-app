@@ -1,0 +1,41 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "resolveJsonModule": true,
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "types": ["node", "jest"]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.json",
+    "scripts/**/*",
+    "types/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "scripts/rewayah/sources",
+    "build",
+    "ios/Pods",
+    "ios/build",
+    "android/build",
+    "android/app/build",
+    "android/.gradle",
+    "modules/*/android/build",
+    "modules/*/ios/build"
+  ],
+}

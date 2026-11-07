@@ -1,0 +1,30 @@
+# Switch the app language in Settings -> Language, then restart the app.
+# Env: LANG_OPTION (the option label: 'English' or 'العربية'). Run it with the
+# labels of the CURRENT language.
+appId: com.qariah.app
+---
+- runFlow: subflows/home.yaml
+- runFlow: subflows/settings-root.yaml
+- scrollUntilVisible:
+    element: ${L_LANGUAGE}
+    direction: DOWN
+    timeout: 10000
+    centerElement: true
+- tapOn: ${L_LANGUAGE}
+- tapOn: ${LANG_OPTION}
+# Android offers to restart at once; iOS applies the language at the next launch.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - runFlow:
+          when:
+            visible: ${L_RESTART}
+          commands:
+            - tapOn: ${L_RESTART}
+- stopApp
+- launchApp:
+    clearState: false
+- runFlow:
+    file: subflows/wait.yaml
+    env: {MS: 4000}

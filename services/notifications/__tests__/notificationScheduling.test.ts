@@ -1,0 +1,1361 @@
+// @ai-generated
+// Qariah (Sprint 48, S48.6, Task 16): "continue listening" follows each play
+// start; the switches and the app state sync the scheduled types.
+import {DEFAULT_NOTIFICATION_TYPE_PREFS} from '../prefsStore';
+import type {NotificationPrefsState} from '../prefsStore';
+import {notificationsStorage} from '../catalogDiff';
+import {
+  CONTINUE_LISTENING_FIRED_DAY_KEY,
+  CONTINUE_LISTENING_LAST_PLAY_KEY,
+  clearContinuePlay,
+  clearContinuePlayIfPast,
+  continueNoticeDays,
+  readContinuePlay,
+  writeContinuePlay,
+} from '../continueListeningStore';
+import {
+  CONTINUE_RESCHEDULE_MIN_MS,
+  FOREGROUND_SYNC_MIN_MS,
+  __resetNotificationSchedulingForTests,
+  playedTrackOf,
+  scheduleContinueListening,
+  setNotificationSchedulingReady,
+  startNotificationScheduling,
+  type ContinueScheduleDeps,
+  type PlayedTrack,
+  type SyncOutcome,
+} from '../notificationScheduling';
+import {
+  CONTINUE_LISTENING_DELAY_DAYS,
+  continueListeningTrigger,
+  localDay,
+  type ContinueNoticeDayRules,
+} from '../scheduler';
+import type {
+  KeyValueStorage,
+  NotificationPermissionStatus,
+  NotificationPrefsSnapshot,
+  Notifier,
+} from '../types';
+
+jest.mock('@sentry/react-native', () => ({
+  captureMessage: jest.fn(),
+  addBreadcrumb: jest.fn(),
+}));
+// The player store and the catalog are not needed: the tests inject the
+// subscriptions and the text.
+jest.mock('@/services/player/store/playerStore', () => ({
+  usePlayerStore: {subscribe: jest.fn(() => () => undefined)},
+}));
+jest.mock('@/services/dataService', () => ({
+  getReciterByIdSync: jest.fn(() => undefined),
+}));
+
+type FakeNotifier = Notifier & {
+  scheduled: Map<string, {type: string; at?: number; body?: unknown}>;
+  schedule: jest.Mock;
+  cancelByType: jest.Mock;
+  getPermission: jest.Mock;
+};
+
+function fakeNotifier(
+  permission: NotificationPermissionStatus = 'granted',
+): FakeNotifier {
+  const scheduled = new Map<
+    string,
+    {type: string; at?: number; body?: unknown}
+  >();
+  return {
+    scheduled,
+    schedule: jest.fn(
+      async (
+        candidate: {dedupeKey: string; type: string; body?: unknown},
+        trigger: {at?: number},
+      ) => {
+        scheduled.set(candidate.dedupeKey, {
+          type: candidate.type,
+          at: trigger.at,
+          body: candidate.body,
+        });
+        return candidate.dedupeKey;
+      },
+    ),
+    cancel: jest.fn(async () => undefined),
+    cancelByType: jest.fn(async (type: string) => {
+      for (const [id, entry] of scheduled) {
+        if (entry.type === type) scheduled.delete(id);
+      }
+    }),
+    getPermission: jest.fn(async () => permission),
+    listScheduled: async () =>
+      [...scheduled].map(([id, entry]) => ({id, type: entry.type})),
+  };
+}
+
+const prefs = (
+  overrides: Partial<NotificationPrefsSnapshot> = {},
+): NotificationPrefsSnapshot => ({
+  ...DEFAULT_NOTIFICATION_TYPE_PREFS,
+  lastNotifiedDay: null,
+  ...overrides,
+});
+
+const KAHF: PlayedTrack = {
+  reciterId: 'r1',
+  reciterName: 'Zaynab',
+  surahId: 18,
+  rewayatId: 'w1',
+};
+const YASIN: PlayedTrack = {...KAHF, surahId: 36};
+
+/** A fixed "now" before each play date of these tests (not the clock of the test machine). */
+const CONTINUE_TEST_NOW = new Date(2026, 9, 1).getTime();
+
+/**
+ * No taken day (TECH_DEBT #328): the notice keeps the time of
+ * `continueListeningTrigger`. The plays of the older tests fall on a Tuesday,
+ * so their notice falls on a Friday; the one-a-day tests below set the rules.
+ */
+const NO_TAKEN_DAY = () => ({kahfFridayOn: false, lastNotifiedDay: null});
+
+function continueDeps(
+  notifier: FakeNotifier,
+  overrides: Partial<ContinueScheduleDeps> = {},
+): ContinueScheduleDeps {
+  return {
+    notifier,
+    isHoldout: () => false,
+    readPrefs: async () => prefs(),
+    textFor: track => ({
+      surahName: `surah:${track.surahId}`,
+      reciterName: track.reciterName,
+    }),
+    now: () => CONTINUE_TEST_NOW,
+    ...overrides,
+  };
+}
+
+async function flush(): Promise<void> {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+}
+
+function memoryStorage(
+  initial: Record<string, string> = {},
+): KeyValueStorage & {values: Map<string, string>} {
+  const values = new Map(Object.entries(initial));
+  return {
+    values,
+    getString: key => values.get(key),
+    set: (key, value) => {
+      values.set(key, value);
+    },
+    remove: key => {
+      values.delete(key);
+    },
+  };
+}
+
+beforeEach(() => {
+  __resetNotificationSchedulingForTests();
+  // The tests with no injected storage use the Jest in-memory MMKV: no stored
+  // play may go from one test to the next.
+  notificationsStorage.remove(CONTINUE_LISTENING_LAST_PLAY_KEY);
+  notificationsStorage.remove(CONTINUE_LISTENING_FIRED_DAY_KEY);
+});
+
+describe('playedTrackOf', () => {
+  it('takes a surah track; an upload or a track with no surah gives null', () => {
+    expect(
+      playedTrackOf({
+        id: 'r1:18',
+        url: 'u',
+        title: 'Al-Kahf',
+        artist: 'Zaynab',
+        reciterId: 'r1',
+        reciterName: 'Zaynab',
+        surahId: '18',
+        rewayatId: 'w1',
+      }),
+    ).toEqual(KAHF);
+    expect(
+      playedTrackOf({
+        id: 'u',
+        url: 'u',
+        title: 't',
+        artist: 'a',
+        reciterId: 'r1',
+        reciterName: 'a',
+        surahId: '18',
+        isUserUpload: true,
+      }),
+    ).toBeNull();
+    expect(
+      playedTrackOf({
+        id: 'x',
+        url: 'u',
+        title: 't',
+        artist: 'a',
+        reciterId: 'r1',
+        reciterName: 'a',
+      }),
+    ).toBeNull();
+    expect(playedTrackOf(undefined)).toBeNull();
+  });
+});
+
+describe('scheduleContinueListening', () => {
+  it('schedules the notice 3 calendar days after the play, at the same time, with the track text', async () => {
+    const notifier = fakeNotifier();
+    const playedAt = new Date(2026, 9, 20, 18, 15);
+    await expect(
+      scheduleContinueListening(KAHF, playedAt, continueDeps(notifier)),
+    ).resolves.toBe('scheduled');
+    const entry = notifier.scheduled.get('continue_listening');
+    const at = new Date(entry?.at ?? 0);
+    expect([at.getDate(), at.getHours(), at.getMinutes()]).toEqual([
+      20 + CONTINUE_LISTENING_DELAY_DAYS,
+      18,
+      15,
+    ]);
+    expect(entry?.body).toEqual({
+      key: 'qariah:notifications.continueListening.body',
+      params: {surahName: 'surah:18', reciterName: 'Zaynab'},
+    });
+  });
+
+  it('a second play replaces the pending notice (one id)', async () => {
+    const notifier = fakeNotifier();
+    await scheduleContinueListening(
+      KAHF,
+      new Date(2026, 9, 20, 8),
+      continueDeps(notifier),
+    );
+    await expect(
+      scheduleContinueListening(
+        YASIN,
+        new Date(2026, 9, 21, 22),
+        continueDeps(notifier),
+      ),
+    ).resolves.toBe('rescheduled');
+    expect([...notifier.scheduled.keys()]).toEqual(['continue_listening']);
+    expect(
+      new Date(notifier.scheduled.get('continue_listening')?.at ?? 0).getDate(),
+    ).toBe(24);
+  });
+
+  it.each([
+    [
+      'the toggle is off',
+      {readPrefs: async () => prefs({continue_listening: false})},
+    ],
+    ['the toggles cannot be read', {readPrefs: async () => null}],
+    ['the holdout', {isHoldout: () => true}],
+  ])('schedules nothing when %s', async (_label, override) => {
+    const notifier = fakeNotifier();
+    await expect(
+      scheduleContinueListening(
+        KAHF,
+        new Date(),
+        continueDeps(notifier, override),
+      ),
+    ).resolves.toBe('skipped');
+    expect(notifier.schedule).not.toHaveBeenCalled();
+  });
+
+  it('schedules nothing without the permission', async () => {
+    const notifier = fakeNotifier('denied');
+    await expect(
+      scheduleContinueListening(KAHF, new Date(), continueDeps(notifier)),
+    ).resolves.toBe('skipped');
+  });
+
+  describe('a time of the notice that is past (review of Task 10)', () => {
+    it('a fireAt that is now or past: skipped, with no native call', async () => {
+      for (const fireAt of [CONTINUE_TEST_NOW, CONTINUE_TEST_NOW - 60_000]) {
+        const notifier = fakeNotifier();
+        await expect(
+          scheduleContinueListening(
+            KAHF,
+            new Date(CONTINUE_TEST_NOW - 4 * 24 * 60 * 60_000),
+            continueDeps(notifier),
+            fireAt,
+          ),
+        ).resolves.toBe('skipped');
+        expect(notifier.getPermission).not.toHaveBeenCalled();
+        expect(notifier.schedule).not.toHaveBeenCalled();
+      }
+    });
+
+    it('a play 4 days ago (no fireAt): skipped', async () => {
+      const notifier = fakeNotifier();
+      await expect(
+        scheduleContinueListening(
+          KAHF,
+          new Date(CONTINUE_TEST_NOW - 4 * 24 * 60 * 60_000),
+          continueDeps(notifier),
+        ),
+      ).resolves.toBe('skipped');
+      expect(notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('the time passes during the checks: skipped, and the pending notice is not touched', async () => {
+      let now = CONTINUE_TEST_NOW;
+      const fireAt = CONTINUE_TEST_NOW + 60_000;
+      const notifier = fakeNotifier();
+      notifier.scheduled.set('continue_listening', {
+        type: 'continue_listening',
+        at: fireAt,
+      });
+      notifier.getPermission.mockImplementation(async () => {
+        now = fireAt; // the permission read ends at the time of the notice
+        return 'granted';
+      });
+      await expect(
+        scheduleContinueListening(
+          KAHF,
+          new Date(CONTINUE_TEST_NOW - 3 * 24 * 60 * 60_000),
+          continueDeps(notifier, {now: () => now}),
+          fireAt,
+        ),
+      ).resolves.toBe('skipped');
+      expect(notifier.schedule).not.toHaveBeenCalled();
+      expect(notifier.scheduled.get('continue_listening')?.at).toBe(fireAt);
+    });
+  });
+
+  it('gives failed, and does not throw, when the native call fails', async () => {
+    const notifier = fakeNotifier();
+    notifier.schedule.mockRejectedValue(new Error('native'));
+    await expect(
+      scheduleContinueListening(KAHF, new Date(), continueDeps(notifier)),
+    ).resolves.toBe('failed');
+  });
+});
+
+describe('startNotificationScheduling', () => {
+  function harness(
+    start = Date.UTC(2026, 9, 20, 9),
+    options: {
+      isHoldout?: () => boolean;
+      readPrefs?: () => Promise<NotificationPrefsSnapshot | null>;
+      /** Share one store between two "processes" (TECH_DEBT #330). */
+      storage?: KeyValueStorage & {values: Map<string, string>};
+      /** Share one notifier between two "processes" (iOS keeps the notices). */
+      notifier?: FakeNotifier;
+      /** The taken days (TECH_DEBT #328). Default: none. */
+      dayRules?: () => ContinueNoticeDayRules;
+    } = {},
+  ) {
+    let now = start;
+    const synced: {listener: ((result: SyncOutcome) => void) | null} = {
+      listener: null,
+    };
+    const play: {listener: ((track: PlayedTrack) => void) | null} = {
+      listener: null,
+    };
+    const prefsListener: {
+      listener:
+        | ((
+            next: NotificationPrefsState,
+            previous: NotificationPrefsState,
+          ) => void)
+        | null;
+    } = {listener: null};
+    const active: {listener: (() => void) | null} = {listener: null};
+    const notifier = options.notifier ?? fakeNotifier();
+    const notifierFactory = jest.fn(() => notifier);
+    const storage = options.storage ?? memoryStorage();
+    const sync = jest.fn(async () => undefined);
+    const onContinueScheduled = jest.fn();
+    startNotificationScheduling({
+      dayRules: options.dayRules ?? NO_TAKEN_DAY,
+      subscribePlayStarts: listener => {
+        play.listener = listener;
+        return () => undefined;
+      },
+      subscribePrefs: listener => {
+        prefsListener.listener = listener;
+        return () => undefined;
+      },
+      subscribeAppActive: listener => {
+        active.listener = listener;
+        return () => undefined;
+      },
+      subscribeSynced: listener => {
+        synced.listener = listener;
+        return () => undefined;
+      },
+      notifier: notifierFactory,
+      isHoldout: options.isHoldout ?? (() => false),
+      readPrefs: options.readPrefs ?? (async () => prefs()),
+      textFor: track => ({
+        surahName: String(track.surahId),
+        reciterName: track.reciterName,
+      }),
+      sync,
+      now: () => now,
+      onContinueScheduled,
+      storage,
+    });
+    return {
+      notifier,
+      notifierFactory,
+      storage,
+      sync,
+      onContinueScheduled,
+      synced: (result: SyncOutcome) => synced.listener?.(result),
+      play: (track: PlayedTrack) => play.listener?.(track),
+      changePrefs: (
+        next: Partial<NotificationPrefsState>,
+        previous: Partial<NotificationPrefsState>,
+      ) =>
+        prefsListener.listener?.(
+          next as NotificationPrefsState,
+          previous as NotificationPrefsState,
+        ),
+      active: () => active.listener?.(),
+      advance: (ms: number) => {
+        now += ms;
+      },
+    };
+  }
+
+  it('keeps a play start before the boot step, and schedules it when ready', async () => {
+    const h = harness();
+    h.play(KAHF);
+    await flush();
+    expect(h.notifier.schedule).not.toHaveBeenCalled();
+    setNotificationSchedulingReady();
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+    expect(h.onContinueScheduled).toHaveBeenCalledWith('scheduled');
+  });
+
+  it('each play start reschedules; the same track only after the minimum gap', async () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    h.play(KAHF); // buffering → playing again
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+    h.play(YASIN); // another track: at once
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(2);
+    h.advance(CONTINUE_RESCHEDULE_MIN_MS);
+    h.play(YASIN);
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(3);
+  });
+
+  it('the Al-Kahf switch syncs; "continue listening" OFF cancels its notice', async () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    expect(h.notifier.scheduled.has('continue_listening')).toBe(true);
+
+    h.changePrefs(
+      {kahf_friday: false, continue_listening: true},
+      {kahf_friday: true, continue_listening: true},
+    );
+    expect(h.sync).toHaveBeenCalledWith('toggle');
+
+    h.changePrefs(
+      {kahf_friday: false, continue_listening: false},
+      {kahf_friday: false, continue_listening: true},
+    );
+    await flush();
+    expect(h.notifier.cancelByType).toHaveBeenCalledWith('continue_listening');
+    expect(h.notifier.scheduled.has('continue_listening')).toBe(false);
+    // The next play of the same track schedules again (the gap starts over).
+    h.play(KAHF);
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(2);
+  });
+
+  it('changes to other fields do nothing', async () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.changePrefs(
+      {kahf_friday: true, continue_listening: true, lastNotifiedDay: 'x'},
+      {kahf_friday: true, continue_listening: true, lastNotifiedDay: null},
+    );
+    await flush();
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.notifier.cancelByType).not.toHaveBeenCalled();
+  });
+
+  it('back in the foreground: a sync, at most once in the minimum gap', () => {
+    const h = harness();
+    h.active(); // before the boot step: nothing
+    expect(h.sync).not.toHaveBeenCalled();
+    setNotificationSchedulingReady();
+    h.active(); // the boot sync just ran
+    expect(h.sync).not.toHaveBeenCalled();
+    h.advance(FOREGROUND_SYNC_MIN_MS);
+    h.active();
+    h.active();
+    expect(h.sync).toHaveBeenCalledTimes(1);
+    expect(h.sync).toHaveBeenCalledWith('foreground');
+  });
+
+  it('by default, a NEW notice sends notification_scheduled (a moved one does not)', async () => {
+    const {__setNotificationAnalyticsSinkForTests} =
+      require('../notificationAnalytics') as typeof import('../notificationAnalytics');
+    const scheduled: unknown[] = [];
+    __setNotificationAnalyticsSinkForTests({
+      isReadyToCapture: () => true,
+      onReadyToCapture: () => () => undefined,
+      trackNotificationPermissionPrompted: jest.fn(),
+      trackNotificationPermissionResult: jest.fn(),
+      trackNotificationScheduled: props => scheduled.push(props),
+      trackNotificationOpened: jest.fn(),
+    });
+    try {
+      const notifier = fakeNotifier();
+      let playListener: ((track: PlayedTrack) => void) | null = null;
+      startNotificationScheduling({
+        dayRules: NO_TAKEN_DAY,
+        subscribePlayStarts: listener => {
+          playListener = listener;
+          return () => undefined;
+        },
+        subscribePrefs: () => () => undefined,
+        subscribeAppActive: () => () => undefined,
+        notifier: () => notifier,
+        isHoldout: () => false,
+        readPrefs: async () => prefs(),
+        textFor: track => ({surahName: '18', reciterName: track.reciterName}),
+      });
+      setNotificationSchedulingReady();
+      (playListener as unknown as (track: PlayedTrack) => void)(KAHF);
+      await flush();
+      (playListener as unknown as (track: PlayedTrack) => void)(YASIN);
+      await flush();
+      expect(notifier.schedule).toHaveBeenCalledTimes(2);
+      expect(scheduled).toEqual([
+        expect.objectContaining({
+          type: 'continue_listening',
+          trigger: 'date',
+          source: 'play',
+        }),
+      ]);
+    } finally {
+      __setNotificationAnalyticsSinkForTests(null);
+    }
+  });
+
+  it('M2: a play before the permission is scheduled after the grant, with its own play time', async () => {
+    const h = harness();
+    h.notifier.getPermission.mockResolvedValue('undetermined');
+    setNotificationSchedulingReady();
+    h.play(KAHF); // at T0 (09:00 UTC)
+    await flush();
+    expect(h.notifier.schedule).not.toHaveBeenCalled();
+    expect(h.onContinueScheduled).toHaveBeenCalledWith('skipped');
+
+    h.advance(5 * 60_000); // the user answers the card 5 minutes later
+    h.notifier.getPermission.mockResolvedValue('granted');
+    h.synced({
+      reason: 'permission_granted',
+      holdout: false,
+      permission: 'granted',
+    });
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+    const [, trigger] = h.notifier.schedule.mock.calls[0] as [
+      unknown,
+      {at: number},
+    ];
+    const expected = new Date(Date.UTC(2026, 9, 20, 9));
+    expected.setDate(expected.getDate() + CONTINUE_LISTENING_DELAY_DAYS);
+    const hour = new Date(Date.UTC(2026, 9, 20, 9)).getHours();
+    if (hour < 9) expected.setHours(9, 0, 0, 0);
+    else if (hour >= 21) expected.setHours(20, 0, 0, 0);
+    // The trigger comes from the play time, not from the grant time.
+    expect(trigger.at).toBe(expected.getTime());
+  });
+
+  it('M2: a play before the arm is known is scheduled after holdout_assigned', async () => {
+    let holdout = true;
+    const h = harness(undefined, {isHoldout: () => holdout});
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    expect(h.notifier.schedule).not.toHaveBeenCalled();
+    holdout = false;
+    h.synced({
+      reason: 'holdout_assigned',
+      holdout: false,
+      permission: 'granted',
+    });
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('M2: a sync for another reason, a holdout sync or a sync with no permission replays nothing', async () => {
+    const h = harness();
+    h.notifier.getPermission.mockResolvedValue('undetermined');
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    h.notifier.getPermission.mockResolvedValue('granted');
+    h.synced({reason: 'boot', holdout: false, permission: 'granted'});
+    h.synced({reason: 'foreground', holdout: true});
+    h.synced({reason: 'foreground', holdout: false, permission: 'denied'});
+    await flush();
+    expect(h.notifier.schedule).not.toHaveBeenCalled();
+  });
+
+  it('M2: a scheduled play is not scheduled twice by a later granted sync', async () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    h.synced({reason: 'foreground', holdout: false, permission: 'granted'});
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('M2: a grant that comes while the play is checked tries once more', async () => {
+    const h = harness();
+    let answer: (status: NotificationPermissionStatus) => void = () =>
+      undefined;
+    h.notifier.getPermission.mockImplementationOnce(
+      () =>
+        new Promise<NotificationPermissionStatus>(resolve => {
+          answer = resolve;
+        }),
+    );
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    // The grant comes while the first check waits.
+    h.synced({
+      reason: 'permission_granted',
+      holdout: false,
+      permission: 'granted',
+    });
+    answer('undetermined');
+    await flush();
+    expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('L4: after a sync with no permission, each return to the app syncs', () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.synced({reason: 'boot', holdout: false, permission: 'undetermined'});
+    h.active();
+    h.active();
+    expect(h.sync).toHaveBeenCalledTimes(2);
+    // Granted: the throttle applies again.
+    h.synced({reason: 'foreground', holdout: false, permission: 'granted'});
+    h.active();
+    expect(h.sync).toHaveBeenCalledTimes(2);
+    // A holdout sync keeps the throttle too.
+    h.synced({reason: 'foreground', holdout: true});
+    h.active();
+    expect(h.sync).toHaveBeenCalledTimes(2);
+  });
+
+  it('L6: the switch is read again just before the schedule', async () => {
+    let calls = 0;
+    const h = harness(undefined, {
+      readPrefs: async () => {
+        calls += 1;
+        return prefs({continue_listening: calls === 1});
+      },
+    });
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    expect(calls).toBe(2);
+    expect(h.notifier.schedule).not.toHaveBeenCalled();
+    expect(h.onContinueScheduled).toHaveBeenCalledWith('skipped');
+  });
+
+  it('"continue listening" ON again schedules the last play', async () => {
+    const h = harness();
+    setNotificationSchedulingReady();
+    h.play(KAHF);
+    await flush();
+    h.changePrefs(
+      {kahf_friday: true, continue_listening: false},
+      {kahf_friday: true, continue_listening: true},
+    );
+    await flush();
+    expect(h.notifier.scheduled.has('continue_listening')).toBe(false);
+    h.changePrefs(
+      {kahf_friday: true, continue_listening: true},
+      {kahf_friday: true, continue_listening: false},
+    );
+    await flush();
+    expect(h.notifier.scheduled.has('continue_listening')).toBe(true);
+  });
+
+  it('a switch change of a holdout user loads nothing', async () => {
+    const h = harness(undefined, {isHoldout: () => true});
+    setNotificationSchedulingReady();
+    h.changePrefs(
+      {kahf_friday: false, continue_listening: false},
+      {kahf_friday: true, continue_listening: true},
+    );
+    await flush();
+    expect(h.sync).not.toHaveBeenCalled();
+    expect(h.notifier.cancelByType).not.toHaveBeenCalled();
+  });
+
+  it('starts once in a process', () => {
+    const subscribe = jest.fn(() => () => undefined);
+    const first = startNotificationScheduling({
+      subscribePlayStarts: subscribe,
+      subscribePrefs: subscribe,
+      subscribeAppActive: subscribe,
+      subscribeSynced: subscribe,
+    });
+    const second = startNotificationScheduling({
+      subscribePlayStarts: subscribe,
+      subscribePrefs: subscribe,
+      subscribeAppActive: subscribe,
+      subscribeSynced: subscribe,
+    });
+    expect(first).toBe(second);
+    expect(subscribe).toHaveBeenCalledTimes(4);
+  });
+
+  describe('the stored play (TECH_DEBT #330: an Android force-stop)', () => {
+    const START = Date.UTC(2026, 9, 20, 9);
+    const DAY = 24 * 60 * 60_000;
+    const kahfFireAt = continueListeningTrigger(START).at;
+
+    /** Process 1 plays KAHF at START; gives the store. */
+    async function playInFirstProcess(): Promise<
+      KeyValueStorage & {values: Map<string, string>}
+    > {
+      const first = harness(START);
+      setNotificationSchedulingReady();
+      first.play(KAHF);
+      await flush();
+      expect(first.notifier.schedule).toHaveBeenCalledTimes(1);
+      // The process ends (a force-stop): the in-memory state goes.
+      __resetNotificationSchedulingForTests();
+      return first.storage;
+    }
+
+    it('a scheduled play keeps the track, the play time and the notice time in MMKV', async () => {
+      const storage = await playInFirstProcess();
+      expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(true);
+      expect(readContinuePlay(storage)).toEqual({
+        track: KAHF,
+        playedAt: START,
+        fireAt: kahfFireAt,
+      });
+    });
+
+    it('a play that schedules nothing keeps nothing', async () => {
+      const h = harness(START);
+      h.notifier.getPermission.mockResolvedValue('undetermined');
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(h.storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+        false,
+      );
+    });
+
+    it('the boot step schedules the notice again from a stored future play, at the same time', async () => {
+      const storage = await playInFirstProcess();
+      // Process 2, one day later. Android removed the alarm, but the
+      // expo-notifications store still lists the request.
+      const second = harness(START + DAY, {storage});
+      second.notifier.scheduled.set('continue_listening', {
+        type: 'continue_listening',
+        at: kahfFireAt,
+      });
+      await flush();
+      expect(second.notifier.schedule).not.toHaveBeenCalled();
+      setNotificationSchedulingReady();
+      await flush();
+      expect(second.notifier.schedule).toHaveBeenCalledTimes(1);
+      const [candidate, trigger] = second.notifier.schedule.mock.calls[0] as [
+        {type: string; dedupeKey: string; body: unknown},
+        unknown,
+      ];
+      expect(candidate).toMatchObject({
+        type: 'continue_listening',
+        dedupeKey: 'continue_listening',
+        body: {
+          key: 'qariah:notifications.continueListening.body',
+          params: {surahName: '18', reciterName: 'Zaynab'},
+        },
+      });
+      expect(trigger).toEqual({kind: 'date', at: kahfFireAt});
+      expect([...second.notifier.scheduled.keys()]).toEqual([
+        'continue_listening',
+      ]);
+      // The same notice again: not a new notice for the analytics.
+      expect(second.onContinueScheduled).not.toHaveBeenCalled();
+      expect(readContinuePlay(storage)?.fireAt).toBe(kahfFireAt);
+    });
+
+    it('a stored play whose notice time is past posts nothing, and the record goes', async () => {
+      const storage = await playInFirstProcess();
+      const later = harness(kahfFireAt + 60_000, {storage});
+      setNotificationSchedulingReady();
+      await flush();
+      expect(later.notifier.schedule).not.toHaveBeenCalled();
+      expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(false);
+      // The switch ON again has no play to schedule.
+      later.changePrefs(
+        {kahf_friday: true, continue_listening: true},
+        {kahf_friday: true, continue_listening: false},
+      );
+      await flush();
+      expect(later.notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('"continue listening" OFF removes the stored play; the next boot schedules nothing', async () => {
+      const h = harness(START);
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(h.storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(true);
+      h.changePrefs(
+        {kahf_friday: true, continue_listening: false},
+        {kahf_friday: true, continue_listening: true},
+      );
+      expect(h.storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+        false,
+      );
+      __resetNotificationSchedulingForTests();
+      const next = harness(START + DAY, {storage: h.storage});
+      setNotificationSchedulingReady();
+      await flush();
+      expect(next.notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('no second notice: two boot steps and a granted sync give one notice', async () => {
+      const storage = await playInFirstProcess();
+      // iOS keeps the notice across a force-quit: one notifier for both
+      // processes.
+      const notifier = fakeNotifier();
+      notifier.scheduled.set('continue_listening', {
+        type: 'continue_listening',
+        at: kahfFireAt,
+      });
+      const second = harness(START + DAY, {storage, notifier});
+      setNotificationSchedulingReady();
+      await flush();
+      second.advance(FOREGROUND_SYNC_MIN_MS + CONTINUE_RESCHEDULE_MIN_MS);
+      second.synced({
+        reason: 'foreground',
+        holdout: false,
+        permission: 'granted',
+      });
+      await flush();
+      expect(notifier.schedule).toHaveBeenCalledTimes(1);
+
+      __resetNotificationSchedulingForTests();
+      harness(START + 2 * DAY, {storage, notifier});
+      setNotificationSchedulingReady();
+      await flush();
+      // Each boot step schedules with the same id: it replaces the notice.
+      expect(notifier.schedule).toHaveBeenCalledTimes(2);
+      expect([...notifier.scheduled.keys()]).toEqual(['continue_listening']);
+      expect(notifier.scheduled.get('continue_listening')?.at).toBe(kahfFireAt);
+    });
+
+    it('a play before the boot step wins over the stored play', async () => {
+      const storage = await playInFirstProcess();
+      const second = harness(START + DAY, {storage});
+      second.play(YASIN);
+      setNotificationSchedulingReady();
+      await flush();
+      expect(second.notifier.schedule).toHaveBeenCalledTimes(1);
+      const [candidate] = second.notifier.schedule.mock.calls[0] as [
+        {body: {params: {surahName: string}}},
+      ];
+      expect(candidate.body.params.surahName).toBe('36');
+      expect(readContinuePlay(storage)).toEqual({
+        track: YASIN,
+        playedAt: START + DAY,
+        fireAt: continueListeningTrigger(START + DAY).at,
+      });
+    });
+
+    it('the holdout: the boot step schedules nothing and loads no notifier', async () => {
+      const storage = await playInFirstProcess();
+      const second = harness(START + DAY, {storage, isHoldout: () => true});
+      setNotificationSchedulingReady();
+      await flush();
+      expect(second.notifierFactory).not.toHaveBeenCalled();
+      expect(second.notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('the toggles cannot be read: nothing is scheduled, and the record stays', async () => {
+      const storage = await playInFirstProcess();
+      const second = harness(START + DAY, {
+        storage,
+        readPrefs: async () => null,
+      });
+      setNotificationSchedulingReady();
+      await flush();
+      expect(second.notifier.schedule).not.toHaveBeenCalled();
+      expect(readContinuePlay(storage)).not.toBeNull();
+    });
+
+    it('the switch is off at the boot step: nothing is scheduled', async () => {
+      const storage = await playInFirstProcess();
+      const second = harness(START + DAY, {
+        storage,
+        readPrefs: async () => prefs({continue_listening: false}),
+      });
+      setNotificationSchedulingReady();
+      await flush();
+      expect(second.notifier.schedule).not.toHaveBeenCalled();
+    });
+
+    it('a stored value that is not a valid record is ignored and removed', async () => {
+      for (const value of [
+        'not json',
+        JSON.stringify({v: 2, track: KAHF, playedAt: 1, fireAt: 2}),
+        JSON.stringify({
+          v: 1,
+          track: {...KAHF, surahId: 115},
+          playedAt: 1,
+          fireAt: 2,
+        }),
+        JSON.stringify({v: 1, track: KAHF, playedAt: 2, fireAt: 1}),
+      ]) {
+        __resetNotificationSchedulingForTests();
+        const storage = memoryStorage({
+          [CONTINUE_LISTENING_LAST_PLAY_KEY]: value,
+        });
+        const h = harness(START, {storage});
+        setNotificationSchedulingReady();
+        await flush();
+        expect(h.notifier.schedule).not.toHaveBeenCalled();
+        expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+          false,
+        );
+      }
+    });
+
+    it('writeContinuePlay and readContinuePlay keep a rewayah id of null', () => {
+      const storage = memoryStorage();
+      const track = {...KAHF, rewayatId: null};
+      expect(
+        writeContinuePlay(
+          {track, playedAt: START, fireAt: kahfFireAt},
+          storage,
+        ),
+      ).toBe(true);
+      expect(readContinuePlay(storage)).toEqual({
+        track,
+        playedAt: START,
+        fireAt: kahfFireAt,
+      });
+    });
+
+    it('clearContinuePlayIfPast removes a past record and keeps a future one', () => {
+      const storage = memoryStorage();
+      writeContinuePlay(
+        {track: KAHF, playedAt: START, fireAt: kahfFireAt},
+        storage,
+      );
+      clearContinuePlayIfPast(kahfFireAt - 1, storage);
+      expect(readContinuePlay(storage)).not.toBeNull();
+      clearContinuePlayIfPast(kahfFireAt, storage);
+      expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(false);
+    });
+
+    describe('a time of the notice that is past (review of Task 10)', () => {
+      it('a boot just before the notice time: the time passes during the checks, nothing is scheduled, and the record goes', async () => {
+        const storage = await playInFirstProcess();
+        const boot = harness(kahfFireAt - 60_000, {storage});
+        boot.notifier.getPermission.mockImplementation(async () => {
+          boot.advance(2 * 60_000); // past the notice time
+          return 'granted';
+        });
+        setNotificationSchedulingReady();
+        await flush();
+        expect(boot.notifier.getPermission).toHaveBeenCalled();
+        expect(boot.notifier.schedule).not.toHaveBeenCalled();
+        expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+          false,
+        );
+        // A restore is not reported, also when it is skipped.
+        expect(boot.onContinueScheduled).not.toHaveBeenCalled();
+      });
+
+      it('the switch OFF, then ON after the notice time (a long-lived process): nothing is scheduled', async () => {
+        const h = harness(START);
+        setNotificationSchedulingReady();
+        h.play(KAHF);
+        await flush();
+        expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+        h.advance(kahfFireAt - START + 60_000);
+        h.changePrefs(
+          {kahf_friday: true, continue_listening: false},
+          {kahf_friday: true, continue_listening: true},
+        );
+        h.changePrefs(
+          {kahf_friday: true, continue_listening: true},
+          {kahf_friday: true, continue_listening: false},
+        );
+        await flush();
+        expect(h.notifier.schedule).toHaveBeenCalledTimes(1);
+        expect(h.onContinueScheduled).toHaveBeenLastCalledWith('skipped');
+        expect(h.storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+          false,
+        );
+      });
+
+      it('a granted-sync replay after the notice time: nothing is scheduled, no notification_scheduled event, and a past record goes', async () => {
+        const {__setNotificationAnalyticsSinkForTests} =
+          require('../notificationAnalytics') as typeof import('../notificationAnalytics');
+        const events: unknown[] = [];
+        __setNotificationAnalyticsSinkForTests({
+          isReadyToCapture: () => true,
+          onReadyToCapture: () => () => undefined,
+          trackNotificationPermissionPrompted: jest.fn(),
+          trackNotificationPermissionResult: jest.fn(),
+          trackNotificationScheduled: props => events.push(props),
+          trackNotificationOpened: jest.fn(),
+        });
+        try {
+          let now = START;
+          const notifier = fakeNotifier('undetermined');
+          // A record of this play with a past time (the notice fired).
+          const storage = memoryStorage();
+          writeContinuePlay(
+            {track: KAHF, playedAt: START, fireAt: kahfFireAt},
+            storage,
+          );
+          let playListener: ((track: PlayedTrack) => void) | null = null;
+          let syncedListener: ((result: SyncOutcome) => void) | null = null;
+          // The default reporter (no `onContinueScheduled`).
+          startNotificationScheduling({
+            dayRules: NO_TAKEN_DAY,
+            subscribePlayStarts: listener => {
+              playListener = listener;
+              return () => undefined;
+            },
+            subscribePrefs: () => () => undefined,
+            subscribeAppActive: () => () => undefined,
+            subscribeSynced: listener => {
+              syncedListener = listener;
+              return () => undefined;
+            },
+            notifier: () => notifier,
+            isHoldout: () => false,
+            readPrefs: async () => prefs(),
+            textFor: track => ({
+              surahName: '18',
+              reciterName: track.reciterName,
+            }),
+            now: () => now,
+            storage,
+          });
+          // A play before the boot step (no permission yet): the boot step
+          // handles the play, not the record.
+          (playListener as unknown as (track: PlayedTrack) => void)(KAHF);
+          setNotificationSchedulingReady();
+          await flush();
+          expect(notifier.schedule).not.toHaveBeenCalled();
+
+          // The process lives past the notice time; then the grant syncs.
+          now = kahfFireAt + 60_000;
+          notifier.getPermission.mockResolvedValue('granted');
+          (syncedListener as unknown as (result: SyncOutcome) => void)({
+            reason: 'permission_granted',
+            holdout: false,
+            permission: 'granted',
+          });
+          await flush();
+          expect(notifier.schedule).not.toHaveBeenCalled();
+          expect(events).toEqual([]);
+          expect(storage.values.has(CONTINUE_LISTENING_LAST_PLAY_KEY)).toBe(
+            false,
+          );
+        } finally {
+          __setNotificationAnalyticsSinkForTests(null);
+        }
+      });
+
+      it('a skipped past replay keeps the record of a newer play', async () => {
+        const h = harness(START);
+        h.notifier.getPermission.mockResolvedValue('undetermined');
+        setNotificationSchedulingReady();
+        h.play(KAHF);
+        await flush();
+        // A newer play (another process wrote it) with a future time.
+        const newer = {
+          track: YASIN,
+          playedAt: kahfFireAt,
+          fireAt: continueListeningTrigger(kahfFireAt).at,
+        };
+        writeContinuePlay(newer, h.storage);
+        h.advance(kahfFireAt - START + 60_000);
+        h.synced({
+          reason: 'foreground',
+          holdout: false,
+          permission: 'granted',
+        });
+        await flush();
+        expect(h.notifier.schedule).not.toHaveBeenCalled();
+        expect(readContinuePlay(h.storage)).toEqual(newer);
+      });
+    });
+  });
+
+  describe('one notice a day (TECH_DEBT #328)', () => {
+    // A play on Tuesday 2026-10-20: its notice falls on Friday 2026-10-23.
+    const TUESDAY = new Date(2026, 9, 20, 10, 0).getTime();
+    const fridayFireAt = continueListeningTrigger(TUESDAY).at;
+    const KAHF_ON = () => ({kahfFridayOn: true, lastNotifiedDay: null});
+
+    it('the play of a Tuesday: its Friday notice moves to Saturday, the same time', async () => {
+      expect(new Date(fridayFireAt).getDay()).toBe(5);
+      const h = harness(TUESDAY, {dayRules: KAHF_ON});
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(new Date(at).getDay()).toBe(6);
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+      expect(new Date(at).getHours()).toBe(new Date(fridayFireAt).getHours());
+      // The record keeps the moved time, for the boot step.
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(at);
+    });
+
+    it('with Al-Kahf off, the notice stays on the Friday', async () => {
+      const h = harness(TUESDAY);
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(h.notifier.scheduled.get('continue_listening')?.at).toBe(
+        fridayFireAt,
+      );
+    });
+
+    it('a notice on the day of the app notice moves to the next free day', async () => {
+      // A play on a Monday: its notice falls on a Thursday.
+      const monday = new Date(2026, 9, 19, 10, 0).getTime();
+      const thursdayFireAt = continueListeningTrigger(monday).at;
+      const h = harness(monday, {
+        dayRules: () => ({
+          kahfFridayOn: true,
+          lastNotifiedDay: localDay(new Date(thursdayFireAt)),
+        }),
+      });
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      // Thursday is taken, and Friday is the Al-Kahf day: Saturday.
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+    });
+
+    it('Al-Kahf ON moves a pending Friday notice to Saturday (the same id)', async () => {
+      let kahfOn = false;
+      const h = harness(TUESDAY, {
+        dayRules: () => ({kahfFridayOn: kahfOn, lastNotifiedDay: null}),
+      });
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(fridayFireAt);
+
+      kahfOn = true;
+      h.changePrefs(
+        {kahf_friday: true, continue_listening: true},
+        {kahf_friday: false, continue_listening: true},
+      );
+      await flush();
+      expect(h.notifier.schedule).toHaveBeenCalledTimes(2);
+      expect([...h.notifier.scheduled.keys()]).toEqual(['continue_listening']);
+      const at = h.notifier.scheduled.get('continue_listening')?.at ?? 0;
+      expect(localDay(new Date(at))).toBe('2026-10-24');
+      expect(readContinuePlay(h.storage)?.fireAt).toBe(at);
+      // The same notice: not a new notice for the analytics.
+      expect(h.onContinueScheduled).toHaveBeenCalledTimes(1);
+    });
+
+    it('a new play after the notice fired keeps the day of that notice', async () => {
+      const h = harness(TUESDAY);
+      setNotificationSchedulingReady();
+      h.play(KAHF);
+      await flush();
+      // The notice fires on the Friday; the user plays again an hour later.
+      h.advance(fridayFireAt - TUESDAY + 60 * 60_000);
+      h.play(YASIN);
+      await flush();
+      expect(readContinuePlay(h.storage)?.track).toEqual(YASIN);
+      expect(continueNoticeDays(h.storage)).toContain('2026-10-23');
+    });
+
+    it('the store: a removed record that was due keeps its day; a future one does not', () => {
+      const storage = memoryStorage();
+      const record = {track: KAHF, playedAt: TUESDAY, fireAt: fridayFireAt};
+      writeContinuePlay(record, storage, TUESDAY);
+      expect(continueNoticeDays(storage)).toEqual(['2026-10-23']);
+      // The switch OFF before the notice: nothing fired.
+      clearContinuePlay(storage, fridayFireAt - 60_000);
+      expect(continueNoticeDays(storage)).toEqual([]);
+      // The boot step after the notice: it fired on the Friday.
+      writeContinuePlay(record, storage, TUESDAY);
+      clearContinuePlayIfPast(fridayFireAt + 60_000, storage);
+      expect(readContinuePlay(storage)).toBeNull();
+      expect(continueNoticeDays(storage)).toEqual(['2026-10-23']);
+    });
+  });
+});
+
+describe('the iOS opt-in path (review M2), end to end', () => {
+  it('play, then "Allow" on the card: the sync after the grant schedules the play', async () => {
+    const sync =
+      require('../notificationsSync') as typeof import('../notificationsSync');
+    const soft = require('../softPrompt') as typeof import('../softPrompt');
+    sync.__resetNotificationsSyncForTests();
+    soft.__resetSoftPromptForTests();
+
+    let permission: NotificationPermissionStatus = 'undetermined';
+    const notifier = fakeNotifier();
+    notifier.getPermission.mockImplementation(async () => permission);
+    let playListener: ((track: PlayedTrack) => void) | null = null;
+    // The default `subscribeSynced`: the real `onNotificationsSynced`.
+    startNotificationScheduling({
+      dayRules: NO_TAKEN_DAY,
+      subscribePlayStarts: listener => {
+        playListener = listener;
+        return () => undefined;
+      },
+      subscribePrefs: () => () => undefined,
+      subscribeAppActive: () => () => undefined,
+      notifier: () => notifier,
+      isHoldout: () => false,
+      readPrefs: async () => prefs(),
+      textFor: track => ({surahName: '18', reciterName: track.reciterName}),
+      onContinueScheduled: () => undefined,
+    });
+    setNotificationSchedulingReady();
+
+    // 1. The first completed play (permission not asked yet): nothing.
+    (playListener as unknown as (track: PlayedTrack) => void)(KAHF);
+    await flush();
+    expect(notifier.schedule).not.toHaveBeenCalled();
+
+    // 2. The card: "Allow"; the system grants; the grant syncs.
+    soft.startSoftPrompt({
+      platform: () => 'ios',
+      isHoldout: () => false,
+      readAnswered: async () => false,
+      getPermission: async () => ({
+        status: 'undetermined',
+        granted: false,
+        canAskAgain: true,
+      }),
+      requestPermission: async () => {
+        permission = 'granted';
+        return {status: 'granted', granted: true, canAskAgain: true};
+      },
+      setAnswered: () => undefined,
+      onGranted: () =>
+        sync.syncNotifications('permission_granted', {
+          notifier,
+          isHoldout: () => false,
+          readPrefs: async () => prefs(),
+          register: async () => 'registered',
+          unregister: async () => true,
+          prepare: async () => undefined,
+        }),
+      subscribeCompleted: () => () => undefined,
+      onPrompted: () => undefined,
+      onResult: () => undefined,
+    });
+    await soft.answerSoftPrompt('allow');
+    await flush();
+
+    // 3. "Continue listening" is scheduled for the play of step 1.
+    const continueCalls = notifier.schedule.mock.calls.filter(
+      ([candidate]) =>
+        (candidate as {type: string}).type === 'continue_listening',
+    );
+    expect(continueCalls).toHaveLength(1);
+    soft.__resetSoftPromptForTests();
+    sync.__resetNotificationsSyncForTests();
+  });
+});
+
+describe('an Android force-stop (Sprint 48 Tier 2, defect D2), end to end', () => {
+  it('after the force-stop, the boot sync and the boot step set both alarms again', async () => {
+    const sync =
+      require('../notificationsSync') as typeof import('../notificationsSync');
+    sync.__resetNotificationsSyncForTests();
+    const storage = memoryStorage();
+    const start = Date.UTC(2026, 9, 20, 9);
+    let now = start;
+    let playListener: ((track: PlayedTrack) => void) | null = null;
+
+    /** One process: the subscriptions, the boot sync, then the boot step. */
+    async function boot(notifier: FakeNotifier): Promise<void> {
+      startNotificationScheduling({
+        dayRules: NO_TAKEN_DAY,
+        subscribePlayStarts: listener => {
+          playListener = listener;
+          return () => undefined;
+        },
+        subscribePrefs: () => () => undefined,
+        subscribeAppActive: () => () => undefined,
+        notifier: () => notifier,
+        isHoldout: () => false,
+        readPrefs: async () => prefs(),
+        textFor: track => ({
+          surahName: String(track.surahId),
+          reciterName: track.reciterName,
+        }),
+        now: () => now,
+        onContinueScheduled: () => undefined,
+        storage,
+      });
+      await sync.syncNotifications('boot', {
+        notifier,
+        isHoldout: () => false,
+        readPrefs: async () => prefs(),
+        register: async () => 'registered',
+        unregister: async () => true,
+        prepare: async () => undefined,
+        storage,
+      });
+      setNotificationSchedulingReady();
+      await flush();
+    }
+
+    // 1. A play: two alarms (Al-Kahf and "continue listening").
+    const first = fakeNotifier();
+    await boot(first);
+    (playListener as unknown as (track: PlayedTrack) => void)(KAHF);
+    await flush();
+    expect([...first.scheduled.keys()].sort()).toEqual([
+      'continue_listening',
+      'kahf_friday',
+    ]);
+
+    // 2. `am force-stop`: no alarm, no process. 3. Open the app, no play.
+    __resetNotificationSchedulingForTests();
+    sync.__resetNotificationsSyncForTests();
+    now = start + 60 * 60_000;
+    const afterForceStop = fakeNotifier();
+    await boot(afterForceStop);
+    expect([...afterForceStop.scheduled.keys()].sort()).toEqual([
+      'continue_listening',
+      'kahf_friday',
+    ]);
+    expect(afterForceStop.scheduled.get('continue_listening')?.at).toBe(
+      continueListeningTrigger(start).at,
+    );
+    sync.__resetNotificationsSyncForTests();
+  });
+});

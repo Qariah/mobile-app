@@ -1,0 +1,46 @@
+# Frame 8, first choice: the notifications card. The app shows it once, after
+# the first finished play, so run this frame first on a new install (after
+# seed.yaml, which pauses every play). Al-Kawthar by A'tii Qah Suhaimi is
+# short. The flow then allows notifications (iOS) or closes the card (Android).
+appId: com.qariah.app
+---
+- runFlow: ../subflows/home.yaml
+- runFlow:
+    file: ../subflows/open-reciter.yaml
+    env: {QUERY: 'Suhaimi', RECITER: '${R_SUHAIMI}'}
+- tapOn: ${L_ASC}
+- scrollUntilVisible:
+    element: ${S_KAWTHAR}
+    direction: DOWN
+    speed: 80
+    timeout: 60000
+    # The iPad row is wider than the screen, so it is never 100% visible.
+    visibilityPercentage: 50
+- swipe:
+    start: 50%,60%
+    end: 50%,45%
+    duration: 600
+- tapOn:
+    text: ${S_KAWTHAR}
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible: ${L_CARD}
+    timeout: 240000
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 1500}
+- takeScreenshot: ${OUT}/08-card
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn:
+          id: 'notification-soft-prompt-allow'
+      - tapOn: 'Allow'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn:
+          id: 'notification-soft-prompt-ok'
+- runFlow: ../subflows/close-player.yaml

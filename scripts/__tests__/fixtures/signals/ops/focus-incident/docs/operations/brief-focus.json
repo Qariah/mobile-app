@@ -1,0 +1,9 @@
+{
+  "kind": "incident",
+  "title": "QARIAHV2-20 phone storage full",
+  "sentryIssue": "QARIAHV2-20",
+  "measures": [{"id": "sentryIssueDaily", "label": "users and events per day"}],
+  "endCondition": "quiet for 7 days",
+  "setBy": "test",
+  "setAt": "2026-10-18"
+}

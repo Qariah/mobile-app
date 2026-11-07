@@ -1,0 +1,8 @@
+{
+  "ios": {
+    "CFBundleDisplayName": "قارئة"
+  },
+  "android": {
+    "app_name": "قارئة"
+  }
+}

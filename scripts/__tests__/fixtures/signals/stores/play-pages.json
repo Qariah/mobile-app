@@ -1,0 +1,34 @@
+{
+  "_note": "Play Developer Reporting API responses (shape as returned on 2026-10-18), crashRateMetricSet, dimension versionCode, metric distinctUsers. Values invented.",
+  "meta": {
+    "name": "apps/com.example/crashRateMetricSet",
+    "freshnessInfo": {
+      "freshnesses": [
+        {"aggregationPeriod": "HOURLY", "latestEndTime": {"year": 2026, "month": 10, "day": 17, "hours": 23, "timeZone": {"id": "UTC"}}},
+        {"aggregationPeriod": "DAILY", "latestEndTime": {"year": 2026, "month": 10, "day": 18, "timeZone": {"id": "America/Los_Angeles"}}}
+      ]
+    }
+  },
+  "pages": [
+    {
+      "rows": [
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 9, "day": 1, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "35"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "900"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 9, "day": 20, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "35"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "300"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 9, "day": 20, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "int64Value": "1717"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "200"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 1, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "35"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "50"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 1, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "1717"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "200"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 1, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "2027"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "3"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 16, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "1717"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "100"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 16, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "2027"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "70"}}]}
+      ],
+      "nextPageToken": "page-2"
+    },
+    {
+      "rows": [
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 17, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "1717"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "100"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 17, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "2027"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "80"}}]},
+        {"aggregationPeriod": "DAILY", "startTime": {"year": 2026, "month": 10, "day": 17, "timeZone": {"id": "America/Los_Angeles"}}, "dimensions": [{"dimension": "versionCode", "stringValue": "1700"}], "metrics": [{"metric": "distinctUsers", "decimalValue": {"value": "4"}}]}
+      ]
+    }
+  ]
+}

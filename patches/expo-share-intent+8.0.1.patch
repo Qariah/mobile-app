@@ -1,0 +1,45 @@
+diff --git a/node_modules/expo-share-intent/plugin/build/android/withAndroidIntentFilters.js b/node_modules/expo-share-intent/plugin/build/android/withAndroidIntentFilters.js
+index 8814220..71a17ee 100644
+--- a/node_modules/expo-share-intent/plugin/build/android/withAndroidIntentFilters.js
++++ b/node_modules/expo-share-intent/plugin/build/android/withAndroidIntentFilters.js
+@@ -74,8 +74,19 @@ function addIntentFilters(androidManifest, currentIntentFilters, filters, multiF
+         ...newIntentFilters,
+         ...newMultiIntentFilters,
+     ]);
++    // Qariah patch (TECH_DEBT #291, #169): drop an existing filter that is
++    // the same as a new one, so a prebuild without --clean does not add a
++    // second copy of each share filter.
++    const filterKey = (filter) => JSON.stringify([
++        (filter.action ?? []).map((item) => item.$?.["android:name"]).sort(),
++        (filter.data ?? []).map((item) => item.$?.["android:mimeType"]).sort(),
++        (filter.category ?? []).map((item) => item.$?.["android:name"]).sort(),
++    ]);
++    const newKeys = new Set(renderedNewIntentFilters.map(filterKey));
+     // adds them properly to the manifest
+-    mainActivity["intent-filter"] = mainActivity["intent-filter"]?.concat(renderedNewIntentFilters);
++    mainActivity["intent-filter"] = mainActivity["intent-filter"]
++        ?.filter((filter) => !newKeys.has(filterKey(filter)))
++        .concat(renderedNewIntentFilters);
+     return androidManifest;
+ }
+ const withAndroidIntentFilters = (config, parameters) => {
+diff --git a/node_modules/expo-share-intent/plugin/build/ios/withIosAppEntitlements.js b/node_modules/expo-share-intent/plugin/build/ios/withIosAppEntitlements.js
+index 0633a61..d4505f2 100644
+--- a/node_modules/expo-share-intent/plugin/build/ios/withIosAppEntitlements.js
++++ b/node_modules/expo-share-intent/plugin/build/ios/withIosAppEntitlements.js
+@@ -7,9 +7,13 @@ const withAppEntitlements = (config, parameters) => {
+     return (0, config_plugins_1.withEntitlementsPlist)(config, async (config) => {
+         const appIdentifier = config.ios?.bundleIdentifier;
+         const existing = config.modResults["com.apple.security.application-groups"];
++        // Qariah patch (TECH_DEBT #292): add the group once. A prebuild without
++        // --clean reads the committed entitlements, which already hold the
++        // group, so the unpatched code wrote it a second time.
++        const appGroup = (0, constants_1.getAppGroup)(appIdentifier, parameters);
+         config.modResults["com.apple.security.application-groups"] = [
+-            (0, constants_1.getAppGroup)(appIdentifier, parameters),
+-            ...(Array.isArray(existing) ? existing : []),
++            appGroup,
++            ...(Array.isArray(existing) ? existing : []).filter((group) => group !== appGroup),
+         ];
+         return config;
+     });

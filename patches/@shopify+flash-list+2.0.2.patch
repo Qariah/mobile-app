@@ -1,0 +1,49 @@
+diff --git a/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerViewManager.js b/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerViewManager.js
+index 1960f5f..3ac0528 100644
+--- a/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerViewManager.js
++++ b/node_modules/@shopify/flash-list/dist/recyclerview/RecyclerViewManager.js
+@@ -313,9 +313,15 @@ var RecyclerViewManager = /** @class */ (function () {
+             //   initialItemOffset,
+             //   this.firstItemOffset
+             // );
+-            this.layoutManager.recomputeLayouts(0, initialScrollIndex);
+-            this.engagedIndicesTracker.scrollOffset =
+-                initialItemOffset !== null && initialItemOffset !== void 0 ? initialItemOffset : 0 + this.firstItemOffset;
++            // Qariah (TECH_DEBT #376): recompute the rows after the target too, so that
++            // they move with it and the layout stays in order for the visible-row search.
++            this.layoutManager.recomputeLayouts(0, this.layoutManager.getLayoutCount() - 1);
++            // Qariah (TECH_DEBT #376): backport of Shopify/flash-list#2133 (FlashList 2.3.0).
++            // Read the target offset AFTER the recompute, which moves the target row.
++            var recomputedLayout = this.layoutManager.getLayout(initialScrollIndex);
++            this.engagedIndicesTracker.scrollOffset = this.propsRef.horizontal
++                ? recomputedLayout.x
++                : recomputedLayout.y;
+         }
+         else {
+             // console.log("initialItemOffset", initialItemOffset, this.firstItemOffset);
+diff --git a/node_modules/@shopify/flash-list/src/recyclerview/RecyclerViewManager.ts b/node_modules/@shopify/flash-list/src/recyclerview/RecyclerViewManager.ts
+index ffbfb20..5f99176 100644
+--- a/node_modules/@shopify/flash-list/src/recyclerview/RecyclerViewManager.ts
++++ b/node_modules/@shopify/flash-list/src/recyclerview/RecyclerViewManager.ts
+@@ -383,9 +383,18 @@ export class RecyclerViewManager<T> {
+       //   initialItemOffset,
+       //   this.firstItemOffset
+       // );
+-      this.layoutManager.recomputeLayouts(0, initialScrollIndex);
+-      this.engagedIndicesTracker.scrollOffset =
+-        initialItemOffset ?? 0 + this.firstItemOffset;
++      // Qariah (TECH_DEBT #376): recompute the rows after the target too, so that
++      // they move with it and the layout stays in order for the visible-row search.
++      this.layoutManager.recomputeLayouts(
++        0,
++        this.layoutManager.getLayoutCount() - 1
++      );
++      // Qariah (TECH_DEBT #376): backport of Shopify/flash-list#2133 (FlashList 2.3.0).
++      // Read the target offset AFTER the recompute, which moves the target row.
++      const recomputedLayout = this.layoutManager.getLayout(initialScrollIndex);
++      this.engagedIndicesTracker.scrollOffset = this.propsRef.horizontal
++        ? recomputedLayout.x
++        : recomputedLayout.y;
+     } else {
+       // console.log("initialItemOffset", initialItemOffset, this.firstItemOffset);
+       this.engagedIndicesTracker.scrollOffset =

@@ -1,0 +1,190 @@
+/**
+ * Offline write queue runner — drains sync_queue rows into the QF user-data API.
+ *
+ * Invariants:
+ *   - One in-flight flush at a time (per-process mutex).
+ *   - Per-row retry with exponential backoff: 200ms → 800ms → 3200ms.
+ *   - 3 attempts max; row stays in DB with attempts=3 for diagnostics, skipped
+ *     by future flushes via `attempts < 3` predicate in dequeueWrites.
+ *   - On QfAuthRequiredError: pause draining; row's attempts NOT incremented
+ *     (preserves intent until auth restored).
+ *   - On non-retryable error (4xx other than 401/408/429): mark attempts = 3
+ *     in one shot — no point retrying a 400.
+ *
+ * Triggered by:
+ *   - App foreground transition (UserStateContext)
+ *   - Auth status change to 'authenticated' (via syncBus.setAuthSnapshot)
+ *   - Connectivity restore (NetInfo) — wired at S4.3 in UserStateContext
+ *   - Each enqueueWrite via syncBus.flushScheduler hook
+ *
+ * Sprint 4 (S4.2).
+ */
+
+import {
+  dequeueWrites,
+  markWriteComplete,
+  markWriteFailed,
+  type SyncQueueRow,
+} from './db';
+import {setPreference} from './preferences';
+import {upsertReadingSession} from './readingSessions';
+import {QfApiError, QfAuthRequiredError, isQfErrorRetryable} from './qfErrors';
+import {ensureAccountVerified} from './accountCleanup'; // @ai
+
+const RETRY_DELAYS_MS = [200, 800, 3200];
+
+let inFlight: Promise<FlushResult> | null = null;
+let scheduledTimer: ReturnType<typeof setTimeout> | null = null;
+let lastScheduleAt = 0;
+const SCHEDULE_DEBOUNCE_MS = 2000;
+
+export interface FlushResult {
+  attempted: number;
+  succeeded: number;
+  retryable: number;
+  permanent: number;
+  authPaused: boolean;
+}
+
+/**
+ * Schedules a debounced flush. Multiple callers in the same 2s window collapse
+ * to a single network roundtrip — important when a burst of favorites toggles
+ * each fires its own enqueue.
+ */
+export function scheduleSyncFlush(reason = 'manual'): void {
+  const now = Date.now();
+  // If a flush is already in-flight, don't pile on; the next post-flush
+  // schedule (from syncBus.flushScheduler) will catch the new writes.
+  if (inFlight) return;
+  // Debounce: if we just scheduled within the window, the existing timer is
+  // already pending — ignore.
+  if (scheduledTimer && now - lastScheduleAt < SCHEDULE_DEBOUNCE_MS) return;
+  lastScheduleAt = now;
+  scheduledTimer = setTimeout(() => {
+    scheduledTimer = null;
+    flushSyncQueue(reason).catch(e => {
+      if (__DEV__)
+        console.warn('[userState/syncQueue] scheduled flush threw:', e);
+    });
+  }, SCHEDULE_DEBOUNCE_MS);
+}
+
+/**
+ * Drains the queue. Returns a summary; never throws (errors per-row are
+ * logged + recorded in sync_queue.last_error).
+ */
+export async function flushSyncQueue(reason = 'manual'): Promise<FlushResult> {
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
+    if (__DEV__) console.log(`[userState/syncQueue] flush start (${reason})`);
+    const result: FlushResult = {
+      attempted: 0,
+      succeeded: 0,
+      retryable: 0,
+      permanent: 0,
+      authPaused: false,
+    };
+    try {
+      // @ai-start
+      // M4 (TECH_DEBT #244) — the queue can hold the previous account's
+      // writes until the account check removes them. Never send them with
+      // another account's token: wait for the check, and pause if it fails.
+      const account = await ensureAccountVerified();
+      if (account.kind !== 'ok') {
+        result.authPaused = true;
+        return result;
+      }
+      // @ai-end
+      const rows = await dequeueWrites(50);
+      for (const row of rows) {
+        result.attempted += 1;
+        const outcome = await dispatchOne(row);
+        if (outcome === 'success') result.succeeded += 1;
+        else if (outcome === 'retryable') result.retryable += 1;
+        else if (outcome === 'permanent') result.permanent += 1;
+        else if (outcome === 'auth-paused') {
+          result.authPaused = true;
+          break; // stop draining; resume on next setAuthSnapshot('authenticated')
+        }
+      }
+    } finally {
+      if (__DEV__)
+        console.log(
+          `[userState/syncQueue] flush done — attempted=${result.attempted} succeeded=${result.succeeded} retryable=${result.retryable} permanent=${result.permanent} authPaused=${result.authPaused}`,
+        );
+    }
+    return result;
+  })();
+  try {
+    return await inFlight;
+  } finally {
+    inFlight = null;
+  }
+}
+
+type DispatchOutcome = 'success' | 'retryable' | 'permanent' | 'auth-paused';
+
+async function dispatchOne(row: SyncQueueRow): Promise<DispatchOutcome> {
+  // Apply per-attempt backoff before retrying. Attempts=0 means first try → no
+  // delay. Attempts=1 means we've failed once → wait 200ms. Etc.
+  const delayIdx = row.attempts;
+  if (delayIdx > 0 && delayIdx <= RETRY_DELAYS_MS.length) {
+    await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[delayIdx - 1]));
+  }
+
+  try {
+    await dispatchByResource(row);
+    await markWriteComplete(row.id);
+    return 'success';
+  } catch (e) {
+    if (e instanceof QfAuthRequiredError) {
+      // Don't increment attempts — preserve the write for when auth resumes.
+      return 'auth-paused';
+    }
+    const msg = e instanceof Error ? e.message : 'unknown error';
+    if (e instanceof QfApiError && !isQfErrorRetryable(e)) {
+      // Permanent failure — bump attempts to 3 in one shot so future flushes
+      // skip the row but keep it for diagnostics.
+      await markWriteFailed(row.id, msg);
+      await markWriteFailed(row.id, msg);
+      await markWriteFailed(row.id, msg);
+      return 'permanent';
+    }
+    await markWriteFailed(row.id, msg);
+    return 'retryable';
+  }
+}
+
+interface PreferencePayload {
+  key: string;
+  value: string;
+}
+interface ReadingSessionPayload {
+  reciterId: string;
+  surahNumber: number;
+  ayahNumber?: number;
+  timestamp?: string;
+}
+
+async function dispatchByResource(row: SyncQueueRow): Promise<void> {
+  const payload = JSON.parse(row.payload);
+  switch (row.resource) {
+    case 'preference': {
+      const p = payload as PreferencePayload;
+      await setPreference(p.key, p.value);
+      return;
+    }
+    case 'reading_session': {
+      const p = payload as ReadingSessionPayload;
+      await upsertReadingSession({
+        reciterId: p.reciterId,
+        surahNumber: p.surahNumber,
+        ayahNumber: p.ayahNumber,
+        timestamp: p.timestamp,
+      });
+      return;
+    }
+    default:
+      throw new Error(`unsupported sync resource: ${String(row.resource)}`);
+  }
+}

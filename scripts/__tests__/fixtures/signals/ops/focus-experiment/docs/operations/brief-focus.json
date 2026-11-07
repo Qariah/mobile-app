@@ -1,0 +1,8 @@
+{
+  "kind": "experiment",
+  "title": "nonblocking_splash_v2 arms",
+  "measures": [{"id": "abArms", "label": "the arms"}],
+  "endCondition": "30 enrolled devices in each arm",
+  "setBy": "test",
+  "setAt": "2026-10-18"
+}

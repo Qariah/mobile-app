@@ -1,0 +1,34 @@
+# Open the Settings tab on its first page. The tab keeps its stack, and a tab
+# tap does not pop it on Android. Each pass scrolls up once (the first page may
+# be scrolled down) and goes back only when the first section is still hidden.
+# A back on the first page itself would leave the app on Android.
+appId: com.qariah.app
+---
+- tapOn: ${L_SETTINGS}
+- repeat:
+    while:
+      notVisible: ${L_SETTINGS_TOP}
+    times: 5
+    commands:
+      - swipe:
+          start: 50%,35%
+          end: 50%,85%
+          duration: 400
+      - waitForAnimationToEnd:
+          timeout: 1000
+      - runFlow:
+          when:
+            notVisible: ${L_SETTINGS_TOP}
+          commands:
+            - runFlow:
+                when:
+                  platform: Android
+                commands:
+                  - back
+            - runFlow:
+                when:
+                  platform: iOS
+                commands:
+                  - tapOn: ${L_BACK}
+            - waitForAnimationToEnd:
+                timeout: 1500

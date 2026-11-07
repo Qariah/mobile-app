@@ -1,0 +1,130 @@
+# NTF-01 (Sprint 48, S48.7) — Settings → Notifications: the page shows the five switches, and a
+# switch keeps its value after a force-quit.
+#
+# The page is app/(tabs)/(d.settings)/notifications.tsx. Each switch has the testID
+# `notification-switch-<type>`, and each one is ON by default. The switches stay disabled
+# until the stored choices are read, so the flow waits for `enabled: true` before the tap.
+#
+# Holdout: a user in the notifications holdout (PostHog flag `local_notifications_holdout`,
+# 15%) gets no Notifications row and no page. `clearState` removes the stored arm, so each
+# run enrolls again: until the flag arrives the arm is unknown, and a release build treats an
+# unknown arm as the holdout (services/notifications/holdout.ts). The Settings screen reads
+# the arm again on each focus. So:
+#   1. When the row is not there, the flow goes to Listen and back once (a new focus).
+#   2. When the row is still not there, the flow logs "NTF-01 SKIPPED" and ends. It does not
+#      fail: the arm is a holdout or unknown, which is correct behaviour. Look for the
+#      SKIPPED line in the Maestro log, and run the flow again. NTF-07 covers the holdout.
+#
+# The row selector is the row description ("Choose the notifications you get"). Android
+# shows it as its own text; iOS joins the row into one label. Maestro text is a full-match
+# regex, so the selector has wildcards (README gotcha 8). The flow scrolls the row to the
+# middle of the screen first: at the bottom of the screen, a tap on the row text can land on
+# the tab bar (seen on Android, 2026-10-20).
+#
+# The force-quit is `stopApp`, then `launchApp` without clearState. The app opens on Listen,
+# so the onboarding subflow is a no-op there (it exits on the tab bar).
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+  - notifications
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Settings'
+- scrollUntilVisible:
+    element: '.*Choose the notifications you get.*'
+    direction: DOWN
+    timeout: 10000
+    centerElement: true
+    optional: true
+
+# 1. The arm can arrive after the first focus: focus the screen again once.
+- runFlow:
+    when:
+      notVisible: '.*Choose the notifications you get.*'
+    commands:
+      - tapOn: '.*Listen'
+      - tapOn: '.*Settings'
+      - scrollUntilVisible:
+          element: '.*Choose the notifications you get.*'
+          direction: DOWN
+          timeout: 15000
+          centerElement: true
+          optional: true
+
+# 2. Still no row: a holdout (or unknown) arm. Log it and end.
+- runFlow:
+    when:
+      notVisible: '.*Choose the notifications you get.*'
+    commands:
+      - evalScript: ${console.log('NTF-01 SKIPPED - no Notifications row (holdout or unknown arm); run the flow again')}
+
+# 3. The page, the switches, and a value that survives a force-quit.
+- runFlow:
+    when:
+      visible: '.*Choose the notifications you get.*'
+    commands:
+      - tapOn: '.*Choose the notifications you get.*'
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-followed_recitation'
+          timeout: 10000
+      - assertVisible:
+          id: 'notification-switch-new_recitation'
+      - assertVisible:
+          id: 'notification-switch-kahf_friday'
+      - assertVisible:
+          id: 'notification-switch-continue_listening'
+      - assertVisible:
+          id: 'notification-switch-whats_new'
+      # The defaults after a fresh install: ON.
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-kahf_friday'
+            enabled: true
+            checked: true
+          timeout: 10000
+      - tapOn:
+          id: 'notification-switch-kahf_friday'
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-kahf_friday'
+            checked: false
+          timeout: 5000
+
+      # Force-quit and open the app again (no clearState).
+      - stopApp
+      - launchApp:
+          clearState: false
+      - runFlow: ../../../subflows/skip-onboarding.yaml
+      - tapOn: '.*Settings'
+      - scrollUntilVisible:
+          element: '.*Choose the notifications you get.*'
+          direction: DOWN
+          timeout: 10000
+          centerElement: true
+      - tapOn: '.*Choose the notifications you get.*'
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-kahf_friday'
+            enabled: true
+            checked: false
+          timeout: 10000
+      # The other switches keep their default.
+      - assertVisible:
+          id: 'notification-switch-followed_recitation'
+          checked: true
+      - assertVisible:
+          id: 'notification-switch-whats_new'
+          checked: true
+
+      # Turn the switch on again, so the app is left with the defaults.
+      - tapOn:
+          id: 'notification-switch-kahf_friday'
+      - extendedWaitUntil:
+          visible:
+            id: 'notification-switch-kahf_friday'
+            checked: true
+          timeout: 5000

@@ -1,0 +1,20 @@
+# Stage-1: all 5 tabs reachable; key screens render content (not just the tab bar).
+appId: com.qariah.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../subflows/skip-onboarding.yaml
+# Search is the LAST tab of this flow. On iOS 26 and later, a tap on the Search tab
+# collapses the tab bar into one button, so "Collection" and "Settings" are not on
+# screen after it (TECH_DEBT #219; seen on the iPhone 17 Pro simulator, iOS 26.5, and on
+# the test iPhone, iOS 27.0). The order does not change what the flow proves.
+- tapOn: "Mushaf"
+- tapOn: "Collection"
+- tapOn: "Settings"
+# a Settings content row (proves the Settings screen rendered, not just its tab label)
+- assertVisible: "Default (Qariah|Reciter).*"   # iOS joins the row title + subtitle into one label; "Reciter" before #535
+- tapOn: ".*Listen"
+- assertVisible: "Browse by"
+- tapOn: "Search"

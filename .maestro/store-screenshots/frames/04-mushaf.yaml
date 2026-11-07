@@ -1,0 +1,27 @@
+# Frame 4: a Mushaf page (Al-Kahf, page 293). Frame 5: the verse list view of
+# Al-Mulk: page 562 starts with this surah, so the list opens on its header.
+appId: com.qariah.app
+---
+- runFlow:
+    file: ../subflows/set-view-type.yaml
+    env: {TYPE: '${L_VIEW_MUSHAF}'}
+- runFlow:
+    file: ../subflows/open-surah-page.yaml
+    env: {SURAH: '${G_KAHF}'}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 2500}
+- takeScreenshot: ${OUT}/04-mushaf
+- runFlow:
+    file: ../subflows/set-view-type.yaml
+    env: {TYPE: '${L_VIEW_LIST}'}
+- runFlow:
+    file: ../subflows/open-surah-page.yaml
+    env: {SURAH: '${G_MULK}'}
+- runFlow:
+    file: ../subflows/wait.yaml
+    env: {MS: 2500}
+- takeScreenshot: ${OUT}/05-verses
+- runFlow:
+    file: ../subflows/set-view-type.yaml
+    env: {TYPE: '${L_VIEW_MUSHAF}'}

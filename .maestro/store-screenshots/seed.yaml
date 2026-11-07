@@ -1,0 +1,139 @@
+# Store screenshots, step 1: put demo data into a fresh install (English UI).
+# Favorite reciters, loved surahs, two playlists, a download, bookmarks, a
+# personal note and a play history. No sign-in. See README.md in this folder.
+appId: com.qariah.app
+---
+- launchApp:
+    clearState: true
+- runFlow: ../subflows/skip-onboarding.yaml
+
+# Zaynab Talha: favorite, two loved surahs, the first playlist, one download.
+- runFlow:
+    file: subflows/open-reciter.yaml
+    env:
+      QUERY: 'Zaynab'
+      RECITER: '.*Zaynab Talha.*'
+- tapOn: 'Favorite'
+- swipe:
+    start: 50%,70%
+    end: 50%,35%
+    duration: 800
+- runFlow:
+    file: subflows/surah-action.yaml
+    env: {INDEX: 0, ACTION: '.*Add to Loved'}
+- runFlow:
+    file: subflows/surah-action.yaml
+    env: {INDEX: 1, ACTION: '.*Add to Loved'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 0, PLAYLIST: 'Morning Recitations', NEW: 'true'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 2, PLAYLIST: 'Morning Recitations', NEW: 'false'}
+- runFlow:
+    file: subflows/surah-action.yaml
+    env: {INDEX: 0, ACTION: '.*Download'}
+
+# Hajjah Maria Ulfah: favorite, short surahs first, the second playlist.
+# Scroll the rows to the middle of the screen and use only the first three:
+# a lower row can sit under the tab bar, and a tap there hits a tab.
+- runFlow:
+    file: subflows/open-reciter.yaml
+    env:
+      QUERY: 'Maria'
+      RECITER: '.*Maria Ulfah.*'
+- tapOn: 'Favorite'
+- tapOn: '.*Desc'
+- swipe:
+    start: 50%,70%
+    end: 50%,35%
+    duration: 800
+- runFlow:
+    file: subflows/surah-action.yaml
+    env: {INDEX: 0, ACTION: '.*Add to Loved'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 0, PLAYLIST: 'Before Sleep', NEW: 'true'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 1, PLAYLIST: 'Before Sleep', NEW: 'false'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 2, PLAYLIST: 'Before Sleep', NEW: 'false'}
+- runFlow:
+    file: subflows/add-to-playlist.yaml
+    env: {INDEX: 1, PLAYLIST: 'Morning Recitations', NEW: 'false'}
+
+# More favorite reciters.
+- runFlow:
+    file: subflows/open-reciter.yaml
+    env: {QUERY: 'Suhaimi', RECITER: '.*Qah Suhaimi.*'}
+- tapOn: 'Favorite'
+- runFlow:
+    file: subflows/surah-action.yaml
+    env: {INDEX: 0, ACTION: '.*Add to Loved'}
+- runFlow:
+    file: subflows/open-reciter.yaml
+    env: {QUERY: 'Sabaha', RECITER: '.*Sabaha Salik.*'}
+- tapOn: 'Favorite'
+- runFlow:
+    file: subflows/open-reciter.yaml
+    env: {QUERY: 'Ramla', RECITER: '.*Ramla Hasan.*'}
+- tapOn: 'Favorite'
+
+# Mushaf: bookmarks and a personal note.
+- tapOn: '.*Mushaf'
+- tapOn: '.*Al-Fatihah, The Opener|.*Al-Fatihah'
+- extendedWaitUntil:
+    visible:
+      id: 'mushaf-settings-button'
+    timeout: 10000
+- runFlow:
+    file: subflows/verse-action.yaml
+    env: {POINT: '50%,44%', ACTION: '.*Bookmark'}
+- runFlow:
+    file: subflows/verse-action.yaml
+    env: {POINT: '50%,55%', ACTION: '.*Add Personal Note'}
+- inputText: 'All praise is due to Allah. Begin every day with gratitude.'
+- tapOn: '.*Save Note'
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    file: subflows/verse-action.yaml
+    env: {POINT: '50%,48%', ACTION: '.*Bookmark'}
+- runFlow: subflows/reader-back.yaml
+- tapOn: '.*Al-Baqarah, The Cow|.*Al-Baqarah'
+- extendedWaitUntil:
+    visible:
+      id: 'mushaf-settings-button'
+    timeout: 10000
+- runFlow:
+    file: subflows/verse-action.yaml
+    env: {POINT: '50%,50%', ACTION: '.*Bookmark'}
+- runFlow: subflows/reader-back.yaml
+
+# Play history for "Continue Listening". The last one stays current.
+- runFlow:
+    file: subflows/play-surah.yaml
+    env:
+      QUERY: 'Maria'
+      RECITER: '.*Maria Ulfah.*'
+      SURAH: 'Surah Ya-Sin.*'
+      WAIT_MS: 8000
+      PAUSE: 'true'
+- runFlow:
+    file: subflows/play-surah.yaml
+    env:
+      QUERY: 'Suhaimi'
+      RECITER: '.*Qah Suhaimi.*'
+      SURAH: 'Surah Al-Kahf.*'
+      WAIT_MS: 8000
+      PAUSE: 'true'
+- runFlow:
+    file: subflows/play-surah.yaml
+    env:
+      QUERY: 'Zaynab'
+      RECITER: '.*Zaynab Talha.*'
+      SURAH: 'Surah Ya-Sin.*'
+      WAIT_MS: 20000
+      PAUSE: 'true'

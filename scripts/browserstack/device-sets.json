@@ -1,0 +1,61 @@
+{
+  "_comment": "BrowserStack App Automate device sets for the 3-stage regression plan. Device strings are '<Device Name>-<OS version>' per BrowserStack's Maestro API. RE-VALIDATED 2026-09-07 against the live app-automate/devices.json — every entry below is confirmed available. BrowserStack RETIRES devices: that re-run found 4 dead entries (Xiaomi Redmi Note 9 in all three sets, OnePlus 9 in full), so re-validate on a schedule, not only after an edit. Re-validate with scripts/browserstack/validate-device-sets.mjs after any edit; the original hand-written list had 5 entries that did not exist. Grounded in the live fleet (CLAUDE.md S34): Android 11 (40%) + 14 (33%), 3 GB+ RAM, Samsung/Xiaomi/OnePlus ~87%, nobody below Android 10.",
+  "_gaps": "BrowserStack carries NO Samsung A-series devices, so the A55/A16 repro owed on #54/#168/#237 (TECH_DEBT #126) cannot be covered here — it stays an owner/field task. Galaxy S23/S24/S25 cover One UI generally. It also carries NO itel, TECNO or Infinix, which is the hardware of the vc1717 ANR cluster — that repro needs a physical low-end handset. Below Android 11 the fleet keeps only flagships (Galaxy S20, Tab S7), so low-end Android 10 is no longer coverable: the Redmi Note 9 that held that slot is retired.",
+
+  "smoke": {
+    "_why": "Stage 1 boot gate: clean Android + One UI + MIUI, plus the newest and the smallest iPhone.",
+    "android": [
+      "Google Pixel 8-14.0",
+      "Samsung Galaxy S23-13.0",
+      "Xiaomi Redmi Note 11-11.0"
+    ],
+    "ios": [
+      "iPhone 15 Pro-17",
+      "iPhone SE 2022-15"
+    ]
+  },
+
+  "regression": {
+    "_why": "Stage 2 full regression. The Vivo Y21 (Helio P35 / Android 11) replaces the retired Redmi Note 9 as the slow-SoC proxy for the 2026-06-20 play-freeze class; it is a weaker proxy, because the fleet no longer offers a low-end Android 10 handset. Redmi Note 11 covers Android 11, the single largest fleet cohort (40%). iPhone 17-26 covers iOS 26, where the NativeTabs BottomAccessory mini-player and the RNS teardown crash (#160 / QARIAHV2-1G) live.",
+    "android": [
+      "Google Pixel 8-14.0",
+      "Samsung Galaxy S23-13.0",
+      "Vivo Y21-11.0",
+      "Xiaomi Redmi Note 11-11.0",
+      "OnePlus 11R-13.0",
+      "Google Pixel 6-12.0",
+      "Samsung Galaxy Tab S9-13.0"
+    ],
+    "ios": [
+      "iPhone 17-26",
+      "iPhone 15 Pro-17",
+      "iPhone 13-16",
+      "iPhone SE 2022-15",
+      "iPad 9th-15"
+    ]
+  },
+
+  "full": {
+    "_why": "Release-candidate / quarterly sweep. Adds the Android 15-16 One UI 7 cohort (S25 Ultra, S24) implicated in the boot-hang class, the Galaxy M32 (the only non-flagship Samsung on the fleet, Android 11), and an iPad. No OnePlus below Android 13 remains available.",
+    "android": [
+      "Google Pixel 8-14.0",
+      "Samsung Galaxy S25 Ultra-15.0",
+      "Samsung Galaxy S24-16.0",
+      "Samsung Galaxy S23-13.0",
+      "Vivo Y21-11.0",
+      "Xiaomi Redmi Note 11-11.0",
+      "OnePlus 11R-13.0",
+      "Samsung Galaxy M32-11.0",
+      "Google Pixel 6-12.0",
+      "Samsung Galaxy Tab S9-13.0"
+    ],
+    "ios": [
+      "iPhone 17-26",
+      "iPhone 16 Pro-18",
+      "iPhone 15 Pro-17",
+      "iPhone 13-16",
+      "iPhone SE 2022-15",
+      "iPad Pro 12.9 2022-16"
+    ]
+  }
+}

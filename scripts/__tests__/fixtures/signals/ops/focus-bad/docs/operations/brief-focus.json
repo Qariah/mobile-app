@@ -1,0 +1,8 @@
+{
+  "kind": "rollout",
+  "title": "no codes",
+  "measures": [{"id": "sentryIssueDaily"}],
+  "endCondition": "x",
+  "setBy": "test",
+  "setAt": "18-10-2026"
+}

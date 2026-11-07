@@ -1,0 +1,38 @@
+diff --git a/node_modules/@bacons/apple-targets/build/with-xcode-changes.js b/node_modules/@bacons/apple-targets/build/with-xcode-changes.js
+index 96ded68..3f2e8d1 100644
+--- a/node_modules/@bacons/apple-targets/build/with-xcode-changes.js
++++ b/node_modules/@bacons/apple-targets/build/with-xcode-changes.js
+@@ -226,12 +226,17 @@ async function applyXcodeChanges(config, project, props) {
+             config.removeFromProject();
+         });
+         // Remove existing build configuration list
+-        targetToUpdate.props.buildConfigurationList
++        // Qariah patch: keep a reference to the list. removeReference() on the
++        // target sets targetToUpdate.props.buildConfigurationList to undefined
++        // (@bacons/xcode 1.0.0-alpha.32), so the next line crashed on every
++        // prebuild that updates an existing target.
++        const existingConfigurationList = targetToUpdate.props.buildConfigurationList;
++        existingConfigurationList
+             .getReferrers()
+             .forEach((ref) => {
+-            ref.removeReference(targetToUpdate.props.buildConfigurationList.uuid);
++            ref.removeReference(existingConfigurationList.uuid);
+         });
+-        targetToUpdate.props.buildConfigurationList.removeFromProject();
++        existingConfigurationList.removeFromProject();
+         // Create new build phases
+         targetToUpdate.props.buildConfigurationList =
+             (0, configuration_list_1.createConfigurationListForType)(project, props);
+@@ -379,7 +384,11 @@ async function applyXcodeChanges(config, project, props) {
+                 target: mainAppTarget,
+             });
+         exceptionSet.props.membershipExceptions = sharedAssets.sort();
+-        syncRootGroup.props.exceptions.push(exceptionSet);
++        // Qariah patch: add the set once. Without this check, every prebuild
++        // that updates an existing target listed the same set again.
++        if (!existingExceptionSet) {
++            syncRootGroup.props.exceptions.push(exceptionSet);
++        }
+     }
+     else {
+         // Remove the exception set if there are no shared assets.

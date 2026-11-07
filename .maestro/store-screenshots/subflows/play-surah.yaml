@@ -1,0 +1,40 @@
+# Play one surah of one reciter. Env: QUERY and RECITER (see open-reciter.yaml),
+# SURAH (the row regex, for example 'Surah Ya-Sin.*'), WAIT_MS (how long to
+# let it play), PAUSE ('true' pauses it after that).
+appId: com.qariah.app
+---
+- runFlow:
+    file: open-reciter.yaml
+    env:
+      QUERY: ${QUERY}
+      RECITER: ${RECITER}
+- scrollUntilVisible:
+    element: ${SURAH}
+    direction: DOWN
+    speed: 80
+    timeout: 120000
+    # The iPad row is wider than the screen, so it is never 100% visible.
+    visibilityPercentage: 50
+- swipe:
+    start: 50%,60%
+    end: 50%,45%
+    duration: 600
+- tapOn:
+    text: ${SURAH}
+    waitToSettleTimeoutMs: 1000
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+    timeout: 30000
+# Maestro has no plain sleep: wait for a text that never appears.
+- extendedWaitUntil:
+    visible: 'this text never appears 1f3a'
+    timeout: ${WAIT_MS}
+    optional: true
+- runFlow:
+    when:
+      true: ${PAUSE == 'true'}
+    commands:
+      - tapOn:
+          id: 'mini-player-play-pause'
+          waitToSettleTimeoutMs: 500

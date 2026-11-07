@@ -1,0 +1,16 @@
+# Leave the Mushaf reader (it has no tab bar). iOS labels the native back
+# button with the parent route name, "(tabs)", in every language.
+appId: com.qariah.app
+---
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: '\(tabs\)'
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
+- waitForAnimationToEnd:
+    timeout: 2000

@@ -1,0 +1,21 @@
+# On a reciter profile: open the "More options" sheet of the surah row INDEX
+# and tap the action ACTION (a regex, for example '.*Add to Loved').
+appId: com.qariah.app
+---
+- tapOn:
+    text: 'More options'
+    index: ${INDEX}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: ${ACTION}
+- waitForAnimationToEnd:
+    timeout: 3000
+# Some actions leave the options sheet open. Close it with a tap above it.
+- runFlow:
+    when:
+      visible: '.*Learn About Surah'
+    commands:
+      - tapOn:
+          point: 50%,10%
+      - waitForAnimationToEnd:
+          timeout: 2000

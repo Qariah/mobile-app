@@ -1,0 +1,35 @@
+# On a reciter profile: add the surah row INDEX to the playlist PLAYLIST.
+# Set NEW to 'true' to create the playlist first.
+appId: com.qariah.app
+---
+- tapOn:
+    text: 'More options'
+    index: ${INDEX}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: '.*Add to Collection'
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      true: ${NEW == 'true'}
+    commands:
+      - tapOn: '.*Create New Playlist'
+      - tapOn: 'e.g., Morning Recitations'
+      - inputText: ${PLAYLIST}
+      - tapOn: 'Save'
+- runFlow:
+    when:
+      true: ${NEW != 'true'}
+    commands:
+      - tapOn: '${PLAYLIST}.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      visible: '.*Learn About Surah'
+    commands:
+      - tapOn:
+          point: 50%,10%
+      - waitForAnimationToEnd:
+          timeout: 2000

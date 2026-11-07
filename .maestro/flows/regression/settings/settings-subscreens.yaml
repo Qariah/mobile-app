@@ -1,0 +1,36 @@
+# SET-01 (matrix K1/K2) — Settings index renders + a sub-screen navigates and back returns.
+# Grounded on-device: index sections ACCOUNT / APPEARANCE / AUDIO & PLAYBACK / QURAN /
+# APP & DATA / FEEDBACK; the Mushaf Settings sub-screen shows "Arabic Font Size" + "PAGE DESIGN".
+#
+# Platform-safe (TECH_DEBT #259): the same file runs on Android and iOS.
+#   - Row selectors are wildcards. iOS joins the labels of a row into one string
+#     ("Default Qariah, Choose your preferred qariah, "; "Reciter" before #535) and prefixes the selected
+#     tab (", Settings"); Maestro text is a full-match regex (README gotcha #8).
+#   - No Maestro `back` (Android only). The flow taps the native header back
+#     control of the Settings stack (upstream's default since divergence batch C8):
+#     "Back" on iOS, "Navigate up" on Android. A point tap (7%,7%) missed on Android.
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- tapOn: '.*Settings'
+- assertVisible: 'Default (Qariah|Reciter).*'
+- assertVisible: 'QURAN'
+# Mushaf Settings sub-screen mounts (a control unique to it)
+- tapOn: 'Mushaf Settings.*'
+# Pass C (Sprint 47): upstream added sections above the font-size row, so it
+# is below the fold on a phone. Scroll to it.
+- scrollUntilVisible:
+    element: '.*Arabic Font Size.*'
+    direction: DOWN
+    timeout: 10000
+# The header back control returns to the Settings index
+- tapOn: '(Back|Navigate up)'
+- extendedWaitUntil:
+    visible: 'Default (Qariah|Reciter).*'
+    timeout: 6000
+- assertNotVisible: '.*Arabic Font Size.*'
