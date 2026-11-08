@@ -1,5 +1,5 @@
-// @ai
-// Locks the ordering contract of `disposeAfterPendingDraws` (GH #458).
+// @ai-start
+// Locks the ordering contract of `disposeAfterPendingDraws`.
 //
 // The crash this guards is a cross-thread use-after-free. Jest cannot observe
 // a real UI thread, so these tests assert the JS-side contract only: the
@@ -55,7 +55,8 @@ describe('disposeAfterPendingDraws', () => {
     expect(typeof worklet).toBe('function');
     expect(rest).toHaveLength(0);
     expect(worklet.__workletHash).toBeDefined();
-    expect(worklet.__closure).toEqual({});
+    // Worklets 0.13 omits `__closure` when a worklet captures nothing.
+    expect(worklet.__closure).toBeUndefined();
   });
 
   it('skips null and undefined entries', async () => {
@@ -85,9 +86,18 @@ describe('disposeAfterPendingDraws', () => {
     expect(paragraph.dispose).toHaveBeenCalledTimes(1);
   });
 
-  // There is deliberately no rejection test. `runOnUIAsync` builds its promise
-  // with a resolve callback only (`threads.native.ts`), so the promise cannot
-  // reject. A test that mocks a rejection would assert invented behaviour.
+  // `runOnUIAsync` rejects only when the barrier worklet throws on the UI
+  // thread (`threads.native.ts`), so the earlier draws have run by then.
+  it('disposes when the barrier promise rejects', async () => {
+    const paragraph = makeDisposable();
+    mockRunOnUIAsync.mockRejectedValue(new Error('barrier threw'));
+
+    disposeAfterPendingDraws([paragraph]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(paragraph.dispose).toHaveBeenCalledTimes(1);
+  });
 
   it('disposes the remaining objects when one dispose throws', async () => {
     const failing = {
@@ -105,3 +115,4 @@ describe('disposeAfterPendingDraws', () => {
     expect(paragraph.dispose).toHaveBeenCalledTimes(1);
   });
 });
+// @ai-end

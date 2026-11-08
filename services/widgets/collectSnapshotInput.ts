@@ -9,6 +9,8 @@ import {mushafVerseMapService} from '@/services/mushaf/MushafVerseMapService';
 import {getSurahOfTheDay} from '@/utils/quranPages';
 import {hasArtwork, localDayKey} from 'bayaan-widgets';
 import {useAdhkarStore} from '@/store/adhkarStore';
+import {useAdhkarSessionStore} from '@/store/adhkarSessionStore'; // @ai
+import type {WidgetAdhkarPlayback} from 'bayaan-widgets'; // @ai
 import {
   buildTasbeehEntries,
   createCountDayTracker,
@@ -23,6 +25,7 @@ import {
 import {isWidgetEnabled} from './enabledWidgets';
 // @ai Qariah (TECH_DEBT #357): widgets follow the app language.
 import {currentLanguage, getLanguagePreference} from '@/i18n/language';
+import {createMMKV, type MMKV} from 'react-native-mmkv'; // @ai
 
 const OPENING_WORDS = 6;
 // Fixed for the session, like currentLanguage: a new language needs a restart.
@@ -32,16 +35,67 @@ const WIDGET_LANGUAGE = widgetLanguageFor(
 );
 const countsForToday = createCountDayTracker();
 
+// @ai-start
+// Qariah: the Mushaf data loads after the splash, so a snapshot can come before
+// it. The last text of the page stays, so the widget keeps its line if the
+// process ends before the load. Opens lazily: a throw must not stop a snapshot.
+let openingStore: MMKV | null | undefined;
+function lastOpeningStore(): MMKV | null {
+  if (openingStore !== undefined) return openingStore;
+  try {
+    openingStore = createMMKV({id: 'qariah-widget-opening'});
+  } catch {
+    openingStore = null;
+  }
+  return openingStore;
+}
+
+function rememberOpening(page: number, text: string): void {
+  const store = lastOpeningStore();
+  if (!store) return;
+  if (store.getNumber('page') === page && store.getString('text') === text) {
+    return;
+  }
+  store.set('page', page);
+  store.set('text', text);
+}
+// @ai-end
+
 function openingTextForPage(page: number): string {
-  if (!digitalKhattDataService.initialized) return '';
+  // @ai-start
+  if (!digitalKhattDataService.initialized) {
+    const store = lastOpeningStore();
+    return store?.getNumber('page') === page
+      ? (store.getString('text') ?? '')
+      : '';
+  }
+  // @ai-end
   const firstKey = mushafVerseMapService.getOrderedVerseKeysForPage(page)[0];
   if (!firstKey) return '';
-  return digitalKhattDataService
+  // @ai-start
+  const text = digitalKhattDataService
     .getVerseText(firstKey)
     .split(' ')
     .slice(0, OPENING_WORDS)
     .join(' ');
+  if (text) rememberOpening(page, text);
+  return text;
+  // @ai-end
 }
+
+// @ai-start
+// Lets the Adhkar widgets show pause while their list plays.
+function adhkarPlayback(): WidgetAdhkarPlayback | null {
+  const session = useAdhkarSessionStore.getState().session;
+  const dhikrId = session?.items[session.index]?.dhikrId;
+  if (!session || !dhikrId) return null;
+  return {
+    superId: session.listId,
+    dhikrId,
+    isPlaying: session.status !== 'paused',
+  };
+}
+// @ai-end
 
 function surahIdForPage(page: number): number | null {
   if (!digitalKhattDataService.initialized) return null;
@@ -85,5 +139,6 @@ export function collectSnapshotInput(now: Date): SnapshotInput {
     },
     surahOfTheDayId: getSurahOfTheDay(now).id,
     language: WIDGET_LANGUAGE,
+    adhkar: adhkarPlayback(), // @ai
   };
 }

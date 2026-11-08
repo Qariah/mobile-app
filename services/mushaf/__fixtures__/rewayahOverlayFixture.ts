@@ -160,6 +160,7 @@ export interface FakeDKService {
   getBasmalaSurah(line: DKLine): number | null; // @ai
   getVerseWords(verseKey: string, rewayah?: RewayahId): DKWordInfo[];
   getVerseText(verseKey: string, rewayah?: RewayahId): string;
+  getPageForVerse(verseKey: string): number | undefined; // @ai
   load(db: FixtureDb): void;
   /** Loads arbitrary words ([id, 'surah:ayah:word', text]) and layout lines. */
   loadData(data: {
@@ -224,6 +225,21 @@ export function createFakeDKService(): FakeDKService {
     getVerseText(verseKey, requested) {
       return joinSlotTexts(this.getVerseWords(verseKey, requested));
     },
+    // @ai-start
+    // The real service reads no word for this; here the fixture has few pages.
+    getPageForVerse(verseKey) {
+      const pages = [...lines.keys()].sort((a, b) => a - b);
+      for (const page of pages) {
+        for (const line of lines.get(page) ?? []) {
+          if (line.line_type !== 'ayah') continue;
+          for (let id = line.first_word_id; id <= line.last_word_id; id++) {
+            if (infoById.get(id)?.verseKey === verseKey) return page;
+          }
+        }
+      }
+      return undefined;
+    },
+    // @ai-end
     load(db) {
       const words: [number, string, string][] = [];
       const allLines: DKLine[] = [];

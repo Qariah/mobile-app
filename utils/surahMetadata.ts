@@ -3,7 +3,6 @@
 // (`surah_metadata`, Qariah's catalog schema). Upstream Bayaan's catalog has
 // no partial recitations, so these helpers live outside services/dataService.ts.
 import {RECITERS, Rewayat, SurahMetadata} from '@/data/reciterData';
-import i18n from '@/i18n';
 
 /**
  * The `surah_metadata` entry of one surah for a reciter and rewayah, or
@@ -30,6 +29,9 @@ export function getSurahMetadataSync(
 export function formatAyahRange(metadata: SurahMetadata): string | undefined {
   if (metadata.is_full || !metadata.range) return undefined;
   const {from, to} = metadata.range;
+  // Required here, not imported at the top: a module that only reads the
+  // metadata (SurahItem) must not start i18n at import. @ai (Pass D)
+  const i18n = (require('@/i18n') as typeof import('@/i18n')).default;
   return from === to
     ? i18n.t('qariah:ayahRange.single', {from})
     : i18n.t('qariah:ayahRange.range', {from, to});

@@ -13,9 +13,9 @@ const normalize = (version: string): string =>
   semver.valid(semver.coerce(version)) ?? version;
 
 describe('data/changelog.json', () => {
-  it('starts with the 3.2.3 entry', () => {
+  it('starts with the 3.2.5 entry', () => {
     const [latest] = changelog;
-    expect(latest.version).toBe('3.2.3');
+    expect(latest.version).toBe('3.2.5');
     expect(latest.releaseDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(latest.title.length).toBeGreaterThan(0);
     expect(latest.highlights.length).toBeGreaterThanOrEqual(3);

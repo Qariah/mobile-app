@@ -161,13 +161,12 @@ import {ShareContent} from '../ShareContent';
 import {shareUrl} from '@/utils/shareUtils';
 import {digitalKhattDataService} from '@/services/mushaf/DigitalKhattDataService';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
-import branding from '@/config/branding'; // Qariah
+import branding from '@/config/branding'; // @ai
 
 declare const global: {IS_REACT_ACT_ENVIRONMENT?: boolean};
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-// Qariah: the share host comes from branding (RFC-007), not a literal.
-const BASE = branding.shareBaseUrl;
+const BASE = branding.shareBaseUrl; // @ai: the host shareUrl() reads (RFC-007)
 
 let renderer: TestRenderer.ReactTestRenderer | null = null;
 let shareSpy: jest.SpyInstance;
@@ -207,9 +206,10 @@ async function press(label: string) {
 beforeEach(() => {
   mockTranslations.clear();
   (shareUrl as jest.Mock).mockClear();
-  shareSpy = jest
-    .spyOn(Share, 'share')
-    .mockImplementation(async () => ({action: 'sharedAction'}));
+  shareSpy = jest.spyOn(Share, 'share').mockImplementation(async () => ({
+    action: 'sharedAction',
+    activityType: undefined,
+  }));
   useMushafSettingsStore.setState({rewayah: 'hafs', mushafRenderer: 'dk_v2'});
 });
 

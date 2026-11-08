@@ -10,7 +10,7 @@ import {
   GestureResponderEvent,
 } from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {moderateScale, verticalScale} from 'react-native-size-matters';
+import {moderateScale, verticalScale} from '@/utils/scale';
 import {surahGlyphMap} from '@/utils/surahGlyphMap';
 import Color from 'color';
 import {
@@ -28,6 +28,10 @@ import * as Haptics from 'expo-haptics';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {Link} from 'expo-router';
 import {USE_GLASS} from '@/hooks/useGlassProps';
+// @ai-start
+import {useSurahOptionsContext} from '@/components/sheets/options/SurahOptionsContext';
+import {useNativeOptionsMenu} from '@/components/sheets/options/OptionsMenu';
+// @ai-end
 
 import {NowPlayingIndicator} from '@/components/NowPlayingIndicator';
 import {GradientText} from '@/components/GradientText';
@@ -47,6 +51,7 @@ import {
   localizeDigits,
 } from '@/i18n/format';
 // @ai-end
+import {withoutShadowInLite} from '@/services/lite/liteMode'; // @ai Qariah (Lite mode)
 
 interface SurahCardProps {
   id: number;
@@ -265,7 +270,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       opacity: 0.9,
       letterSpacing: latinLetterSpacing(0.1),
     },
-    placeIcon: {
+    placeIcon: withoutShadowInLite({
       position: 'absolute',
       top: moderateScale(4),
       right: moderateScale(4),
@@ -282,8 +287,8 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       shadowRadius: 2,
       shadowOpacity: 0.5,
       elevation: 1,
-    },
-    numberBadge: {
+    }),
+    numberBadge: withoutShadowInLite({
       position: 'absolute',
       top: moderateScale(4),
       left: moderateScale(4),
@@ -304,7 +309,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       shadowRadius: 2,
       shadowOpacity: 0.5,
       elevation: 1,
-    },
+    }),
     numberText: {
       fontSize: moderateScale(10),
       fontFamily: 'Manrope-Bold',
@@ -334,6 +339,14 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       borderRadius: moderateScale(8),
       backgroundColor: Color(theme.colors.textSecondary).alpha(0.08).toString(),
     },
+    // @ai-start
+    optionsHitArea: {
+      top: -12,
+      bottom: -12,
+      left: -12,
+      right: -12,
+    },
+    // @ai-end
     nowPlayingContainer: {
       position: 'absolute',
       bottom: moderateScale(6),
@@ -344,6 +357,27 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       justifyContent: 'center',
     },
   });
+
+  // @ai-start
+  // Tablets open the options as a native menu from the ••• button.
+  const options = useSurahOptionsContext();
+  const optionsPayload =
+    onOptionsPress && options && SURAHS[id - 1]
+      ? options.build(SURAHS[id - 1], {reciterId, rewayatId})
+      : null;
+  const tapMenu = useNativeOptionsMenu('tap') && !!optionsPayload;
+  const optionsMenu =
+    tapMenu && options ? (
+      <options.Menu
+        payload={optionsPayload}
+        layout="overlay"
+        // Reaches past the small button toward a 44pt target (§7.1).
+        style={styles.optionsHitArea}
+        accessibilityLabel={t('surahItem.moreOptions')}>
+        <View />
+      </options.Menu>
+    ) : null;
+  // @ai-end
 
   const handleOptionsPressWrapper = (e: GestureResponderEvent) => {
     e.stopPropagation();
@@ -363,11 +397,6 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       onOptionsPress?.();
     }
   };
-
-  // Choose Touchable component based on animation prop
-  const TouchableComponent = enableAnimation
-    ? AnimatedTouchableOpacity
-    : TouchableOpacity;
 
   const cardContent = (
     <>
@@ -439,25 +468,29 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       {isCurrentTrack ? (
         <TouchableOpacity
           style={styles.nowPlayingContainer}
-          onPress={onOptionsPress ? handleOptionsPressWrapper : undefined}
+          onPress={
+            onOptionsPress && !tapMenu ? handleOptionsPressWrapper : undefined
+          }
           activeOpacity={0.7}>
           <NowPlayingIndicator
             isPlaying={isCurrentlyPlaying}
             barCount={3}
             surahId={id}
           />
+          {optionsMenu}
         </TouchableOpacity>
       ) : (
         onOptionsPress && (
           <TouchableOpacity
             style={styles.optionsButton}
-            onPress={handleOptionsPressWrapper}
+            onPress={tapMenu ? undefined : handleOptionsPressWrapper}
             activeOpacity={0.7}>
             <Feather
               name="more-horizontal"
               size={moderateScale(16)}
               color={theme.colors.textSecondary}
             />
+            {optionsMenu}
           </TouchableOpacity>
         )
       )}
@@ -519,13 +552,9 @@ export const SurahCard: React.FC<SurahCardProps> = ({
   }
 
   return (
-    <TouchableComponent
+    <AnimatedTouchableOpacity
       activeOpacity={1}
-      style={
-        enableAnimation
-          ? [styles.container, animatedStyle, style]
-          : [styles.container, style]
-      }
+      style={[styles.container, enableAnimation && animatedStyle, style]}
       onPress={handleCardPress}
       onLongPress={
         onLongPress || onOptionsPress ? handleLongPressWrapper : undefined
@@ -534,7 +563,7 @@ export const SurahCard: React.FC<SurahCardProps> = ({
       onPressIn={enableAnimation ? handlePressIn : undefined}
       onPressOut={enableAnimation ? handlePressOut : undefined}>
       {cardContent}
-    </TouchableComponent>
+    </AnimatedTouchableOpacity>
   );
 };
 // @ai-end

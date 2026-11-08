@@ -2,7 +2,7 @@ import React, {useMemo, useRef} from 'react';
 import {View, Text, ScrollView, Image, Pressable, Alert} from 'react-native';
 import * as Sentry from '@sentry/react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 import {VersionDisplay} from '@/components/VersionDisplay';

@@ -1,11 +1,15 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react'; // @ai
+import {AppState} from 'react-native'; // @ai Qariah
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useTimestampStore} from '@/store/timestampStore';
 import type {AyahTimestamp, AyahTrackingState} from '@/types/timestamps'; // @ai
 import {useReciterStore} from '@/store/reciterStore';
 import {expoAudioService} from '@/services/audio/ExpoAudioService';
 import {timingNumberingService} from '@/services/timestamps/TimingNumberingService';
-import {binarySearchAyah} from '@/utils/timestampUtils';
+import {
+  binarySearchAyah,
+  isInBasmalaIntro, // @ai
+} from '@/utils/timestampUtils';
 import {
   registerTimingNumbering,
   type MappedAyahTrackingState,
@@ -32,6 +36,12 @@ const TICK_MS = 200;
  * Past that, the verse actually being recited is published again.
  */
 export const SEEK_GRACE_TICKS = 10;
+
+/** Publish the surah whose basmala is being recited (null: none). */
+function publishBasmalaIntro(surah: number | null): void {
+  const store = useTimestampStore.getState();
+  if (store.basmalaIntroSurah !== surah) store.setBasmalaIntroSurah(surah);
+}
 // @ai-end
 
 /**
@@ -61,6 +71,12 @@ export const SEEK_GRACE_TICKS = 10;
  * reciting. While the seek that came with it has not landed yet (the audio
  * position still names the verse being left) it is kept, for up to
  * SEEK_GRACE_TICKS ticks, instead of flashing back to that verse. @ai
+ *
+ * Before the first timing entry (the isti'adha / basmala recited before
+ * verse 1) no verse is published; the surah is published as
+ * basmalaIntroSurah instead, so the verse list highlights its basmala
+ * (isInBasmalaIntro: never for al-Fatihah, whose basmala is verse 1, or
+ * at-Tawbah). @ai
  */
 export function useAyahTracker() {
   const playbackState = usePlayerStore(s => s.playback.state);
@@ -166,6 +182,15 @@ export function useAyahTracker() {
     // @ai-end
   }, [numbering]);
 
+  // @ai-start
+  // No basmala highlight where no verse can be highlighted either.
+  useEffect(() => {
+    if (!followAlongEnabled || !numbering || numbering.mode === 'disabled') {
+      publishBasmalaIntro(null);
+    }
+  }, [followAlongEnabled, numbering]);
+  // @ai-end
+
   useEffect(() => {
     if (
       playbackState !== 'playing' ||
@@ -178,6 +203,8 @@ export function useAyahTracker() {
     }
 
     const interval = setInterval(() => {
+      // @ai Qariah: no highlight change in the background; the next tick after the return catches up.
+      if (AppState.currentState === 'background') return;
       const current = useTimestampStore.getState().currentSurahTimestamps;
       if (current !== timestamps) return;
 
@@ -202,12 +229,19 @@ export function useAyahTracker() {
               : 1;
           if (ticks <= SEEK_GRACE_TICKS) {
             foreignRef.current = {state: written, ticks};
+            publishBasmalaIntro(null); // the written verse is highlighted
             return;
           }
         }
         foreignRef.current = null;
         lastAyahRef.current = null;
       }
+      // The intro before verse 1: the basmala is highlighted, no verse.
+      publishBasmalaIntro(
+        isInBasmalaIntro(timestamps, positionMs, surahNumber)
+          ? surahNumber
+          : null,
+      );
       // @ai-end
       const keys = entry ? numbering.hafsKeysForEntry(entry.ayahNumber) : [];
 
@@ -242,7 +276,7 @@ export function useAyahTracker() {
       lastAyahRef.current = null;
       foreignRef.current = null; // @ai
     };
-  }, [playbackState, timestamps, numbering, followAlongEnabled]);
+  }, [playbackState, timestamps, numbering, followAlongEnabled, surahNumber]); // @ai
 }
 
 // @ai-start

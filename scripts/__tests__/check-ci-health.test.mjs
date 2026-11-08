@@ -98,12 +98,22 @@ describe('classifyGate', () => {
     assert.equal(r.status, 'failing');
   });
 
-  it('trunk gate: silent with no completed run, or 24 h behind the head', () => {
+  it('trunk gate: silent with no completed run, or 36 h behind the head', () => {
     assert.equal(
       classifyGate(wf, iso(1), null, trunkGate(reader({}))).status,
       'gate-silent',
     );
     assert.equal(
+      classifyGate(
+        wf,
+        iso(1),
+        null,
+        trunkGate(reader({trunk: [run('success', 38)]})),
+      ).status,
+      'gate-silent',
+    );
+    // Once a day, with a late start: 30 h behind is not silent.
+    assert.notEqual(
       classifyGate(
         wf,
         iso(1),

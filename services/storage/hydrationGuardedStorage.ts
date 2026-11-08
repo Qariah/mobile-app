@@ -120,6 +120,10 @@ import {createJSONStorage} from 'zustand/middleware';
 import type {StateStorage} from 'zustand/middleware';
 
 import {notifyStorageWriteFailure} from './storageWriteNotice';
+// Pass D: upstream's persistStorage (utils/storage.ts) moves saved data off a
+// merged reciter on each read (utils/reciterMerges). The guard does the same,
+// so every store hydrates with the kept id and the next write saves it so.
+import {remapMergedReciterJson} from '@/utils/reciterMerges';
 
 /**
  * The guard deliberately sits BENEATH the JSON layer, on the raw string
@@ -288,11 +292,12 @@ export function createHydrationGuardedStateStorage(
   return {
     getItem: async (name: string) => {
       try {
-        const value = await base.getItem(name);
+        const raw = await base.getItem(name);
         // Resolving is the success signal, whatever the value.
         readState = 'ok';
-        flushDeferredWrite(value ?? null);
-        return value ?? null;
+        const value = raw == null ? null : remapMergedReciterJson(raw);
+        flushDeferredWrite(value);
+        return value;
       } catch (error) {
         readState = 'failed';
         // Never replay after a failed read: the held snapshot is the store's

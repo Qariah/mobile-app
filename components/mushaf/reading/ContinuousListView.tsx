@@ -13,7 +13,7 @@ import {
   type ListRenderItemInfo,
 } from '@shopify/flash-list';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {moderateScale, verticalScale} from 'react-native-size-matters';
+import {moderateScale, verticalScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {
   getDkFontFamily, // @ai
@@ -32,12 +32,14 @@ import {
 import {VerseItem} from '@/components/player/v2/PlayerContent/QuranView/VerseItem';
 import {
   useMushafPlayerStore,
+  usePlaybackBasmalaSurah, // @ai
   usePlaybackVerseKeys, // @ai
 } from '@/store/mushafPlayerStore';
 import SurahDivider from '@/components/player/v2/PlayerContent/QuranView/SurahDivider';
 import BasmalaHeader from '@/components/player/v2/PlayerContent/QuranView/BasmalaHeader';
 import {getTranslationName} from '@/utils/translationLookup';
 import {getAllahNameHighlightColorHex} from '@/constants/mushafAllahHighlight';
+import {readingListSidePadding} from '../readerListKey'; // @ai Sprint 52 Task 8
 // @ai-start
 import {useRewayahVerseUnits} from '@/hooks/useRewayahVerseUnits';
 import {parseAnchorKey} from '@/services/mushaf/RewayahVerseUnits';
@@ -132,34 +134,10 @@ function getVerseIndex(verseKey: string): number {
   return verseIndexMap.get(verseKey) ?? 0;
 }
 
-// Reverse lookup: verseKey → page number (built lazily from all 604 pages,
-// rebuilt whenever the active rewayah or the DK words cache changes).
-let verseToPageMap: Map<string, number> | null = null;
-let verseToPageMapRewayah: string | null = null;
-let verseToPageMapVersion = -1;
-
+// @ai Qariah: the page of the verse's first word, from the verse index. A map
+// built from the 604 pages here read all the words on the JS thread.
 function getPageForVerse(verseKey: string): number | null {
-  const rewayah = digitalKhattDataService.rewayah;
-  const version = digitalKhattDataService.getCacheVersion();
-  if (rewayah !== verseToPageMapRewayah || version !== verseToPageMapVersion) {
-    verseToPageMap = null;
-    verseToPageMapRewayah = rewayah;
-    verseToPageMapVersion = version;
-  }
-  if (!verseToPageMap) {
-    if (!digitalKhattDataService.initialized) return null;
-    verseToPageMap = new Map();
-    for (let page = 1; page <= 604; page++) {
-      const keys = mushafVerseMapService.getOrderedVerseKeysForPage(page);
-      for (const key of keys) {
-        // First occurrence wins — a verse spanning two pages maps to its start page
-        if (!verseToPageMap.has(key)) {
-          verseToPageMap.set(key, page);
-        }
-      }
-    }
-  }
-  return verseToPageMap.get(verseKey) ?? null;
+  return digitalKhattDataService.getPageForVerse(verseKey) ?? null;
 }
 
 // Map page number → first verse key on that page for scroll-to-page support
@@ -185,6 +163,16 @@ interface ContinuousListViewProps {
   initialPage: number;
   onCurrentSurahChange?: (surahId: number) => void;
   onCurrentPageChange?: (page: number) => void;
+  // @ai-start
+  /**
+   * The list's measured width on iPad, where the text also sits in a centred
+   * reading column. Phones leave it out and keep the launch-time screen
+   * width.
+   */
+  width?: number;
+  /** Whether a tap on the status bar scrolls back to the start. Default on. */
+  scrollsToTop?: boolean;
+  // @ai-end
 }
 
 // @ai-start
@@ -201,6 +189,8 @@ const ContinuousListView = forwardRef<
       initialPage,
       onCurrentSurahChange,
       onCurrentPageChange,
+      width,
+      scrollsToTop = true,
     },
     ref,
   ) => {
@@ -213,6 +203,9 @@ const ContinuousListView = forwardRef<
     const playbackVerseKeys = usePlaybackVerseKeys(); // @ai
     const playbackState = useMushafPlayerStore(s => s.playbackState);
     const isPlaying = playbackState === 'playing';
+    // @ai — the surah whose basmala is being recited (the intro before its
+    // first verse): its header's basmala is lit as a recited verse is.
+    const basmalaSurah = usePlaybackBasmalaSurah();
 
     // @ai-start
     // Decision 3 (Release 1): a non-Hafs text lists its rewayah's OWN verses
@@ -355,7 +348,9 @@ const ContinuousListView = forwardRef<
 
     // @ai TECH_DEBT #278: the live window width, so the rows follow a rotation.
     const {width: windowWidth} = useWindowDimensions();
-    const contentWidth = windowWidth - moderateScale(16);
+    const sidePadding =
+      width === undefined ? moderateScale(8) : readingListSidePadding(width); // @ai — the list key's column too
+    const contentWidth = (width ?? windowWidth) - sidePadding * 2;
 
     // Load annotations for visible surahs
     const loadAnnotationsForSurah = useVerseAnnotationsStore(
@@ -445,6 +440,11 @@ const ContinuousListView = forwardRef<
                 arabicTextWeight={arabicTextWeight}
                 showAllahNameHighlight={showAllahNameHighlight}
                 allahNameHighlightColor={allahNameHighlightColor}
+                // @ai — lit while its basmala is recited; unset otherwise, so the
+                // header's props stay exactly as before (readingViews.hafsGolden)
+                isActive={
+                  (isPlaying && basmalaSurah === item.surahNumber) || undefined
+                }
               />
             </View>
           );
@@ -501,6 +501,7 @@ const ContinuousListView = forwardRef<
         indexedTajweedData,
         handleVersePress,
         playbackVerseKeys, // @ai
+        basmalaSurah, // @ai
         bandKeys, // @ai
         isPlaying,
         translationName,
@@ -552,9 +553,10 @@ const ContinuousListView = forwardRef<
         contentContainerStyle={{
           paddingTop: insets.top + verticalScale(60),
           paddingBottom: insets.bottom + verticalScale(80),
-          paddingHorizontal: moderateScale(8),
+          paddingHorizontal: sidePadding,
         }}
         showsVerticalScrollIndicator={false}
+        scrollsToTop={scrollsToTop}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{itemVisiblePercentThreshold: 50}}
       />

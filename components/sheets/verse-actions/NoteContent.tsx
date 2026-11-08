@@ -1,11 +1,7 @@
 import React, {useState, useMemo, useCallback} from 'react';
 import {View, TextInput, Pressable, Text} from 'react-native';
 import {ScrollView} from 'react-native-actions-sheet';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
 import {Feather} from '@expo/vector-icons';
@@ -36,6 +32,12 @@ interface NoteContentProps {
   /** Qariah: true publishes the note to QuranReflect (a Reflection). */
   defaultPublish?: boolean;
   onDone: () => void;
+  // @ai-start Sprint 52 Task 8 (the iPad ayah panel keeps a draft)
+  /** The text the field starts with (a kept draft). */
+  initialText?: string;
+  /** Each change of the text, so the caller can keep a draft. */
+  onTextChange?: (text: string) => void;
+  // @ai-end
 }
 
 // @ai-start
@@ -43,6 +45,8 @@ export const NoteContent: React.FC<NoteContentProps> = ({
   selection, // @ai
   defaultPublish = false,
   onDone,
+  initialText = '', // @ai
+  onTextChange, // @ai
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -51,7 +55,15 @@ export const NoteContent: React.FC<NoteContentProps> = ({
   const {rewayah} = selection;
   const isRange = selection.anchors.length > 1;
   // @ai-end
-  const [noteText, setNoteText] = useState('');
+  const [noteText, setNoteTextState] = useState(initialText); // @ai
+  // @ai — the caller may keep each change as a draft.
+  const setNoteText = useCallback(
+    (text: string) => {
+      setNoteTextState(text);
+      onTextChange?.(text);
+    },
+    [onTextChange],
+  );
   // Qariah: QF note sync and the Reflection state (components/notes).
   const qariah = useQariahNoteEditor({
     source: 'NoteContent',

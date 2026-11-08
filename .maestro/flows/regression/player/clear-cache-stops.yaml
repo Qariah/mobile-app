@@ -1,0 +1,35 @@
+# QP-08 (Android), first half — "Clear cache" while audio plays stops the audio, and the mini
+# player goes away. `player/clear-cache-replay.yaml` is the second half: the next play works
+# (#235). Issue #781: before these files, each Release Auditor run wrote the flow again.
+#
+# The flow starts the audio itself (`subflows/play-al-mulk.yaml`, the path of
+# `player/play-pause.yaml`), so it does not depend on the order of the flows.
+#
+# Android only (tag `android-only`): the confirm dialog's positive button is the native
+# `android:id/button1` (`subflows/clear-cache-android.yaml`), and `pressKey: back` is an
+# Android key. iOS runs QP-08 by its case script: `scripts/iphone-device-test.sh QP-08`.
+#
+# The flow cannot hear the audio or read the system media session. Right after it, the agent
+# reads the device (case catalog QP-08; qariah-release-auditor Gate 4):
+#   adb -s <serial> shell dumpsys media_session        → no `state=3` (PLAYING)
+#   adb -s <serial> shell dumpsys notification --noredact | grep -c 'NotificationRecord.*com.qariah.app'  → 0
+appId: com.qariah.app
+tags:
+  - regression
+  - player
+  - android-only
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+- runFlow: ../../../subflows/play-al-mulk.yaml
+# Leave the Al-Mulk page (back to "All Surahs"), as the 3936 audit flow did.
+- pressKey: back
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow: ../../../subflows/clear-cache-android.yaml
+# The player has no current track, so the mini player renders nothing.
+- assertNotVisible:
+    id: 'mini-player-bar'
+- assertNotVisible:
+    id: 'mini-player-play-pause'

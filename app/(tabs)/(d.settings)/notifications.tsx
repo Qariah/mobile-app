@@ -42,7 +42,7 @@ import {
 import {Redirect, Stack, useFocusEffect} from 'expo-router';
 import type {NotificationPermissionsStatus} from 'expo-notifications';
 import {Feather} from '@expo/vector-icons';
-import {moderateScale, ScaledSheet} from 'react-native-size-matters';
+import {moderateScale, ScaledSheet} from '@/utils/scale';
 import Color from 'color';
 import {GlassView} from 'expo-glass-effect';
 import {useTranslation} from 'react-i18next';

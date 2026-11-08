@@ -1,11 +1,12 @@
 import React, {useId} from 'react';
-import {StyleSheet} from 'react-native';
+import {StyleSheet, View} from 'react-native';
 import Svg, {
   Defs,
   RadialGradient as SvgRadialGradient,
   Stop,
   Rect,
 } from 'react-native-svg';
+import {isLiteMode} from '@/services/lite/liteMode'; // @ai Qariah (Lite mode)
 
 // Shared gradient-mesh palettes used by the surah hero and grid cards
 // so both surfaces read with the same visual vocabulary.
@@ -76,6 +77,20 @@ export function SurahGradientMesh({
   const mainOpacity = isDark ? 0.12 : 0.15;
   const tertiaryOpacity = isDark ? 0.08 : 0.1;
   const quaternaryOpacity = isDark ? 0.06 : 0.08;
+
+  // @ai Qariah (Lite mode, step 1): one flat tint instead of four SVG
+  // radial gradients per card. On a Samsung A10s the meshes made Listen
+  // scrolling GPU-bound (planning/lite-mode-design.md).
+  if (isLiteMode()) {
+    return (
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {backgroundColor: palette[0], opacity: mainOpacity},
+        ]}
+      />
+    );
+  }
 
   return (
     <Svg

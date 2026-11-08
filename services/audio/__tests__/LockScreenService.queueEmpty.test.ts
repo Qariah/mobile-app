@@ -210,17 +210,17 @@ describe('LockScreenService: the main queue has no current track (#235)', () => 
     expect(mockMainPlayer.clearLockScreenControls).not.toHaveBeenCalled();
   });
 
-  it('while the Mushaf plays, cleanup() clears neither player; the main controls clear when the Mushaf goes idle', async () => {
+  it('while the Mushaf plays, cleanup() clears the main controls at once and not the Mushaf controls', async () => {
     await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
     await flush();
     setMushaf({playbackState: 'playing'});
 
     await usePlayerStore.getState().cleanup();
-    expect(mockMainPlayer.clearLockScreenControls).not.toHaveBeenCalled();
+    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
     expect(mockMushafPlayer.clearLockScreenControls).not.toHaveBeenCalled();
 
-    // The Mushaf stops. Its own controls clear (existing behaviour), and the
-    // main player has no track to show, so its controls clear too.
+    // The Mushaf stops. Its own controls clear (existing behaviour). The main
+    // player has no track to show, so nothing shows or clears its controls.
     setMushaf({playbackState: 'idle'});
     expect(mockMushafPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
     expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
@@ -228,16 +228,16 @@ describe('LockScreenService: the main queue has no current track (#235)', () => 
   });
 
   // @ai TECH_DEBT #350: Settings -> Clear cache calls clearMainPlayer() after cleanup().
-  it('clearMainPlayer() clears the main controls, also when the subscription skipped them (Mushaf flag)', async () => {
+  it('clearMainPlayer() clears the main controls and not the Mushaf controls while the Mushaf plays', async () => {
     await usePlayerStore.getState().updateQueue([makeTrack('a')], 0);
     await flush();
     setMushaf({playbackState: 'playing'});
     await usePlayerStore.getState().cleanup();
-    expect(mockMainPlayer.clearLockScreenControls).not.toHaveBeenCalled();
+    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
 
     lockScreenService.clearMainPlayer();
 
-    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(1);
+    expect(mockMainPlayer.clearLockScreenControls).toHaveBeenCalledTimes(2);
     expect(mockMushafPlayer.clearLockScreenControls).not.toHaveBeenCalled();
   });
 

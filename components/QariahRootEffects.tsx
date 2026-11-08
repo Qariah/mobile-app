@@ -47,6 +47,9 @@ import {
 import {useBackgroundPlaybackStore} from '@/store/backgroundPlaybackStore';
 import {useForegroundAnnouncementRecord} from '@/services/notifications/useForegroundAnnouncementRecord';
 import {useQariahNotifications} from '@/services/notifications/useQariahNotifications';
+import {useLiteOnDemandData} from '@/hooks/useLiteOnDemandData';
+import {useTajweedOnDemand} from '@/hooks/useTajweedOnDemand';
+import {deviceRamGb, isLiteMode} from '@/services/lite/liteMode';
 import {NotificationSoftPrompt} from '@/components/notifications/NotificationSoftPrompt';
 
 /**
@@ -74,6 +77,19 @@ function QariahPreConnectEffects(): null {
     const mode = getBootSplashMode();
     if (mode !== 'unavailable') posthog.register({boot_splash_mode: mode});
   }, [posthog]);
+  // @ai Qariah (Lite mode, step 1): tag events with the mode of this process,
+  // so field data can compare Lite and full users of the same RAM tier.
+  useEffect(() => {
+    if (!posthog) return;
+    const ramGb = deviceRamGb();
+    posthog.register({
+      lite_mode: isLiteMode(),
+      ...(ramGb === null ? {} : {ram_gb: ramGb}),
+    });
+  }, [posthog]);
+  useEffect(() => {
+    Sentry.setTag('lite_mode', String(isLiteMode()));
+  }, []);
   useEffect(() => {
     // iOS (or no native module): the experiment is inactive. Emit nothing.
     if (!posthog || !bootSplashExperiment.active) return;
@@ -162,6 +178,11 @@ function QariahPreConnectEffects(): null {
   // @ai Sprint 48 (S48.6) — the local notifications: the holdout arm (the
   // analytics consent, then the PostHog flag), written once.
   useQariahNotifications();
+
+  // @ai Qariah (Lite mode, step 1): the Mushaf data loads when a screen needs
+  // it, not at boot (Lite mode); tajweed loads when the reader has it on.
+  useLiteOnDemandData();
+  useTajweedOnDemand();
 
   return null;
 }

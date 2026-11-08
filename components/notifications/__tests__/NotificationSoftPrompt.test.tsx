@@ -6,6 +6,15 @@ import React from 'react';
 import {Modal, Platform} from 'react-native';
 import {fireEvent, render} from '@testing-library/react-native';
 
+// @ai Sprint 52: the card width constant lives in the action sheet module,
+// which pulls in reanimated; Jest needs only the numbers.
+jest.mock('@/components/sheets/AdaptiveActionSheet', () => ({
+  SHEET_MAX_WIDTH: 560,
+  SHEET_MAX_HEIGHT: 760,
+}));
+// Pass D: Expo SDK 58's expo-font loads the icon font through expo-asset,
+// which has no asset registry in Jest. The icons are not under test.
+jest.mock('@expo/vector-icons', () => ({Feather: () => null}));
 jest.mock('@sentry/react-native', () => ({
   captureMessage: jest.fn(),
   captureException: jest.fn(),

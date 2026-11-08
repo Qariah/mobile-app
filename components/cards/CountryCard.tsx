@@ -1,6 +1,6 @@
 import React, {useMemo} from 'react';
 import {Pressable, Text, View, StyleSheet} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {CountryInfo} from '@/data/countryCollections';
 import {getCountryISO} from '@/data/countryISO';
 import CountryShape from '@/components/country/CountryShape';

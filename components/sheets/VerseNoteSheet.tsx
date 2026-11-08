@@ -1,17 +1,10 @@
 import React, {useState, useMemo, useCallback, useEffect} from 'react';
 import {View, Text, TextInput, Pressable} from 'react-native';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
-import ActionSheet, {
-  SheetProps,
-  SheetManager,
-  ScrollView,
-} from 'react-native-actions-sheet';
+import {SheetProps, SheetManager, ScrollView} from 'react-native-actions-sheet';
+import ActionSheet from '@/components/sheets/AdaptiveActionSheet';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
 import {verseAnnotationService} from '@/services/verse-annotations/VerseAnnotationService';
@@ -67,7 +60,8 @@ export const VerseNoteSheet = (props: SheetProps<'verse-note'>) => {
     RewayahId | undefined
   >(undefined);
   // The saved note's own anchors (notes.verse_keys of a note on several
-  // verses; the Notes list sends only verse_key).
+  // verses). The Notes list also sends them as verseKeys; the stored note
+  // still names its verses when a payload has only verse_key.
   const [savedNoteKeys, setSavedNoteKeys] = useState<string[] | undefined>(
     undefined,
   );

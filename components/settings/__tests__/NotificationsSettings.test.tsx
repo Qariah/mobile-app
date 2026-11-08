@@ -32,6 +32,10 @@ import {isNotificationsHoldout} from '@/services/notifications/holdout';
 import enQariah from '@/i18n/locales/en/qariah.json';
 import arQariah from '@/i18n/locales/ar/qariah.json';
 
+// Pass D: Expo SDK 58's expo-font loads the icon font through expo-asset,
+// which has no asset registry in Jest. The icons are not under test.
+jest.mock('@expo/vector-icons', () => ({Feather: () => null}));
+
 // `mock`-prefixed: jest hoists `jest.mock()`.
 const mockGetPermissions = jest.fn();
 const mockRequestPermissions = jest.fn();
@@ -289,7 +293,7 @@ describe('Notifications settings page', () => {
 
   it('iOS 27+: opens the notification settings URL, not openSettings() (TECH_DEBT #348)', async () => {
     jest.spyOn(Platform, 'Version', 'get').mockReturnValue('27.0');
-    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     mockGetPermissions.mockResolvedValue(DENIED);
     await renderPage();
 

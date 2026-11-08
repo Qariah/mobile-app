@@ -59,12 +59,16 @@ import {execFileSync} from 'node:child_process';
 import {classifyIntake, INTAKE_WINDOW_HOURS} from './lib/intake.mjs';
 import {shallowWatchBuilds} from './lib/release-watch.mjs';
 import {cardSection, evaluateOwnerActions} from './lib/owner-actions.mjs';
+import {dropOverlap, needsYouLines} from './lib/owner-queue.mjs';
+import {ownerOf} from './lib/owner-replies.mjs';
+import {approvalReply, candidates, parseEvents} from './lib/promotion-approval.mjs';
 import {
   fixedInLabelled,
   loadOwnerActions,
   loadOwnerActionsWithReplies,
   makeFacts,
   noFixBuildsOf,
+  readOwnerQueue,
 } from './lib/owner-actions-facts.mjs';
 import {ownerDate} from './lib/run-health.mjs';
 import {
@@ -703,6 +707,36 @@ function heldLines() {
   }
 }
 
+// The READY lines and the publish results (scripts/lib/promotion-approval.mjs). A
+// comment from the owner's own login sends no GitHub notice, so the card names them.
+function releaseLines() {
+  try {
+    const issue = listIssues({state: 'open', labels: 'ops'}).find(
+      i => i.title === 'Daily card',
+    );
+    if (!issue) return ['none'];
+    const since = new Date(Date.now() - 14 * 864e5).toISOString();
+    const comments = ghApi(`repos/${GH_REPO}/issues/${issue.number}/comments`, {
+      query: {per_page: 100, since},
+      paginate: true,
+    });
+    const events = parseEvents(comments, {owner: ownerOf(GH_REPO)});
+    const out = [];
+    for (const c of candidates(events)) {
+      if (c.state === 'no-approval' && c.action) {
+        out.push(`READY ${c.action} ${c.build}: to publish, comment on this issue: ${approvalReply(c)}`);
+      } else if (['approved', 'in-progress'].includes(c.state)) {
+        out.push(`${c.action} ${c.build}: ${c.state}, the Promoter has it`);
+      } else if (['failed', 'stale'].includes(c.state)) {
+        out.push(`FAILED ${c.action} ${c.build}: ${c.reason}`);
+      }
+    }
+    return out.length ? out : ['none'];
+  } catch {
+    return ['unavailable (gh offline or unauthenticated)'];
+  }
+}
+
 function replyDraftLines() {
   try {
     const rows = listIssues({state: 'open', labels: 'reply-draft', limit: 20});
@@ -934,6 +968,7 @@ function opsBlock(cfg) {
     'INTAKE',
     intakeLines().map(l => l.replace(/^Intake: /, '')),
   );
+  section('RELEASE', releaseLines());
   section('HELD (needs your decision)', heldLines(), {cut: true});
   section('REPLY DRAFTS', replyDraftLines());
   section('CI FOLLOW-UP', ciFollowUpLines());
@@ -992,12 +1027,19 @@ function ownerActions() {
     // (scripts/lib/owner-replies.mjs), so an answered step does not come back.
     const {list, repliesError} = loadOwnerActionsWithReplies();
     if (!list) return {error: 'docs/operations/owner-actions.json is missing'};
+    // The owner queue (scripts/owner-queue.mjs): one line for each open
+    // decision or action. A queue key that equals an item id owns the line.
+    const queue = readOwnerQueue();
     return {
-      results: evaluateOwnerActions(list, {
-        today: ownerDate(Date.now()),
-        cloud: isCloudSession(),
-        facts: makeFacts(list),
-      }),
+      results: dropOverlap(
+        evaluateOwnerActions(list, {
+          today: ownerDate(Date.now()),
+          cloud: isCloudSession(),
+          facts: makeFacts(list),
+        }),
+        queue.items,
+      ),
+      queue,
       repliesError,
     };
   } catch (e) {
@@ -1012,6 +1054,13 @@ function ownerLines(owner) {
   const lines = cardSection(owner.results, 42).flatMap(l =>
     l.length > 42 ? wrap(l, 42, '   ') : [l],
   );
+  const queued = needsYouLines((owner.queue && owner.queue.items) || []);
+  if (queued.length) {
+    if (lines[0] === 'none') lines.shift();
+    lines.push(...queued.flatMap(l => wrap(`Q ${l}`, 42, '   ')));
+  }
+  if (owner.queue && owner.queue.error)
+    lines.push(...wrap(`owner queue not read (${owner.queue.error})`, 42));
   if (owner.repliesError)
     lines.push(...wrap(`owner replies not read (${owner.repliesError})`, 42));
   return lines;

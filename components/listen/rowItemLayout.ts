@@ -9,7 +9,7 @@
 // card for every eight cards. The values here are the ones that
 // `RenderSectionItem` and the `sectionContent` style in RecitersView.tsx use;
 // change them together.
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 
 export type RowVariant =
   | 'recent'

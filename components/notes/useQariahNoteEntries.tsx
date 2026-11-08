@@ -1,6 +1,6 @@
 // @ai-generated
 import React, {useCallback, useState} from 'react';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {useTranslation} from 'react-i18next';
 import type {VerseNote} from '@/types/verse-annotations';

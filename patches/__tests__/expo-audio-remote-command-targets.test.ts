@@ -1,5 +1,5 @@
 // @ai
-// DO NOT DROP — guards the Qariah hunk of patches/expo-audio+57.0.5.patch
+// DO NOT DROP — guards the fix that the retired Qariah hunk of expo-audio+57.0.5.patch carried
 // (TECH_DEBT #371).
 //
 // The defect (iOS, test iPhone on iOS 27): after Settings -> Storage ->
@@ -32,7 +32,7 @@ function expectPatched(ok: boolean, what: string): void {
   if (!ok) {
     throw new Error(
       `${what}. Run \`npx patch-package\`: ` +
-        'patches/expo-audio+57.0.5.patch is not applied.',
+        'expo-audio must be 58 or later (expo/expo#46020); Pass D removed the 57.0.5 patch.',
     );
   }
 }

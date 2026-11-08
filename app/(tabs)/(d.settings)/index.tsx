@@ -1,8 +1,9 @@
 import React, {useMemo} from 'react';
-import {Text, Pressable, ScrollView, View, Linking, Switch} from 'react-native';
+import {Text, Pressable, ScrollView, View} from 'react-native';
+import {NativeSwitch} from '@/components/native/NativeSwitch'; // @ai
 import {useRouter} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {Theme} from '@/utils/themeUtils';
 import {Feather, MaterialIcons} from '@expo/vector-icons';
 import {clearPlayerCache} from '@/services/player/utils/storage';
@@ -11,22 +12,6 @@ import {useBottomInset} from '@/hooks/useBottomInset';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {GlassView} from 'expo-glass-effect';
-import {openAppStoreForReview, markAsRated} from '@/utils/reviewUtils';
-import {
-  QuranIcon,
-  DualPagesIcon,
-  PersonAudioIcon,
-  SelectionListIcon,
-  DatabaseIcon,
-  ThreeStarsReviewIcon,
-  LightbulbIcon,
-  ChatBubbleIcon,
-  GiftBoxIcon,
-  InfoRoundedIcon,
-  MedalIcon,
-  DocCheckIcon,
-  ShieldLockIcon,
-} from '@/components/Icons';
 import {useDevSettingsStore} from '@/store/devSettingsStore';
 import {useAnalyticsConsentStore} from '@/store/analyticsConsentStore';
 import {ThemePicker} from '@/components/settings/ThemePicker';
@@ -34,193 +19,23 @@ import branding from '@/config/branding';
 // @ai-start
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
-import type {TFunction} from 'i18next';
-import {
-  getNotificationsSettingsItems,
-  NOTIFICATIONS_SETTINGS_ROUTE,
-  NOTIFICATIONS_SETTINGS_TYPE,
-  useNotificationsHoldout,
-} from '@/components/settings/notificationsSettingsItem';
-// Qariah rows and sections (divergence batch C3, SHT-S6).
-import {openSupportEmail} from '@/utils/openSupportEmail';
-import {
-  getBackgroundPlaybackSettingsItems,
-  handleQariahSettingPress,
-} from '@/components/settings/backgroundPlaybackSettingsItem';
+// Qariah (Sprint 52 Task 5): the Qariah rows come from the same source as the
+// iPad list (`branding.useSettingsSections`, the seam in settingsItems.ts).
+// The debug-ID row stays a phone-only card footer (divergence batch C3).
 import {DebugIdRow} from '@/components/settings/DebugIdRow';
-import {useQariahAccountSettings} from '@/components/auth/QariahAccountSection';
+import {useResponsive} from '@/hooks/useResponsive';
+import {
+  SETTINGS_SPLIT_MIN_WIDTH,
+  customIconMap,
+  isExternalLink,
+  openSettingsItem,
+  settingsHref,
+  useSettingsSections,
+  type SettingsSection,
+} from '@/components/settings/settingsItems';
+import {TabletSettingsHome} from '@/components/settings/TabletSettingsList';
+import MushafSettingsScreen from './mushaf-settings';
 // @ai-end
-
-const isExternalLink = (type: string): boolean => {
-  return [
-    'support',
-    'featureRequest',
-    'terms',
-    'privacy',
-    'rateApp',
-    'github',
-  ].includes(type);
-};
-
-// @ai-start
-const getSettingsSections = (
-  t: TFunction<['settings', 'common', 'qariah']>,
-  notificationsHoldout?: boolean, // @ai Qariah (S48.7)
-) => {
-  const appName = branding.appName;
-  return [
-    {
-      section: t('settings:index.sections.quran'),
-      items: [
-        {
-          title: t('settings:index.items.mushafSettings.title'),
-          type: 'mushafSettings',
-          description: t('settings:index.items.mushafSettings.description'),
-          icon: 'quran',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.translations.title'),
-          type: 'translations',
-          description: t('settings:index.items.translations.description'),
-          icon: 'dualPages',
-          iconType: 'custom',
-        },
-      ],
-    },
-    {
-      section: t('settings:index.sections.audio'),
-      items: [
-        {
-          title: t('settings:index.items.defaultReciter.title'),
-          type: 'defaultReciter',
-          description: t('settings:index.items.defaultReciter.description'),
-          icon: 'personAudio',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.reciterChoice.title'),
-          type: 'reciterChoice',
-          description: t('settings:index.items.reciterChoice.description'),
-          icon: 'selectionList',
-          iconType: 'custom',
-        },
-        ...getBackgroundPlaybackSettingsItems(t), // @ai Qariah (S33)
-      ],
-    },
-    {
-      section: t('settings:index.sections.appData'),
-      items: [
-        {
-          title: t('common:language.title'),
-          type: 'language',
-          description: t('common:language.description'),
-          icon: 'globe',
-          iconType: 'feather',
-        },
-        // @ai Qariah (S48.7): the Notifications page; no row in the holdout.
-        ...getNotificationsSettingsItems(t, notificationsHoldout),
-        {
-          title: t('settings:index.items.storage.title'),
-          type: 'storage',
-          description: t('settings:index.items.storage.description'),
-          icon: 'database',
-          iconType: 'custom',
-        },
-      ],
-    },
-    {
-      section: t('settings:index.sections.feedback'),
-      items: [
-        {
-          title: t('settings:index.items.rateApp.title'),
-          type: 'rateApp',
-          description: t('settings:index.items.rateApp.description'),
-          icon: 'star',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.featureRequest.title'),
-          type: 'featureRequest',
-          description: t('settings:index.items.featureRequest.description'),
-          icon: 'lightbulb',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.support.title'),
-          type: 'support',
-          description: t('settings:index.items.support.description', {appName}),
-          icon: 'chatBubble',
-          iconType: 'custom',
-        },
-      ],
-    },
-    {
-      section: t('settings:index.sections.about', {appName}),
-      items: [
-        {
-          title: t('settings:index.items.whatsNew.title'),
-          type: 'whatsNew',
-          description: t('settings:index.items.whatsNew.description'),
-          icon: 'giftBox',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.about.title', {appName}),
-          type: 'about',
-          description: t('settings:index.items.about.description'),
-          icon: 'infoRounded',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.credits.title'),
-          type: 'credits',
-          description: t('settings:index.items.credits.description'),
-          icon: 'medal',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.github.title'),
-          type: 'github',
-          description: t('settings:index.items.github.description', {appName}),
-          icon: 'github',
-          iconType: 'feather',
-        },
-        {
-          title: t('settings:index.items.terms.title'),
-          type: 'terms',
-          description: t('settings:index.items.terms.description'),
-          icon: 'docCheck',
-          iconType: 'custom',
-        },
-        {
-          title: t('settings:index.items.privacy.title'),
-          type: 'privacy',
-          description: t('settings:index.items.privacy.description'),
-          icon: 'shieldLock',
-          iconType: 'custom',
-        },
-      ],
-    },
-  ];
-};
-// @ai-end
-
-const customIconMap: Record<string, React.FC<{size: number; color: string}>> = {
-  quran: QuranIcon,
-  dualPages: DualPagesIcon,
-  personAudio: PersonAudioIcon,
-  selectionList: SelectionListIcon,
-  database: DatabaseIcon,
-  star: ThreeStarsReviewIcon,
-  lightbulb: LightbulbIcon,
-  chatBubble: ChatBubbleIcon,
-  giftBox: GiftBoxIcon,
-  infoRounded: InfoRoundedIcon,
-  medal: MedalIcon,
-  docCheck: DocCheckIcon,
-  shieldLock: ShieldLockIcon,
-};
 
 const renderIcon = (
   item: {icon: string; iconType: string},
@@ -251,7 +66,23 @@ const renderIcon = (
 };
 
 // @ai-start
+/**
+ * On iPad, wide windows show the list beside the page, so this first screen
+ * of the stack is the default page there; narrower ones show the iPad list.
+ */
 export default function SettingsScreen() {
+  const {isTablet, width} = useResponsive();
+  if (!isTablet) {
+    return <PhoneSettingsScreen />;
+  }
+  return width >= SETTINGS_SPLIT_MIN_WIDTH ? (
+    <MushafSettingsScreen />
+  ) : (
+    <TabletSettingsHome />
+  );
+}
+
+function PhoneSettingsScreen() {
   const router = useRouter();
   const {theme} = useTheme();
   const bottomInset = useBottomInset();
@@ -259,13 +90,8 @@ export default function SettingsScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const glassColorScheme = useGlassColorScheme();
   const {showFloatingDevMenu, toggleFloatingDevMenu} = useDevSettingsStore();
-  const {t} = useTranslation(['settings', 'common', 'qariah']);
-  // @ai Qariah (S48.7): the holdout is read again on each focus.
-  const notificationsHoldout = useNotificationsHoldout();
-  const settingsSections = useMemo(
-    () => getSettingsSections(t, notificationsHoldout),
-    [t, notificationsHoldout],
-  );
+  const {t} = useTranslation(['settings', 'common']);
+  const settingsSections = useSettingsSections(t); // @ai Qariah rows (Task 5)
   const {analyticsEnabled, setAnalyticsEnabled} = useAnalyticsConsentStore();
 
   const handleAnalyticsToggle = (value: boolean): void => {
@@ -277,72 +103,14 @@ export default function SettingsScreen() {
   const iconColor = theme.colors.text;
   const chevronColor = theme.colors.textSecondary;
 
-  const trackColor = useMemo(
-    () => ({
-      false: Color(theme.colors.text).alpha(0.1).toString(),
-      true: Color(theme.colors.text).alpha(0.65).toString(),
-    }),
-    [theme.colors.text],
-  );
-
   const handleSettingPress = async (type: string) => {
-    switch (type) {
-      case 'mushafSettings':
-        router.push('/(d.settings)/mushaf-settings');
-        break;
-      case 'translations':
-        router.push('/(d.settings)/translations');
-        break;
-      case 'defaultReciter':
-        router.push('/(d.settings)/default-reciter');
-        break;
-      case 'reciterChoice':
-        router.push('/(d.settings)/reciter-choice');
-        break;
-      case 'language':
-        router.push('/(d.settings)/language');
-        break;
-      case NOTIFICATIONS_SETTINGS_TYPE: // @ai Qariah (S48.7)
-        router.push(NOTIFICATIONS_SETTINGS_ROUTE);
-        break;
-      case 'storage':
-        router.push('/(d.settings)/storage');
-        break;
-      case 'clearCache':
-        await clearPlayerCache();
-        break;
-      case 'rateApp':
-        await markAsRated();
-        await openAppStoreForReview();
-        break;
-      case 'whatsNew':
-        router.push('/(d.settings)/whats-new');
-        break;
-      case 'support':
-        await openSupportEmail('support'); // @ai Qariah (Sprint 32)
-        break;
-      case 'featureRequest':
-        await openSupportEmail('featureRequest'); // @ai Qariah (Sprint 32)
-        break;
-      case 'terms':
-        await Linking.openURL(branding.termsUrl);
-        break;
-      case 'privacy':
-        await Linking.openURL(branding.privacyUrl);
-        break;
-      case 'about':
-        router.push('/(d.settings)/about');
-        break;
-      case 'credits':
-        router.push('/(d.settings)/credits');
-        break;
-      case 'github':
-        await Linking.openURL(branding.urls.github);
-        break;
-      default:
-        handleQariahSettingPress(type); // @ai Qariah (S33)
-        break;
+    if (type === 'clearCache') {
+      await clearPlayerCache();
+      return;
     }
+    await openSettingsItem(type, routeName =>
+      router.push(settingsHref(routeName)),
+    );
   };
 
   // iOS 26+ NativeTabs: automatic content insets handle top/bottom; manual
@@ -374,9 +142,64 @@ export default function SettingsScreen() {
       </View>
     );
 
-  // @ai Qariah (Sprint 11): the Account section and its sign-out sheet.
-  const qariahSlot = {styles, renderCard, iconColor, chevronColor};
-  const qariahAccount = useQariahAccountSettings(qariahSlot);
+  // @ai Qariah: the debug-ID row (SHT-S6) and the sign-out sheet (Sprint 11).
+  const qariahSlot = {styles, iconColor, chevronColor};
+  const ForkOverlay = branding.settingsOverlayComponent;
+
+  // @ai: a function, so that a fork's leading sections render above Appearance.
+  const renderSection = (section: SettingsSection) => (
+    <View key={section.section} style={styles.section}>
+      <Text style={styles.sectionHeader}>{section.section.toUpperCase()}</Text>
+      {renderCard(
+        section.items.map((item, itemIndex) => (
+          <React.Fragment key={item.type}>
+            {itemIndex > 0 && <View style={styles.divider} />}
+            {item.readOnly ? (
+              // @ai Qariah: a row that only shows a value (the account).
+              <View style={styles.settingsRow}>
+                <View style={styles.settingsItemIcon}>
+                  {renderIcon(item, iconColor)}
+                </View>
+                <View style={styles.settingsTextContainer}>
+                  <Text style={styles.settingsTitle}>{item.title}</Text>
+                  <Text style={styles.settingsDescription}>
+                    {item.description}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <Pressable
+                style={({pressed}) => [
+                  styles.settingsRow,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => handleSettingPress(item.type)}>
+                <View style={styles.settingsItemIcon}>
+                  {renderIcon(item, iconColor)}
+                </View>
+                <View style={styles.settingsTextContainer}>
+                  <Text style={styles.settingsTitle}>{item.title}</Text>
+                  <Text style={styles.settingsDescription}>
+                    {item.description}
+                  </Text>
+                </View>
+                <Feather
+                  name={
+                    isExternalLink(item.type)
+                      ? 'external-link'
+                      : 'chevron-right'
+                  }
+                  size={moderateScale(16)}
+                  color={chevronColor}
+                  style={isExternalLink(item.type) ? undefined : flipX}
+                />
+              </Pressable>
+            )}
+          </React.Fragment>
+        )),
+      )}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -384,7 +207,7 @@ export default function SettingsScreen() {
         contentInsetAdjustmentBehavior={USE_GLASS ? 'automatic' : 'never'}
         contentContainerStyle={[styles.scrollContent, contentPadding]}
         showsVerticalScrollIndicator={false}>
-        {qariahAccount.section}
+        {settingsSections.filter(s => s.leading).map(renderSection)}
         {/* Appearance */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>
@@ -394,46 +217,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* Settings Sections */}
-        {settingsSections.map(section => (
-          <View key={section.section} style={styles.section}>
-            <Text style={styles.sectionHeader}>
-              {section.section.toUpperCase()}
-            </Text>
-            {renderCard(
-              section.items.map((item, itemIndex) => (
-                <React.Fragment key={item.type}>
-                  {itemIndex > 0 && <View style={styles.divider} />}
-                  <Pressable
-                    style={({pressed}) => [
-                      styles.settingsRow,
-                      pressed && styles.pressed,
-                    ]}
-                    onPress={() => handleSettingPress(item.type)}>
-                    <View style={styles.settingsItemIcon}>
-                      {renderIcon(item, iconColor)}
-                    </View>
-                    <View style={styles.settingsTextContainer}>
-                      <Text style={styles.settingsTitle}>{item.title}</Text>
-                      <Text style={styles.settingsDescription}>
-                        {item.description}
-                      </Text>
-                    </View>
-                    <Feather
-                      name={
-                        isExternalLink(item.type)
-                          ? 'external-link'
-                          : 'chevron-right'
-                      }
-                      size={moderateScale(16)}
-                      color={chevronColor}
-                      style={isExternalLink(item.type) ? undefined : flipX}
-                    />
-                  </Pressable>
-                </React.Fragment>
-              )),
-            )}
-          </View>
-        ))}
+        {settingsSections.filter(s => !s.leading).map(renderSection)}
 
         {/* Privacy Section */}
         <View style={styles.section}>
@@ -459,12 +243,9 @@ export default function SettingsScreen() {
                   })}
                 </Text>
               </View>
-              <Switch
+              <NativeSwitch
                 value={analyticsEnabled}
                 onValueChange={handleAnalyticsToggle}
-                trackColor={trackColor}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor={trackColor.false}
                 style={styles.switchStyle}
               />
             </View>,
@@ -493,12 +274,9 @@ export default function SettingsScreen() {
                     Show the floating developer tools button
                   </Text>
                 </View>
-                <Switch
+                <NativeSwitch
                   value={showFloatingDevMenu}
                   onValueChange={toggleFloatingDevMenu}
-                  trackColor={trackColor}
-                  thumbColor="#FFFFFF"
-                  ios_backgroundColor={trackColor.false}
                   style={styles.switchStyle}
                 />
               </View>,
@@ -506,7 +284,7 @@ export default function SettingsScreen() {
           </View>
         )}
       </ScrollView>
-      {qariahAccount.signOutSheet}
+      {ForkOverlay ? <ForkOverlay /> : null}
     </View>
   );
 }

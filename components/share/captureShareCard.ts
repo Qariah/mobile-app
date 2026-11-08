@@ -4,6 +4,7 @@
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import {ImageFormat, type CanvasRef} from '@shopify/react-native-skia';
+import branding from '@/config/branding'; // @ai
 
 export async function captureShareCard(
   canvasRef: React.RefObject<CanvasRef | null>,
@@ -12,7 +13,7 @@ export async function captureShareCard(
   if (!image) throw new Error('Failed to capture share card image');
 
   const base64 = image.encodeToBase64(ImageFormat.PNG, 100);
-  const uri = `${FileSystem.cacheDirectory}bayaan-share.png`;
+  const uri = `${FileSystem.cacheDirectory}${branding.shareImageFileName}`; // @ai
   await FileSystem.writeAsStringAsync(uri, base64, {
     encoding: FileSystem.EncodingType.Base64,
   });

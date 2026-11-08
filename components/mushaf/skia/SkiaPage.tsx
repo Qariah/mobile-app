@@ -60,8 +60,12 @@ import {
   isTajweedEnabled,
 } from './pageOverlays';
 // @ai-start
-import {computeUnitPageHighlightLayers} from './verseHighlightLayers';
+import {
+  basmalaPlaybackLines, // @ai
+  computeUnitPageHighlightLayers,
+} from './verseHighlightLayers';
 import {usePlaybackBand} from './playbackBand';
+import {usePlaybackBasmalaSurah} from '@/store/mushafPlayerStore'; // @ai
 import {useVerseUnitDragSelect, type LineCharHit} from './verseUnitDragSelect';
 // @ai-end
 import {
@@ -302,6 +306,9 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
   // @ai — what the reciter is reciting; painted as the shown rewayah's verse
   // units (exactly the reciter's verse for a set in the shown rewayah).
   const playbackBand = usePlaybackBand();
+  // @ai — the surah whose basmala is being recited (the intro before its
+  // first verse): its basmallah line is painted as a recited verse is.
+  const basmalaSurah = usePlaybackBasmalaSurah();
 
   // Paragraph references for hit testing
   const paragraphMapRef = useRef<Map<number, ParagraphInfo>>(new Map());
@@ -700,6 +707,12 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
               themeDataService.getThemeForVerse(hafsKey)?.themeIndex,
           }
         : null,
+      playbackBasmalaLines: basmalaPlaybackLines(
+        pageLines,
+        basmalaSurah,
+        line => digitalKhattDataService.getBasmalaSurah(line),
+        lineIndex => quranTextService.getLineText(pageNumber, lineIndex).length,
+      ), // @ai
       sources: {
         bookmarkedVerseKeys,
         persistentHighlights,
@@ -728,6 +741,7 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
     bookmarkRows, // @ai
     highlightRows, // @ai
     playbackBand, // @ai
+    basmalaSurah, // @ai
     playbackBgColor,
     selectedVerseKeys,
     selectedRewayah, // @ai

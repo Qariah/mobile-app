@@ -11,7 +11,11 @@
 //   WAITING · <what the loop waits for; Omar has nothing to do>
 //   NOT CHECKED · <an item whose live state could not be read today>
 //   MAC ONLY · <the due Mac-only items a cloud run cannot read, in one line>
-// It prints nothing for an item that is not due yet or done. The daily card (scripts/daily-card.mjs) prints the NEEDS YOU
+// It prints nothing for an item that is not due yet or done. It also prints one
+// `NEEDS YOU` line for each open `decision` or `action` issue of the owner
+// queue (scripts/owner-queue.mjs). A queue issue whose key equals an item id
+// here owns that line (scripts/lib/owner-queue.mjs dropOverlap); every other
+// item in the JSON file stays, because it is a check against live state. The daily card (scripts/daily-card.mjs) prints the NEEDS YOU
 // lines in its NEEDS YOU section.
 //
 //   node scripts/owner-actions.mjs              # the lines above
@@ -31,7 +35,9 @@ import {evaluateOwnerActions, renderLines} from './lib/owner-actions.mjs';
 import {
   loadOwnerActionsWithReplies,
   makeFacts,
+  readOwnerQueue,
 } from './lib/owner-actions-facts.mjs';
+import {dropOverlap, needsYouLines} from './lib/owner-queue.mjs';
 import {ownerDate} from './lib/run-health.mjs';
 import {isCloudSession} from './lib/triage-common.mjs';
 
@@ -64,12 +70,16 @@ if (ARGS.only && ARGS.only !== 'mac') {
 
 const today =
   typeof ARGS.today === 'string' ? ARGS.today : ownerDate(Date.now());
-const results = evaluateOwnerActions(list, {
-  today,
-  cloud: isCloudSession(),
-  only: ARGS.only || undefined,
-  facts: makeFacts(list),
-});
+const queue = ARGS.only ? {items: [], error: null} : readOwnerQueue();
+const results = dropOverlap(
+  evaluateOwnerActions(list, {
+    today,
+    cloud: isCloudSession(),
+    only: ARGS.only || undefined,
+    facts: makeFacts(list),
+  }),
+  queue.items,
+);
 
 if (ARGS.json) {
   console.log(
@@ -78,6 +88,8 @@ if (ARGS.json) {
         today,
         cloud: isCloudSession(),
         results,
+        ownerQueue: queue.items,
+        ownerQueueError: queue.error,
         repliesApplied: replies.applied,
         repliesError: replies.repliesError || null,
       },
@@ -87,6 +99,9 @@ if (ARGS.json) {
   );
 } else {
   const lines = renderLines(results);
+  for (const l of needsYouLines(queue.items)) lines.push(`NEEDS YOU · ${l}`);
+  if (queue.error)
+    lines.push(`NOT CHECKED · owner queue (label owner-queue): ${queue.error}`);
   if (!lines.some(l => l.startsWith('NEEDS YOU')))
     lines.unshift('NEEDS YOU · none');
   if (replies.repliesError)

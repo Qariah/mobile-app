@@ -47,6 +47,7 @@ import {
   getShortLabel,
   type RewayahId,
 } from '@/services/rewayah/RewayahIdentity';
+import {cleanTranslation} from '@/services/widgets/widgetStaticData'; // @ai
 import {
   formatQuranCitation,
   formatVerseRange,
@@ -414,7 +415,10 @@ export function selectionTranslationParts(
  * Translation text of the parts: each translation on its own line, a part's
  * note on the line after it (a missing translation and its note are
  * skipped). For Hafs this is the selected verses' translations joined by
- * line breaks, as before.
+ * line breaks, as before. The text goes to the clipboard or into a shared
+ * message, so each translation is plain text: a bundled translation is
+ * stored with its footnote markers as HTML (`<sup foot_note="…">1</sup>`),
+ * and a marker names nothing outside the app (#730).
  */
 export function joinTranslationParts(
   parts: readonly SelectionTranslationPart[],
@@ -422,7 +426,7 @@ export function joinTranslationParts(
 ): string {
   const lines: string[] = [];
   for (const part of parts) {
-    const text = translationOf(part.hafsKey);
+    const text = cleanTranslation(translationOf(part.hafsKey) ?? ''); // @ai
     if (!text) continue;
     lines.push(text);
     if (part.note) lines.push(part.note);

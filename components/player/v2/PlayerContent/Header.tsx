@@ -12,14 +12,16 @@ import {
   Group,
   Skia,
   BlendMode,
-  useFonts,
 } from '@shopify/react-native-skia';
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {usePlayerStore} from '@/services/player/store/playerStore';
+import {selectForegroundQueue} from '@/services/player/store/foregroundPlayerState'; // @ai Qariah: no new views in the background
 import {getQCFSurahNameChar} from '@/constants/surahNameGlyphs';
 import {useResponsive} from '@/hooks/useResponsive';
+import {useMushafFontMgr} from '@/hooks/useMushafFontMgr'; // @ai one shared font provider
 import {useTranslation} from 'react-i18next'; // @ai Qariah: the button labels
+import {usePlayerA11y} from '@/hooks/usePlayerA11y'; // @ai
 
 const fallbackSurahNames: Record<number, string> = {};
 (
@@ -35,10 +37,11 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
   const {theme} = useTheme();
   const {t} = useTranslation(['common', 'home']); // @ai Qariah: the button labels
+  const a11y = usePlayerA11y(); // @ai
   const {isTablet} = useResponsive();
   const glassColorScheme = useGlassColorScheme();
   const {setSheetMode} = usePlayerActions();
-  const queue = usePlayerStore(s => s.queue);
+  const queue = usePlayerStore(selectForegroundQueue);
 
   const iconSize = moderateScale(isTablet ? 15 : 18);
   const pillSize = moderateScale(isTablet ? 36 : 44);
@@ -54,9 +57,9 @@ export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
     ? parseInt(currentTrack.surahId, 10)
     : undefined;
 
-  const fontMgr = useFonts({
-    SurahNameQCF: [require('@/data/mushaf/surah-name-qcf.ttf')],
-  });
+  // @ai The preloaded provider has SurahNameQCF. `useFonts` read the file again
+  // at each mount. Until the preload ends, the header shows the Arabic name.
+  const fontMgr = useMushafFontMgr();
 
   const qcfChar = useMemo(
     () => (surahNumber ? getQCFSurahNameChar(surahNumber) : ''),
@@ -160,11 +163,12 @@ export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
         style={[styles.closeButton, pillStyle, {left: edgeInset}]}
         {...pillProps}>
         <Pressable
+          style={styles.glassButtonInner}
+          onPress={handleClose}
+          {...a11y.closePlayer}
           accessibilityRole="button" // @ai
           accessibilityLabel={t('actions.close')} // @ai
-          testID="player-close" // @ai
-          style={styles.glassButtonInner}
-          onPress={handleClose}>
+          testID="player-close">
           {USE_GLASS ? (
             <SymbolView
               name="xmark"
@@ -188,11 +192,12 @@ export const Header: React.FC<HeaderProps> = ({onOptionsPress}) => {
         style={[styles.optionsButton, pillStyle, {right: edgeInset}]}
         {...pillProps}>
         <Pressable
+          style={styles.glassButtonInner}
+          onPress={onOptionsPress}
+          {...a11y.moreOptions}
           accessibilityRole="button" // @ai
           accessibilityLabel={t('home:surahItem.moreOptions')} // @ai
-          testID="player-more" // @ai
-          style={styles.glassButtonInner}
-          onPress={onOptionsPress}>
+          testID="player-more">
           {USE_GLASS ? (
             <SymbolView
               name="ellipsis"

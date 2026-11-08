@@ -16,8 +16,56 @@ import {
   iosTarget,
   planAndroid,
   promoteTrack,
+  supersededBy,
   trackForPlan,
 } from '../lib/play-rollout-mirror.mjs';
+
+describe('supersededBy', () => {
+  const v = (versionString, appStoreState, appVersionState) => ({
+    versionString,
+    appStoreState,
+    appVersionState,
+  });
+  it('names a newer live version (the 2026-11-08 case)', () => {
+    const list = [
+      v('3.2.4', 'READY_FOR_SALE', 'READY_FOR_DISTRIBUTION'),
+      v('3.2.3', 'READY_FOR_SALE', 'READY_FOR_DISTRIBUTION'),
+      v('3.2.1', 'REPLACED_WITH_NEW_VERSION', 'REPLACED_WITH_NEW_BUILD'),
+    ];
+    assert.equal(supersededBy(list, '3.2.3'), '3.2.4');
+  });
+  it('compares versions as numbers', () => {
+    const list = [v('3.2.10', 'READY_FOR_SALE'), v('3.2.9', 'READY_FOR_SALE')];
+    assert.equal(supersededBy(list, '3.2.9'), '3.2.10');
+    assert.equal(supersededBy(list, '3.2.10'), null);
+  });
+  it('ignores a newer version that is not live yet', () => {
+    for (const s of [
+      'PREPARE_FOR_SUBMISSION',
+      'WAITING_FOR_REVIEW',
+      'IN_REVIEW',
+      'DEVELOPER_REJECTED',
+    ]) {
+      const list = [v('3.2.5', s), v('3.2.4', 'READY_FOR_SALE')];
+      assert.equal(supersededBy(list, '3.2.4'), null, s);
+    }
+  });
+  it('counts a newer version that Apple is about to release', () => {
+    const list = [
+      v('3.2.5', undefined, 'PROCESSING_FOR_DISTRIBUTION'),
+      v('3.2.4', 'READY_FOR_SALE'),
+    ];
+    assert.equal(supersededBy(list, '3.2.4'), '3.2.5');
+  });
+  it('holds on a tracked version that Apple marks replaced', () => {
+    const list = [v('3.2.3', 'REPLACED_WITH_NEW_VERSION')];
+    assert.equal(supersededBy(list, '3.2.3'), 'a newer version');
+  });
+  it('returns null for an empty or missing list', () => {
+    assert.equal(supersededBy([], '3.2.3'), null);
+    assert.equal(supersededBy(undefined, '3.2.3'), null);
+  });
+});
 
 const staged = f => ({
   name: '3763',
@@ -53,6 +101,17 @@ describe('iosTarget', () => {
       ],
       [1, true],
     );
+  });
+  it('holds when a newer iOS version supersedes the tracked one (2026-11-08)', () => {
+    // Apple ended the PAUSED 3.2.3 ramp at day 6 when 3.2.4 went live, and
+    // the state read COMPLETE. The mirror then completed Android vc3763.
+    const t = iosTarget(
+      {phasedReleaseState: 'COMPLETE', currentDayNumber: 6},
+      {supersededBy: '3.2.4'},
+    );
+    assert.equal(t.fraction, null);
+    assert.equal(t.complete, false);
+    assert.match(t.reason, /superseded by 3\.2\.4/);
   });
   it('holds on PAUSED, INACTIVE, no record, no day and an unknown state', () => {
     for (const p of [
@@ -236,5 +295,37 @@ describe('findRelease', () => {
     assert.equal(findRelease({releases: [old]}, 2027), old);
     assert.equal(findRelease({releases: [old]}, '2027'), old);
     assert.equal(findRelease({}, 2027), null);
+  });
+});
+
+describe('trackForPlan halt (the rollback path)', () => {
+  const track = {
+    track: 'production',
+    releases: [
+      {versionCodes: ['2027'], status: 'completed'},
+      {versionCodes: ['3763'], status: 'inProgress', userFraction: 0.05},
+    ],
+  };
+  it('marks the staged release halted and keeps the completed one', () => {
+    const out = trackForPlan(track, 3763, {action: 'halt'});
+    assert.deepEqual(out.releases, [
+      {versionCodes: ['2027'], status: 'completed'},
+      {versionCodes: ['3763'], status: 'halted', userFraction: 0.05},
+    ]);
+  });
+  it('refuses a completed, halted or missing release', () => {
+    assert.throws(
+      () => trackForPlan(track, 2027, {action: 'halt'}),
+      /completed/,
+    );
+    assert.throws(
+      () => trackForPlan(track, 9999, {action: 'halt'}),
+      /not on the production track/,
+    );
+    const halted = {
+      ...track,
+      releases: [{versionCodes: ['3763'], status: 'halted'}],
+    };
+    assert.throws(() => trackForPlan(halted, 3763, {action: 'halt'}), /halted/);
   });
 });

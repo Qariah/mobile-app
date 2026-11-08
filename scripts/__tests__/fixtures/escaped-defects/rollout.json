@@ -1,0 +1,9 @@
+{
+  "active": true,
+  "release": "3.2.3",
+  "build": 3763,
+  "sentryRelease": "com.qariah.app@3.2.3+3763",
+  "sentryReleaseIos": "com.qariah.app@3.2.3+3772",
+  "startedAt": "2026-11-01",
+  "sha": "cfaa0c8e"
+}

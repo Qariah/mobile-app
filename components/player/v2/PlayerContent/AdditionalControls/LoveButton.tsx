@@ -2,6 +2,7 @@ import React from 'react';
 import {Pressable, StyleSheet} from 'react-native';
 import {moderateScale} from '@/utils/scale';
 import {usePlayerStore} from '@/services/player/store/playerStore';
+import {selectForegroundQueue} from '@/services/player/store/foregroundPlayerState'; // @ai Qariah: no new views in the background
 import {useLoved} from '@/hooks/useLoved';
 import {HeartIcon} from '@/components/Icons';
 import Animated, {
@@ -10,9 +11,11 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import {useTheme} from '@/hooks/useTheme';
+import {usePlayerA11y} from '@/hooks/usePlayerA11y'; // @ai
 export const LoveButton = () => {
-  const queue = usePlayerStore(s => s.queue);
+  const queue = usePlayerStore(selectForegroundQueue);
   const {theme} = useTheme();
+  const a11y = usePlayerA11y(); // @ai
 
   const {isTrackLoved, toggleTrackLoved} = useLoved();
   const currentTrack = queue?.tracks?.[queue?.currentIndex ?? -1];
@@ -36,7 +39,10 @@ export const LoveButton = () => {
   }));
 
   return (
-    <Pressable style={styles.button} onPress={handleToggleLoved}>
+    <Pressable
+      style={styles.button}
+      onPress={handleToggleLoved}
+      {...a11y.love(isLoved)}>
       <Animated.View style={animatedStyle}>
         <HeartIcon
           size={moderateScale(32)}

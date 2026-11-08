@@ -15,7 +15,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import BottomSheetModal from '@/components/auth/QariahBottomSheetModal';
 import {useTheme} from '@/hooks/useTheme';
 import type {ImportCandidate} from '@/services/userState/exportImport';

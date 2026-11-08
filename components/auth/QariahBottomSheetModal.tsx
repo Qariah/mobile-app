@@ -4,14 +4,23 @@
 // sheet (TECH_DEBT #267) and `accessible={false}` (Sprint 50). The inherited
 // file stays byte-identical to upstream (divergence batch C1, SHT-S18).
 import React, {useCallback, useRef, useEffect, useState} from 'react';
-import {View, StyleProp, ViewStyle, Platform, BackHandler} from 'react-native';
+import {
+  View,
+  Modal,
+  StyleProp,
+  ViewStyle,
+  Platform,
+  BackHandler,
+} from 'react-native';
 import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetBackdropProps,
   BottomSheetHandleProps,
 } from '@gorhom/bottom-sheet';
 import {useTheme} from '@/hooks/useTheme';
-import {moderateScale, ScaledSheet} from 'react-native-size-matters';
+import {useResponsive} from '@/hooks/useResponsive';
+import {TabletDialog} from '@/components/layout/TabletDialog';
+import {moderateScale, ScaledSheet} from '@/utils/scale';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 
@@ -60,6 +69,7 @@ const QariahBottomSheetModal: React.FC<QariahBottomSheetModalProps> = ({
   contentContainerStyle,
 }) => {
   const {theme} = useTheme();
+  const {isTablet} = useResponsive();
   const bottomSheetRef = useRef<BottomSheet>(null);
 
   // @ai TECH_DEBT #267 — the sheet is in the tree only from its first open
@@ -133,6 +143,31 @@ const QariahBottomSheetModal: React.FC<QariahBottomSheetModalProps> = ({
     [isVisible],
   );
 
+  // @ai Sprint 52 Task 7: on a tablet the sheet is a centred card of at most
+  // 560 pt (upstream's TabletDialog) in a transparent Modal. The dismiss rules
+  // stay those of the sheet: a tap outside, the Android back button and the
+  // Modal's own close request all call `onClose`. Every user of this wrapper
+  // is dismissable today (pan down, backdrop tap), so this adds no new way out.
+  // gorhom is not mounted here, so the phone code above is not touched.
+  if (isTablet) {
+    return (
+      <Modal
+        visible={isVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+        testID="qariah-tablet-dialog">
+        <TabletDialog onClose={onClose}>
+          <View
+            accessible={false}
+            style={[styles(theme).dialogContent, contentContainerStyle]}>
+            {children}
+          </View>
+        </TabletDialog>
+      </Modal>
+    );
+  }
+
   // @ai TECH_DEBT #267 — after the hooks: a closed sheet that is not in its
   // close animation draws nothing. (On the first open render `mounted` is
   // still false; `isVisible` keeps the sheet in the tree.)
@@ -180,6 +215,10 @@ const styles = (theme: Theme) =>
   ScaledSheet.create({
     contentContainer: {
       flex: 1,
+      padding: moderateScale(20),
+      backgroundColor: theme.colors.background,
+    },
+    dialogContent: {
       padding: moderateScale(20),
       backgroundColor: theme.colors.background,
     },

@@ -2,18 +2,18 @@ import React, {
   useEffect,
   useMemo,
   useCallback,
+  useRef, // @ai
   useState, // @ai
-  useSyncExternalStore, // @ai
 } from 'react';
 import {
   View,
-  ActivityIndicator,
   StyleSheet,
   Pressable, // @ai
   Text, // @ai
 } from 'react-native';
-import {Stack, useLocalSearchParams} from 'expo-router';
-import * as ScreenOrientation from 'expo-screen-orientation';
+import {QariahMushafLoading} from '@/components/QariahMushafLoading'; // @ai Qariah
+import {Stack, useLocalSearchParams, useRoute} from 'expo-router';
+import {usePhoneOrientation} from '@/hooks/usePhoneOrientation'; // @ai
 import {useTheme} from '@/hooks/useTheme';
 import {digitalKhattDataService} from '@/services/mushaf/DigitalKhattDataService';
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService'; // @ai
@@ -26,6 +26,7 @@ import {
 } from '@/services/mushaf/MushafVerseMapService';
 // @ai-end
 import {mushafSessionStore} from '@/services/mushaf/MushafSessionStore';
+import {noteReaderPageDrawn} from '@/services/mushaf/readerRestoreGate'; // @ai
 import {
   formatPlaybackInfo, // @ai
   getPlaybackNotice, // @ai
@@ -44,6 +45,12 @@ import {playbackNoticeText} from '@/i18n/playback';
 import {useTranslation} from 'react-i18next';
 import {getSurahDisplayName, localizeDigits} from '@/i18n/format';
 import {useReaderLinkPage} from '@/hooks/useReaderLinkPage';
+import {useMushafData} from '@/hooks/useMushafData';
+import {isRewayahId, type RewayahId} from '@/services/rewayah/RewayahIdentity';
+import {restoreSavedRewayah} from '@/services/verse-annotations/restoreSavedRewayah';
+import {useResponsive} from '@/hooks/useResponsive';
+import {AYAH_PANEL_WIDTH} from '@/components/mushaf/ayah-panel/ayahPanelStore';
+import {useAyahPanelPresentation} from '@/components/mushaf/ayah-panel/useAyahPanelPresentation';
 // @ai-end
 
 export type MushafScreenParams = {
@@ -58,34 +65,86 @@ export type MushafScreenParams = {
   // rewayah's verse holding that slot (verse-units contract 4.4) instead of
   // every verse holding Hafs `surah`:`ayah`. Never a rewayah verse number.
   anchor?: string;
+  // Qariah (RFC-023 step 1): the rewayah a saved verse was saved in, sent
+  // with no page. The screen restores it when the Mushaf data is ready and
+  // then opens the page of the verse (savedVerseOpenParams).
+  rewayah?: string;
+  // Qariah (RFC-023 step 1): '1' from the player's Repeat, sent with no page.
+  // The screen shows the player options when the page of the verse is known.
+  playerOptions?: string;
   // @ai-end
 };
 
 export default function MushafScreen() {
-  const {surah, page, ayah, anchor, restored} =
+  const {surah, page, ayah, anchor, restored, rewayah, playerOptions} =
     useLocalSearchParams<MushafScreenParams>(); // @ai
   const {theme} = useTheme();
   const {t} = useTranslation(['reader', 'common']); // @ai
 
-  // @ai Re-render on the DK cache signal too: the preload can settle before the DK commit notifies.
-  useSyncExternalStore(subscribeDkCache, getDkCacheVersion);
-  const dkReady = digitalKhattDataService.initialized;
+  // @ai Qariah (RFC-023 step 1): one data state, with one retry that knows which load to redo.
+  const {state: dataState, retry: retryLoad} = useMushafData();
+  const dkReady = dataState === 'ready';
   const surahStartPages = dkReady
     ? digitalKhattDataService.getSurahStartPages()
     : {};
 
+  // @ai-start
+  // Qariah (RFC-023 step 1): a saved verse opens this screen at once, before
+  // the Mushaf data is ready, and names the rewayah it was saved in. Restore
+  // that rewayah when the data is ready (a switch before the first load
+  // would compete with it), and show the loading view until then.
+  const savedRewayah = isRewayahId(rewayah) ? rewayah : undefined;
+  const [restoringRewayah, setRestoringRewayah] = useState(() =>
+    needsRewayahRestore(savedRewayah),
+  );
+  useEffect(() => {
+    if (!restoringRewayah || !dkReady) return;
+    let cancelled = false;
+    restoreSavedRewayah(savedRewayah).finally(() => {
+      if (!cancelled) setRestoringRewayah(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [restoringRewayah, dkReady, savedRewayah]);
+  const contentReady = dkReady && !restoringRewayah;
+  // @ai-end
+
+  // @ai-start
+  // Qariah: a failed load ends the restore's wait, so the splash shows the
+  // error view at once (services/mushaf/readerRestoreGate.ts).
+  useEffect(() => {
+    if (dataState === 'failed') noteReaderPageDrawn();
+  }, [dataState]);
+  // @ai-end
+
   // Resolve page number from params
+  // @ai Qariah: once for each navigation. A rewayah switch later in the reader moves the reader by itself.
+  const {params: routeParams} = useRoute();
   const pageNumber = useMemo(() => {
     if (page) {
       const p = parseInt(page, 10);
       if (!isNaN(p) && p >= 1 && p <= 604) return p;
     }
+    // @ai-start
+    // Qariah (RFC-023 step 1): with no page (a saved verse opened before the
+    // data was ready), the page of the verse in the rewayah on screen, not
+    // the start page of its surah.
+    if (contentReady && surah && ayah) {
+      const versePage = digitalKhattDataService.getPageForVerse(
+        `${parseInt(surah, 10)}:${parseInt(ayah, 10)}`,
+      );
+      if (versePage) return versePage;
+    }
+    // @ai-end
     if (surah) {
       const s = parseInt(surah, 10);
       if (!isNaN(s) && surahStartPages[s]) return surahStartPages[s];
     }
     return 1;
-  }, [page, surah, surahStartPages]);
+    // @ai surahStartPages changes with the rewayah; routeParams is a new navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, surah, ayah, contentReady, routeParams]);
 
   // @ai-start
   // The surah the user asked for, when the page was resolved from it. A page
@@ -100,7 +159,22 @@ export default function MushafScreen() {
   // @ai-end
 
   // @ai Qariah (#281): a link to this open reader turns it to the link's page and surah.
-  useReaderLinkPage(pageNumber, dkReady, initialSurahId);
+  useReaderLinkPage(pageNumber, contentReady, initialSurahId);
+
+  // @ai-start
+  // RFC-023 step 1: the options of the player's Repeat need the page, so they
+  // open here, once, when the page of the verse is known (VerseActionsSheet).
+  const playerOptionsShownRef = useRef(false);
+  useEffect(() => {
+    if (playerOptions !== '1' || !contentReady) return;
+    if (playerOptionsShownRef.current) return;
+    playerOptionsShownRef.current = true;
+    useMushafPlayerStore.setState({currentPage: pageNumber});
+    SheetManager.show('mushaf-player-options', {
+      payload: {currentPage: pageNumber},
+    });
+  }, [playerOptions, contentReady, pageNumber]);
+  // @ai-end
 
   // Build initial verse key for highlight
   const initialVerseKey = useMemo(() => {
@@ -108,20 +182,10 @@ export default function MushafScreen() {
     return undefined;
   }, [surah, ayah]);
 
-  // Allow landscape while the mushaf screen is open; re-lock portrait on exit.
-  // QARIAHV2-C (#54): both calls reject when an OEM killed the Activity (benign). `?.`: tests stub them.
-  useEffect(() => {
-    ScreenOrientation.unlockAsync()?.catch(() => {
-      /* Activity may be gone (OEM-killed); benign, swallow it. */
-    });
-    return () => {
-      ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP,
-      )?.catch(() => {
-        /* Activity may be gone (OEM-killed); benign, swallow it. */
-      });
-    };
-  }, []);
+  // Phones may turn to landscape while the mushaf screen is open and go back
+  // to portrait on exit. iPads aren't locked, so leaving the reader in
+  // landscape keeps the app in landscape. @ai
+  usePhoneOrientation('free'); // @ai
 
   // Track mushaf screen for session restore (MMKV — sync writes survive force-kill)
   useEffect(() => {
@@ -157,23 +221,21 @@ export default function MushafScreen() {
   // @ai-end
 
   // @ai-start
-  // When the mushaf text cannot be loaded at all (e.g. no storage left to
-  // copy it to the device), say so and offer a retry instead of an endless
-  // spinner. The preload retries both the text and the fonts.
-  const preloadState = useSyncExternalStore(subscribePreload, getPreloadState);
-  const [retrying, setRetrying] = useState(false);
-  const retryLoad = useCallback(() => {
-    setRetrying(true);
-    mushafPreloadService
-      .initialize()
-      .catch(() => undefined)
-      .finally(() => setRetrying(false));
+  // Qariah (A10s plan F1): the boot starts the Mushaf load only after the
+  // splash hides, so a reader that opens first (a restored session, a link)
+  // starts it here. initialize() is idempotent.
+  useEffect(() => {
+    if (mushafPreloadService.state === 'idle') {
+      mushafPreloadService.initialize().catch(() => undefined);
+    }
   }, []);
   // @ai-end
 
   // Set verse highlight on mount, auto-clear after 3s, clear on unmount
   useEffect(() => {
     // @ai-start
+    // RFC-023 step 1: not before the page is known and on screen.
+    if (!contentReady) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const flash = () => {
@@ -216,19 +278,21 @@ export default function MushafScreen() {
       useMushafVerseSelectionStore.getState().clearSelection();
     };
     // @ai-end
-  }, [anchor, initialVerseKey, pageNumber]); // @ai: anchor
+  }, [anchor, initialVerseKey, pageNumber, contentReady]); // @ai: anchor, contentReady
 
   // @ai REPORT-ONLY content-stall watchdog: no boot instrument sees a stuck `!dkReady` spinner.
   useContentReadyWatchdog({
     screen: 'mushaf',
-    ready: dkReady,
+    ready: contentReady, // @ai RFC-023 step 1: the rewayah restore too
     awaiting: 'digital-khatt-init',
     cold: restored === '1',
   });
 
-  if (!dkReady) {
+  if (!contentReady) {
     // @ai-start
-    if (preloadState === 'failed' && !retrying) {
+    // When the mushaf text cannot be loaded (e.g. no storage left to copy it to
+    // the device), say so and offer a retry, not an endless spinner.
+    if (dataState === 'failed') {
       return (
         <View
           style={[styles.loading, {backgroundColor: theme.colors.background}]}
@@ -259,7 +323,7 @@ export default function MushafScreen() {
     return (
       <View
         style={[styles.loading, {backgroundColor: theme.colors.background}]}>
-        <ActivityIndicator size="large" color={theme.colors.text} />
+        <QariahMushafLoading color={theme.colors.text} />
       </View>
     );
   }
@@ -282,12 +346,18 @@ export default function MushafScreen() {
 // ============================================================================
 
 // @ai-start
-const subscribePreload = (listener: () => void): (() => void) =>
-  mushafPreloadService.subscribe(listener);
-const getPreloadState = () => mushafPreloadService.state;
-const subscribeDkCache = (listener: () => void): (() => void) =>
-  digitalKhattDataService.subscribeCacheChanges(listener);
-const getDkCacheVersion = () => digitalKhattDataService.getCacheVersion();
+/**
+ * True when restoreSavedRewayah() would switch the rewayah (its own early
+ * return, read before the screen mounts): a saved verse in the rewayah on
+ * screen shows no loading view.
+ */
+function needsRewayahRestore(saved: RewayahId | undefined): boolean {
+  if (!saved) return false;
+  return (
+    saved !== useMushafSettingsStore.getState().rewayah ||
+    saved !== digitalKhattDataService.rewayah
+  );
+}
 
 const surahNameOf = (surah: number): string =>
   surah >= 1 && surah <= 114 ? getSurahDisplayName(SURAHS[surah - 1]) : '';
@@ -308,6 +378,16 @@ export function MushafToolbar() {
   // @ai-end
   const isImmersive = useMushafPlayerStore(s => s.isImmersive);
   const isSearchMode = useMushafPlayerStore(s => s.isSearchMode);
+  // @ai-start Sprint 52 Task 8
+  // The toolbar spans the window. Beside the ayah panel, a fixed space as
+  // wide as the panel ends it, so its buttons stay over the reader pane.
+  const {isTablet} = useResponsive();
+  const panelPresentation = useAyahPanelPresentation(isTablet);
+  const panelDocked = panelPresentation === 'side';
+  const panelSpace = panelDocked ? (
+    <Stack.Toolbar.Spacer width={AYAH_PANEL_WIDTH} />
+  ) : null;
+  // @ai-end
 
   const isIdle = playbackState === 'idle';
   const isPlaying = playbackState === 'playing';
@@ -386,7 +466,8 @@ export function MushafToolbar() {
   }, []);
 
   // Hide toolbar in immersive or search mode
-  if (isImmersive || isSearchMode) return null;
+  // @ai Sprint 52 Task 8: and while the ayah card (modal) shows.
+  if (isImmersive || isSearchMode || panelPresentation === 'card') return null;
 
   if (isIdle) {
     // Idle: [Search] — spacer — [Play] — spacer — [Options]
@@ -403,6 +484,7 @@ export function MushafToolbar() {
         <Stack.Toolbar.Button icon="ellipsis.circle" onPress={handleOptions}>
           {t('toolbar.options')}
         </Stack.Toolbar.Button>
+        {panelSpace /* @ai */}
       </Stack.Toolbar>
     );
   }
@@ -434,6 +516,7 @@ export function MushafToolbar() {
       <Stack.Toolbar.Button icon="ellipsis.circle" onPress={handleOptions}>
         {t('toolbar.options')}
       </Stack.Toolbar.Button>
+      {panelSpace /* @ai */}
     </Stack.Toolbar>
   );
 }

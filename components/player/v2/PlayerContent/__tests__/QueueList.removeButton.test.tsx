@@ -1,19 +1,18 @@
 // @ai
-// TECH_DEBT #258 — every queue row shows its remove ✕.
+// TECH_DEBT #258 — the queue rows have a remove ✕ that a device test finds.
 //
-// The queue row is a flex row: the track item, then the ✕. TrackItem's outer
-// view has no flex, so the track item took the full row width and the ✕ sat
-// past the right edge of the screen. The row content is now in a wrapper with
-// `flex: 1, minWidth: 0`, and the ✕ has a testID and a label.
+// Pass D (2026-11-07): upstream redesigned the queue (QueueRow, with the
+// sections "Now Playing", "Up Next" and "Played"). The current row shows the
+// playing indicator, and every other row has a remove ✕. Qariah keeps the
+// testID `queue-remove-<index>` on each ✕ (the Maestro and iPhone driver
+// flows), the space under the player overlays (TECH_DEBT #295) and the remote
+// photo of a tagged upload (TECH_DEBT #262).
 //
-// FlashList, the bottom-sheet scrollable, the player store and the row
-// components are stubs. The test checks the row structure that the layout
-// fix needs, the remove control on each row, and the press handler.
+// FlashList, the scrollable, the player store and the row parts are stubs.
 
 import React from 'react';
 import {StyleSheet} from 'react-native';
 import {fireEvent, render, screen} from '@testing-library/react-native';
-import type {ReactTestInstance} from 'react-test-renderer';
 
 const mockState: {
   queue: {tracks: Record<string, unknown>[]; currentIndex: number};
@@ -35,11 +34,25 @@ jest.mock('@/store/uploadsStore', () => ({
   useUploadsStore: selector => selector({recitations: []}),
 }));
 
-jest.mock('@gorhom/bottom-sheet', () => ({
-  useBottomSheetScrollableCreator: () => undefined,
+jest.mock('@/services/dataService', () => ({
+  getReciterByIdSync: () => undefined,
+  getSurahById: () => undefined,
 }));
 
-// Renders the header and every row, as FlashList does for a short list.
+jest.mock('@/hooks/usePlayerScrollable', () => ({
+  usePlayerScrollable: () => undefined,
+}));
+
+jest.mock('@/hooks/useReadingThemeColors', () => ({
+  useReadingThemeColors: () => ({
+    text: '#111111',
+    textSecondary: '#666666',
+    background: '#ffffff',
+    card: '#ffffff',
+  }),
+}));
+
+// Renders the header and every item, as FlashList does for a short list.
 jest.mock('@shopify/flash-list', () => {
   const ReactLib = require('react');
   const {View} = require('react-native');
@@ -49,7 +62,7 @@ jest.mock('@shopify/flash-list', () => {
       const Header = props.ListHeaderComponent;
       return ReactLib.createElement(
         View,
-        // @ai TECH_DEBT #295: expose the content padding to the test.
+        // TECH_DEBT #295: expose the content padding to the test.
         {testID: 'mock-flash-list', style: props.contentContainerStyle},
         Header ? ReactLib.createElement(Header) : null,
         // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
@@ -65,15 +78,7 @@ jest.mock('@shopify/flash-list', () => {
   };
 });
 
-jest.mock('@/components/TrackItem', () => {
-  const {View} = require('react-native');
-  return {
-    // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
-    TrackItem: props => <View testID={`track-item-${props.surahId}`} />,
-  };
-});
-
-// @ai TECH_DEBT #262: the mock keeps the props, so a test can read them.
+// TECH_DEBT #262: the mock keeps the props, so a test can read them.
 jest.mock('@/components/ReciterImage', () => {
   const {View} = require('react-native');
   return {
@@ -97,21 +102,8 @@ jest.mock('@expo/vector-icons', () => ({
   MaterialCommunityIcons: () => null,
 }));
 
-jest.mock('@/hooks/useTheme', () => ({
-  useTheme: () => ({
-    theme: {
-      colors: {
-        text: '#111111',
-        textSecondary: '#666666',
-        card: '#ffffff',
-        border: '#eeeeee',
-      },
-    },
-  }),
-}));
-
 import {QueueList} from '../QueueList';
-import {verticalScale} from '@/utils/scale';
+import {moderateScale} from '@/utils/scale';
 
 function track(id: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -124,17 +116,6 @@ function track(id: string, overrides: Record<string, unknown> = {}) {
     surahId: id,
     ...overrides,
   };
-}
-
-/** The host (native) views above a node, nearest first. */
-function hostAncestors(node: ReactTestInstance): ReactTestInstance[] {
-  const out: ReactTestInstance[] = [];
-  let parent = node.parent;
-  while (parent) {
-    if (typeof parent.type === 'string') out.push(parent);
-    parent = parent.parent;
-  }
-  return out;
 }
 
 function renderQueue(onRemoveQueueItem = jest.fn()) {
@@ -157,40 +138,25 @@ beforeEach(() => {
 });
 
 describe('QueueList — the remove ✕ (TECH_DEBT #258)', () => {
-  it('gives every row a remove button with a testID and a label', () => {
+  it('gives every row after the current one a remove button with a testID', () => {
     renderQueue();
 
-    for (const index of [0, 1, 2]) {
+    // The current row shows the playing indicator instead (upstream design).
+    expect(screen.queryByTestId('queue-remove-0')).toBeNull();
+    for (const index of [1, 2]) {
       const button = screen.getByTestId(`queue-remove-${index}`);
       expect(button.props.accessibilityRole).toBe('button');
-      expect(button.props.accessibilityLabel).toBe('Remove from queue');
+      expect(button.props.accessibilityLabel).toMatch(/from queue$/);
     }
-    expect(
-      screen.getAllByRole('button', {name: 'Remove from queue'}),
-    ).toHaveLength(3);
   });
 
-  it('puts the row content in a flex: 1, minWidth: 0 wrapper next to the ✕', () => {
+  it('gives a played row a remove button too', () => {
+    mockState.queue.currentIndex = 2;
     renderQueue();
 
-    for (const [index, surahId] of [
-      [0, '1'],
-      [1, '2'],
-    ] as const) {
-      const [wrapper, row] = hostAncestors(
-        screen.getByTestId(`track-item-${surahId}`),
-      );
-      const style = StyleSheet.flatten(wrapper.props.style);
-      expect(style.flex).toBe(1);
-      expect(style.minWidth).toBe(0);
-
-      // The ✕ is the wrapper's sibling: both sit directly in the row.
-      expect(StyleSheet.flatten(row.props.style).flexDirection).toBe('row');
-      const [removeRow] = hostAncestors(
-        screen.getByTestId(`queue-remove-${index}`),
-      );
-      expect(removeRow).toBe(row);
-    }
+    expect(screen.getByTestId('queue-remove-0')).toBeTruthy();
+    expect(screen.getByTestId('queue-remove-1')).toBeTruthy();
+    expect(screen.queryByTestId('queue-remove-2')).toBeNull();
   });
 
   it('calls onRemoveQueueItem with the row index', () => {
@@ -198,26 +164,22 @@ describe('QueueList — the remove ✕ (TECH_DEBT #258)', () => {
 
     fireEvent.press(screen.getByTestId('queue-remove-1'));
     expect(onRemove).toHaveBeenCalledWith(1);
-
-    // The first match by label is row 0.
-    fireEvent.press(screen.getAllByLabelText('Remove from queue')[0]);
-    expect(onRemove).toHaveBeenLastCalledWith(0);
+    fireEvent.press(screen.getByTestId('queue-remove-2'));
+    expect(onRemove).toHaveBeenLastCalledWith(2);
     expect(onRemove).toHaveBeenCalledTimes(2);
   });
 
-  it('shows "Queue is empty" with no tracks', () => {
+  it('shows no remove button with no tracks', () => {
     mockState.queue.tracks = [];
     renderQueue();
 
-    expect(screen.getByText('Queue is empty')).toBeTruthy();
     expect(screen.queryByTestId('queue-remove-0')).toBeNull();
+    expect(screen.queryByTestId('mock-flash-list')).toBeNull();
   });
 });
 
-// @ai-start TECH_DEBT #295 — the full player's top bar and controls float over
-// the queue. The list pads its content by the space they cover, so the header
-// and the first row start below the top bar and the last row ends above the
-// controls.
+// TECH_DEBT #295 — the full player's top bar and controls float over the
+// queue. The list pads its content by the space they cover.
 describe('QueueList — content clear of the player overlays (TECH_DEBT #295)', () => {
   function contentPadding() {
     const style = StyleSheet.flatten(
@@ -237,24 +199,23 @@ describe('QueueList — content clear of the player overlays (TECH_DEBT #295)', 
     );
 
     expect(contentPadding()).toEqual({
-      top: 120 + verticalScale(8),
-      bottom: 270 + verticalScale(20),
+      top: 120 + moderateScale(8),
+      bottom: 270 + moderateScale(28),
     });
   });
 
-  it('keeps the old gaps when no overlay space is given', () => {
+  it('keeps the own gaps when no overlay space is given', () => {
     renderQueue();
 
     expect(contentPadding()).toEqual({
-      top: verticalScale(8),
-      bottom: verticalScale(20),
+      top: moderateScale(8),
+      bottom: moderateScale(28),
     });
   });
 });
-// @ai-end
 
-// @ai TECH_DEBT #262: the row of an upload that is tagged to a catalog
-// reciter shows the reciter photo, as the mini player does.
+// TECH_DEBT #262: the row of an upload that is tagged to a catalog reciter
+// shows the reciter photo, as the mini player does.
 describe('QueueList — the photo of an upload row (TECH_DEBT #262)', () => {
   it('gives ReciterImage the photo URL of a tagged upload', () => {
     const photo = 'https://example.test/reciters/zaynab-talha/photo.jpg?v=1';

@@ -1,11 +1,7 @@
 import React, {useState, useCallback, useMemo} from 'react';
 import {View, Text, FlatList} from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 import {SearchInput} from '@/components/SearchInput';
@@ -70,6 +66,8 @@ export default function DefaultReciterScreen() {
   );
 
   const renderItem = useCallback(
+    // @ai The results come from completeReciters, so no completeness check
+    // is needed here.
     ({item}: {item: Reciter}) => (
       <ReciterItem
         item={item}
@@ -139,6 +137,8 @@ export default function DefaultReciterScreen() {
               {t('defaultReciter.noResults')}
             </Text>
           }
+          // @ai The first tap on a result selects it, not only closes the
+          // keyboard.
           keyboardShouldPersistTaps="handled"
         />
       </View>

@@ -10,7 +10,7 @@ import {
 import {GlassView} from 'expo-glass-effect';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {FrostedView} from '@/components/FrostedView';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {usePlayerStore} from '@/services/player/store/playerStore';
@@ -27,6 +27,9 @@ import Color from 'color';
 // @ai-start
 import {localizeDigits} from '@/i18n/format';
 import {useTranslation} from 'react-i18next'; // Qariah: the control labels
+import {usePlayerA11y} from '@/hooks/usePlayerA11y'; // @ai
+import {nativeMenusAvailable} from '@/components/native/nativeMenus';
+import {PlaybackSpeedMenu, SleepTimerMenu} from '../../ListeningMenus';
 // @ai-end
 
 interface ControlButtonsProps {
@@ -41,13 +44,13 @@ interface ControlButtonsProps {
   followAlongAvailable: boolean;
 }
 
-interface Styles {
+type Styles = {
   wrapper: ViewStyle;
   button: ViewStyle;
   glassButton: ViewStyle;
   glassButtonInner: ViewStyle;
   speedButtonText: TextStyle;
-}
+};
 
 // @ai-start
 export const ControlButtons: React.FC<ControlButtonsProps> = ({
@@ -63,6 +66,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 }) => {
   const {theme} = useTheme();
   const {t} = useTranslation(['common', 'qariah', 'reader', 'sheets']); // Qariah: the control labels
+  const a11y = usePlayerA11y(); // @ai
   const glassColorScheme = useGlassColorScheme();
   const {updateSettings} = usePlayerActions();
   const playbackRate = usePlayerStore(s => s.playback.rate);
@@ -118,6 +122,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
         <PillWrapper style={styles.glassButton} {...pillProps}>
           <Pressable
             onPress={handleMushafLayoutPress}
+            {...a11y.displayOptions}
             accessibilityRole="button" // @ai
             accessibilityLabel={t('reader:mushaf.settings')} // @ai
             testID="player-mushaf-settings" // @ai
@@ -131,29 +136,36 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
         </PillWrapper>
       )}
 
-      <Pressable
-        onPress={onSpeedPress}
-        accessibilityRole="button" // @ai
-        accessibilityLabel={t('sheets:playbackSpeed.title')} // @ai
-        accessibilityValue={{text: localizeDigits(`${playbackRate}x`)}} // @ai
-        testID="player-speed" // @ai
-        style={[
-          styles.button,
-          playbackRate !== 1 && {backgroundColor: activeBackgroundColor},
-        ]}>
-        <Text
+      {/* @ai-start */}
+      <PlaybackSpeedMenu
+        accessibilityLabel={a11y.speed(playbackRate).accessibilityLabel}>
+        <Pressable
+          onPress={nativeMenusAvailable ? undefined : onSpeedPress}
+          {...a11y.speed(playbackRate)}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('sheets:playbackSpeed.title')} // @ai
+          accessibilityValue={{text: localizeDigits(`${playbackRate}x`)}} // @ai
+          testID="player-speed" // @ai
           style={[
-            styles.speedButtonText,
-            {
-              color: playbackRate !== 1 ? activeIconColor : defaultIconColor,
-            },
+            styles.button,
+            playbackRate !== 1 && {backgroundColor: activeBackgroundColor},
           ]}>
-          {localizeDigits(`${playbackRate}x`)}
-        </Text>
-      </Pressable>
+          <Text
+            style={[
+              styles.speedButtonText,
+              {
+                color: playbackRate !== 1 ? activeIconColor : defaultIconColor,
+              },
+            ]}>
+            {localizeDigits(`${playbackRate}x`)}
+          </Text>
+        </Pressable>
+      </PlaybackSpeedMenu>
+      {/* @ai-end */}
 
       <Pressable
         onPress={handleRepeatPress}
+        {...a11y.repeat(settings.repeatMode)}
         accessibilityRole="button" // @ai
         accessibilityLabel={t('sheets:verseActions.repeat')} // @ai
         accessibilityValue={{text: repeatModeLabel}} // @ai
@@ -178,26 +190,35 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
         )}
       </Pressable>
 
-      <Pressable
-        onPress={onSleepTimerPress}
-        accessibilityRole="button" // @ai
-        accessibilityLabel={t('sheets:sleepTimer.title')} // @ai
-        accessibilityState={{selected: isTimerActive}} // @ai
-        testID="player-sleep-timer" // @ai
-        style={[
-          styles.button,
-          isTimerActive && {backgroundColor: activeBackgroundColor},
-        ]}>
-        <TimerIcon
-          color={isTimerActive ? activeIconColor : defaultIconColor}
-          size={moderateScale(20)}
-          filled={!!isTimerActive}
-        />
-      </Pressable>
+      {/* @ai-start */}
+      <SleepTimerMenu
+        accessibilityLabel={
+          a11y.sleepTimer(!!isTimerActive).accessibilityLabel
+        }>
+        <Pressable
+          onPress={nativeMenusAvailable ? undefined : onSleepTimerPress}
+          {...a11y.sleepTimer(!!isTimerActive)}
+          accessibilityRole="button" // @ai
+          accessibilityLabel={t('sheets:sleepTimer.title')} // @ai
+          accessibilityState={{selected: isTimerActive}} // @ai
+          testID="player-sleep-timer" // @ai
+          style={[
+            styles.button,
+            isTimerActive && {backgroundColor: activeBackgroundColor},
+          ]}>
+          <TimerIcon
+            color={isTimerActive ? activeIconColor : defaultIconColor}
+            size={moderateScale(20)}
+            filled={!!isTimerActive}
+          />
+        </Pressable>
+      </SleepTimerMenu>
+      {/* @ai-end */}
 
       {onAmbientPress && (
         <Pressable
           onPress={onAmbientPress}
+          {...a11y.ambient(ambientEnabled)}
           accessibilityRole="button" // @ai
           accessibilityLabel={t('sheets:ambient.title')} // @ai
           accessibilityState={{selected: ambientEnabled}} // @ai
@@ -216,6 +237,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
 
       <Pressable
         onPress={onFollowAlongPress}
+        {...a11y.followAlong(followAlongAvailable && followAlongActive)}
         accessibilityRole="button" // @ai
         accessibilityLabel={t('sheets:followAlong.title')} // @ai
         accessibilityState={{selected: followAlongOn}} // @ai
@@ -241,6 +263,7 @@ export const ControlButtons: React.FC<ControlButtonsProps> = ({
         {/* @ai TECH_DEBT #258: a testID and a label for device tests and screen readers. */}
         <Pressable
           onPress={onQueuePress}
+          {...a11y.queue(false)}
           style={styles.glassButtonInner}
           testID="player-queue-button"
           accessibilityRole="button"

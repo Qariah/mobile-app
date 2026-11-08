@@ -2,8 +2,8 @@
 
 **Women reciters of the Qur'an — a recitation app for iOS and Android.**
 
-[![React Native](https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react)](https://reactnative.dev)
-[![Expo](https://img.shields.io/badge/Expo_SDK-57-000020?logo=expo)](https://expo.dev)
+[![React Native](https://img.shields.io/badge/React_Native-0.88-61DAFB?logo=react)](https://reactnative.dev)
+[![Expo](https://img.shields.io/badge/Expo_SDK-58-000020?logo=expo)](https://expo.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
@@ -77,7 +77,7 @@ keys. Signing in (Quran Foundation OAuth) only adds optional cross-device sync.
 
 | Layer | Technology |
 | --- | --- |
-| Runtime | React 19 + React Native 0.86 + Expo SDK 57 |
+| Runtime | React 19 + React Native 0.88 + Expo SDK 58 |
 | Language | TypeScript 6.0 (strict) |
 | Navigation | Expo Router (file-based) |
 | Audio | expo-audio (background playback) |

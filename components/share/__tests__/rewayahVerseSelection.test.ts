@@ -659,6 +659,43 @@ describe('text formats', () => {
     ).toBe('T');
   });
 
+  it('gives each translation as plain text: no footnote marker, no HTML (#730)', () => {
+    // A bundled translation is stored with its footnote markers as HTML:
+    // Saheeh International 2:1 and 2:2, and the Clear Quran 1:2 (an unquoted
+    // attribute). The clipboard and a shared message take plain text.
+    const stored: Record<string, string> = {
+      '2:1': 'Alif, Lām, Meem.<sup foot_note="226406">1</sup>',
+      '2:2':
+        'This is the Book about which there is no doubt, a guidance for those conscious of Allāh<sup foot_note="226407">1</sup> -',
+      '1:2':
+        'All praise is for Allah—Lord of all worlds,<sup foot_note=76373>1</sup>',
+    };
+    const text = joinTranslationParts(
+      [
+        {hafsKey: '2:1', note: null},
+        {hafsKey: '2:2', note: 'note'},
+        {hafsKey: '1:2', note: null},
+      ],
+      k => stored[k],
+    );
+    expect(text).toBe(
+      [
+        'Alif, Lām, Meem.',
+        'This is the Book about which there is no doubt, a guidance for those conscious of Allāh -',
+        'note',
+        'All praise is for Allah—Lord of all worlds,',
+      ].join('\n'),
+    );
+    expect(text).not.toMatch(/[<>]/);
+    // A translation that is only a marker counts as missing, with its note.
+    expect(
+      joinTranslationParts(
+        [{hafsKey: '2:1', note: 'note'}],
+        () => '<sup>1</sup>',
+      ),
+    ).toBe('');
+  });
+
   it('notes a divided Hafs verse for tafsir too', () => {
     const part = models.warsh.translationParts(
       models.warsh.unitByKey('1:6')!,

@@ -1,6 +1,7 @@
 import {create} from 'zustand';
 import {persist} from 'zustand/middleware';
 import {Track} from '@/types/audio';
+import {shuffleArray} from '@/utils/arrayUtils'; // @ai
 import {
   UnifiedPlayerState,
   PlaybackState,
@@ -13,6 +14,7 @@ import {
 import {createDefaultUnifiedPlayerState} from './validation';
 import {diagBreadcrumb} from '@/services/diagnostics/diagnostics';
 import {notePlaybackAutoPlayLoad} from '@/services/diagnostics/playbackHealth';
+import {computeQueueRemoval} from './queueRemoval'; // @ai
 import {expoAudioService} from '@/services/audio/ExpoAudioService';
 import {audioCoordinator} from '@/services/audio/AudioCoordinator';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
@@ -62,6 +64,8 @@ export interface PlayerStoreState extends Omit<UnifiedPlayerState, 'ui'> {
   addToQueue: (tracks: Track[]) => Promise<void>;
   removeFromQueue: (indices: number[]) => Promise<void>;
   moveInQueue: (fromIndex: number, toIndex: number) => Promise<void>;
+  /** Shuffles the tracks after the current one, leaving it playing. @ai */
+  shuffleUpNext: () => void;
 
   // Settings Actions
   setRepeatMode: (mode: PlaybackSettings['repeatMode']) => void;
@@ -81,7 +85,7 @@ export interface PlayerStoreState extends Omit<UnifiedPlayerState, 'ui'> {
 }
 
 // Monotonic id for the in-flight play operation. Every loadTrackAtIndex()
-// claims a fresh id at entry; cleanup() bumps it via invalidatePlayOps().
+// claims a fresh id at entry; cleanup() bumps it via pauseForEmptyQueue().
 // Without this, two overlapping loads both run to completion: a second tap (a
 // rapid skip, or re-queueing while the first load is still awaiting the
 // network) starts its own load, then the OLDER one's play() lands after the
@@ -802,67 +806,51 @@ export const usePlayerStore = create<PlayerStoreState>()(
             loading: {...state.loading, queueLoading: true},
           }));
 
-          const sortedIndices = [...indices].sort((a, b) => b - a);
-          const state = get();
-          const tracks = [...state.queue.tracks];
-          let newCurrentIndex = state.queue.currentIndex;
+          const {queue, playback} = get();
+          const {tracks, index, outcome} = computeQueueRemoval(queue, indices);
           // @ai Read the autoplay intent before the reload (#237): only autoplaying loads write 'loading'.
-          const autoPlay =
-            state.playback.state === 'playing' ||
-            state.playback.state === 'loading';
-          // @ai The outcome of the reload, or null when nothing reloaded.
-          let reloaded: 'loaded' | 'played' | null = null;
-
-          for (const index of sortedIndices) {
-            if (index >= 0 && index < tracks.length) {
-              tracks.splice(index, 1);
-
-              // Adjust currentIndex
-              if (index < newCurrentIndex) {
-                newCurrentIndex--;
-              } else if (index === newCurrentIndex) {
-                // Current track was removed - load next or previous
-                if (newCurrentIndex >= tracks.length) {
-                  newCurrentIndex = tracks.length - 1;
-                }
-                if (tracks.length > 0) {
-                  const stillCurrent = await loadTrackAtIndex(
-                    tracks,
-                    newCurrentIndex,
-                    0,
-                    autoPlay,
-                  );
-                  // Superseded by cleanup()/a newer load — bail before the
-                  // trailing set() below re-writes queue.tracks (that would
-                  // resurrect the queue the superseding action replaced).
-                  if (!stillCurrent) return;
-                  reloaded = stillCurrent; // @ai
-                }
-              }
-            }
-          }
-
-          // @ai The removal left no track: stop the audio before the empty-queue write.
-          const emptied = tracks.length === 0 && state.queue.tracks.length > 0;
-          if (emptied) {
-            const opId = await pauseForEmptyQueue();
-            if (opId !== playOpId) return; // a newer load owns the queue
-          }
+          const autoPlay = ['playing', 'loading'].includes(playback.state);
 
           // @ai The state that this op settles, or null when another op owns the state.
           let settled: StorePlaybackState | null = null;
-          if (emptied) settled = 'paused';
-          else if (reloaded)
-            settled = autoPlay
-              ? settledAfterAutoPlay(reloaded, get().playback.state)
-              : 'ready';
+          let stillCurrent = true;
+          switch (outcome) {
+            case 'currentUnchanged':
+              break;
+            case 'newCurrent': {
+              const reloaded = await loadTrackAtIndex(
+                tracks,
+                index,
+                0,
+                autoPlay,
+              );
+              stillCurrent = reloaded !== false;
+              if (reloaded)
+                settled = autoPlay
+                  ? settledAfterAutoPlay(reloaded, get().playback.state)
+                  : 'ready';
+              break;
+            }
+            case 'emptied': {
+              // @ai The removal left no track: stop the audio before the empty-queue write.
+              const opId = await pauseForEmptyQueue();
+              stillCurrent = opId === playOpId; // a newer load owns the queue
+              settled = 'paused';
+              break;
+            }
+          }
+          // Superseded by cleanup()/a newer load: the newer queue stands.
+          if (!stillCurrent) return;
 
+          // @ai Re-read the queue after the await. addToQueue() appends, so
+          // a track queued during the reload is past the old end: keep it.
+          const added = get().queue.tracks.slice(queue.tracks.length);
           set(state => ({
             queue: {
               ...state.queue,
-              tracks,
-              total: tracks.length,
-              currentIndex: Math.max(0, newCurrentIndex),
+              tracks: [...tracks, ...added],
+              total: tracks.length + added.length,
+              currentIndex: index,
             },
             loading: {
               ...state.loading,
@@ -935,6 +923,23 @@ export const usePlayerStore = create<PlayerStoreState>()(
           }
         }
       },
+
+      // @ai-start
+      shuffleUpNext: () => {
+        set(state => {
+          const {tracks, currentIndex} = state.queue;
+          return {
+            queue: {
+              ...state.queue,
+              tracks: [
+                ...tracks.slice(0, currentIndex + 1),
+                ...shuffleArray(tracks.slice(currentIndex + 1)),
+              ],
+            },
+          };
+        });
+      },
+      // @ai-end
 
       setRepeatMode: (mode: PlaybackSettings['repeatMode']) => {
         // Just update store state - expo-audio doesn't have native repeat mode
@@ -1087,7 +1092,9 @@ export const usePlayerStore = create<PlayerStoreState>()(
       cleanup: async () => {
         // In-flight loads must not play()/write state into a cleaned service.
         // @ai Then pause the native player before the reset empties the queue (TECH_DEBT #235).
-        await pauseForEmptyQueue();
+        // A load that starts during the pause is ended too.
+        const opId = await pauseForEmptyQueue();
+        if (opId !== playOpId) invalidatePlayOps();
         const state = get();
         if (
           typeof state.settings.sleepTimerInterval === 'object' &&

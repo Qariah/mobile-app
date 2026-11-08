@@ -285,7 +285,10 @@ describe('an Android build', () => {
     it(`names each missing font of a .${kind}`, () => {
       withTemp(dir => {
         const file = path.join(dir, `app.${kind}`);
-        writeZip(file, androidBuild(kind, ['DigitalKhattFont.otf']));
+        writeZip(
+          file,
+          androidBuild(kind, ['DigitalKhattFont.otf', 'surah_names.ttf']),
+        );
         const result = checkWidgetFonts(file);
         assert.equal(result.ok, false);
         assert.deepEqual(result.missing, ['ScheherazadeNew-Regular.ttf']);
@@ -308,17 +311,20 @@ describe('an Android build', () => {
         );
       });
     });
-    it(`does not need surah_names.ttf in a .${kind} (no Android widget code loads it)`, () => {
+    // Pass D: upstream's Android widgets draw the surah name glyph (#467).
+    it(`needs surah_names.ttf in a .${kind} (ArabicBitmap.kt loads it)`, () => {
       withTemp(dir => {
         const file = path.join(dir, `app.${kind}`);
-        writeZip(file, androidBuild(kind));
-        assert.equal(checkWidgetFonts(file).ok, true);
-        // The copy is harmless, and it does not change the result.
         writeZip(
           file,
-          androidBuild(kind, [...ANDROID_FONT_FILES, 'surah_names.ttf']),
+          androidBuild(
+            kind,
+            ANDROID_FONT_FILES.filter(font => font !== 'surah_names.ttf'),
+          ),
         );
-        assert.equal(checkWidgetFonts(file).ok, true);
+        const result = checkWidgetFonts(file);
+        assert.equal(result.ok, false);
+        assert.deepEqual(result.missing, ['surah_names.ttf']);
       });
     });
     it(`skips a .${kind} that has no widget module, even with no font`, () => {
@@ -640,8 +646,6 @@ describe('the font list matches the rest of the repository', () => {
       }
     }
     assert.deepEqual([...loaded].sort(), [...ANDROID_FONT_FILES].sort());
-    // surah_names.ttf is copied into the Android assets, but no Kotlin file loads it.
-    assert.equal(loaded.has('surah_names.ttf'), false);
   });
   it('lists only Android fonts that sync-widget-fonts.js copies', () => {
     const android = destinations

@@ -43,12 +43,11 @@ const ALLOWED: Record<string, string> = {
   // qcf/QCFPage.tsx). The reader rarely loads in landscape, so we accept it.
   'components/mushaf/constants.ts':
     'snapshot paddings in ReadingPageView and QCFPage; accepted',
-  // The horizontal paged FlatList has no key: with a live width, a turn shows
-  // a page between two (and Play All dispatches swipedTo).
-  'app/(tabs)/(a.home)/adhkar/[superId]/[dhikrId].tsx':
-    'hidden in Qariah (adhkar: false); upstream fix needs the orientation key remount (CLAUDE.md RN gotchas)',
-  'app/(tabs)/(a.home)/adhkar/saved/[dhikrId].tsx':
-    'hidden in Qariah (adhkar: false); upstream fix needs the orientation key remount (CLAUDE.md RN gotchas)',
+  // Pass D: upstream's scale reads the window once, as react-native-size-matters
+  // did, so sizes do not change on a rotation (its own comment says so).
+  'utils/scale.ts': 'upstream: the scale base is fixed at startup, by design',
+  // Pass D: upstream sized the adhkar pagers from their container (#423), so
+  // the two adhkar reader files left this list.
 };
 
 const NEW_READ_HELP =

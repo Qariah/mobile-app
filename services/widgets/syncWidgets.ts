@@ -10,6 +10,7 @@ import {
   addWidgetCommandListener,
   takeQueuedCommands,
   selectFreshCommands,
+  markCommandsHandled,
   WidgetKind,
   WidgetSnapshot,
 } from 'bayaan-widgets';
@@ -17,6 +18,8 @@ import {usePlayerStore} from '@/services/player/store/playerStore';
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
 import {useReciterStore} from '@/store/reciterStore';
 import {useThemeStore} from '@/store/themeStore';
+import {digitalKhattDataService} from '@/services/mushaf/DigitalKhattDataService'; // @ai
+import {useAdhkarSessionStore} from '@/store/adhkarSessionStore'; // @ai
 import {getReciterByIdSync} from '@/services/dataService';
 import {getReciterArtwork} from '@/utils/artworkUtils';
 import {
@@ -145,7 +148,10 @@ export function flushWidgetSnapshot(forceContinueListening = false): void {
       forceContinueListening && !changed.includes('ContinueListening')
         ? [...changed, 'ContinueListening' as const]
         : changed;
-    if (kinds.length === 0) return;
+    // Adhkar playback has no WidgetKind; the content sync reloads its widgets. // @ai
+    const adhkarChanged = // @ai
+      JSON.stringify(prev?.adhkar ?? null) !== JSON.stringify(next.adhkar); // @ai
+    if (kinds.length === 0 && !adhkarChanged) return; // @ai
     writeSnapshot(next);
     reloadWidgets(enabledKinds(kinds));
     lastSnapshot = next;
@@ -192,13 +198,17 @@ export async function drainWidgetCommands(): Promise<void> {
   }
   draining = true;
   let handled = 0;
+  let takenThrough = 0; // @ai
   try {
     do {
       redrainRequested = false;
-      for (const command of selectFreshCommands(
-        takeQueuedCommands(),
-        Date.now(),
-      )) {
+      // @ai-start
+      const taken = takeQueuedCommands();
+      for (const q of taken) {
+        takenThrough = Math.max(takenThrough, q.enqueuedAt);
+      }
+      for (const command of selectFreshCommands(taken, Date.now())) {
+        // @ai-end
         handled += 1;
         try {
           await handleWidgetCommand(command);
@@ -209,6 +219,10 @@ export async function drainWidgetCommands(): Promise<void> {
     } while (redrainRequested);
   } finally {
     draining = false;
+    // @ai-start
+    // Stale commands count too: their intents are waiting all the same.
+    if (takenThrough > 0) markCommandsHandled(takenThrough);
+    // @ai-end
   }
   if (handled > 0) flushWidgetSnapshot(true);
 }
@@ -232,6 +246,10 @@ export function startWidgetSync(): () => void {
     useRecentlyPlayedStore.subscribe(schedule),
     useReciterStore.subscribe(schedule),
     useThemeStore.subscribe(schedule),
+    // @ai Qariah (RFC-023 step 1): the Mushaf data loads after the splash, so
+    // the first snapshot can have no verse text. Run again when it is ready.
+    digitalKhattDataService.subscribeCacheChanges(schedule),
+    useAdhkarSessionStore.subscribe(schedule), // @ai
   ];
   const appState = AppState.addEventListener('change', state => {
     if (state === 'background') flushWidgetSnapshot();

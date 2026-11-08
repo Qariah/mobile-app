@@ -39,7 +39,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {useTheme} from '@/hooks/useTheme';
 import branding from '@/config/branding';

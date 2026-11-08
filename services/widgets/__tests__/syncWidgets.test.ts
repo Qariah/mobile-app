@@ -7,6 +7,7 @@ jest.mock('@/config/nativeWidgets.config', () =>
 
 const mockTakeQueuedCommands = jest.fn<QueuedWidgetCommand[], []>();
 const mockHandleWidgetCommand = jest.fn<Promise<void>, [WidgetCommand]>();
+const mockMarkCommandsHandled = jest.fn<void, [number]>(); // @ai
 
 const mockCachedFiles = new Set<string>();
 const mockWriteSnapshot = jest.fn();
@@ -38,6 +39,7 @@ jest.mock('bayaan-widgets', () => ({
   hasArtwork: (f: string) => mockCachedFiles.has(f),
   addWidgetCommandListener: jest.fn(() => ({remove: mockCommandRemove})),
   takeQueuedCommands: () => mockTakeQueuedCommands(),
+  markCommandsHandled: (through: number) => mockMarkCommandsHandled(through), // @ai
   selectFreshCommands: (queued: QueuedWidgetCommand[]) =>
     queued.map(q => q.command),
 }));
@@ -73,6 +75,16 @@ jest.mock('@/store/reciterStore', () => ({
 }));
 jest.mock('@/store/themeStore', () => ({
   useThemeStore: {subscribe: (cb: () => void) => mockSubscribe(cb)},
+}));
+const mockDkSubscribe = jest.fn((cb: () => void) => {
+  mockDkListeners.push(cb);
+  return () => undefined;
+});
+const mockDkListeners: (() => void)[] = [];
+jest.mock('@/services/mushaf/DigitalKhattDataService', () => ({
+  digitalKhattDataService: {
+    subscribeCacheChanges: (cb: () => void) => mockDkSubscribe(cb),
+  },
 }));
 jest.mock('@/services/dataService', () => ({
   getReciterByIdSync: (id: string) => mockReciterById(id),
@@ -129,6 +141,7 @@ describe('drainWidgetCommands', () => {
     mockTakeQueuedCommands.mockReturnValue([]);
     mockHandleWidgetCommand.mockReset();
     mockHandleWidgetCommand.mockResolvedValue(undefined);
+    mockMarkCommandsHandled.mockReset(); // @ai
     mockWriteSnapshot.mockReset();
     mockReloadWidgets.mockReset();
     mockChangedKinds.mockReset();
@@ -227,6 +240,36 @@ describe('drainWidgetCommands', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
+  // @ai-start
+  it('marks commands handled through the newest taken, after handling', async () => {
+    const sync = loadModule();
+    sync.markSessionRestoredForWidgets();
+    sync.markPlayerReadyForWidgets();
+    await flush();
+    mockHandleWidgetCommand.mockImplementation(async () => {
+      expect(mockMarkCommandsHandled).not.toHaveBeenCalled();
+    });
+    mockTakeQueuedCommands
+      .mockReturnValueOnce([
+        {command: toggle, enqueuedAt: 300},
+        {command: playReciter, enqueuedAt: 100},
+      ])
+      .mockReturnValue([]);
+    await sync.drainWidgetCommands();
+    expect(mockMarkCommandsHandled).toHaveBeenCalledTimes(1);
+    expect(mockMarkCommandsHandled).toHaveBeenCalledWith(300);
+  });
+
+  it('does not mark anything when the queue was empty', async () => {
+    const sync = loadModule();
+    sync.markSessionRestoredForWidgets();
+    sync.markPlayerReadyForWidgets();
+    await flush();
+    await sync.drainWidgetCommands();
+    expect(mockMarkCommandsHandled).not.toHaveBeenCalled();
+  });
+  // @ai-end
+
   it('never runs two drains concurrently and re-drains without dropping commands', async () => {
     const sync = loadModule();
     sync.markSessionRestoredForWidgets();
@@ -310,6 +353,24 @@ describe('widget snapshot flush', () => {
     jest.advanceTimersByTime(1000);
     expect(mockWriteSnapshot).toHaveBeenCalledTimes(1);
     expect(mockReloadWidgets).toHaveBeenCalledWith(['ContinueListening']);
+    stop();
+  });
+
+  // RFC-023 step 1: the Mushaf data loads after the splash, and no store
+  // changes when it is ready. Without this run, the widget has no verse text.
+  it('writes again when the Mushaf data is ready', () => {
+    mockDkListeners.length = 0;
+    const sync = loadModule();
+    const stop = sync.startWidgetSync();
+    jest.advanceTimersByTime(1000);
+    expect(mockCollect).toHaveBeenCalledTimes(1);
+    expect(mockWriteSnapshot).toHaveBeenCalledTimes(1);
+
+    expect(mockDkListeners).toHaveLength(1);
+    mockDkListeners[0]();
+    jest.advanceTimersByTime(1000);
+    expect(mockCollect).toHaveBeenCalledTimes(2);
+    expect(mockWriteSnapshot).toHaveBeenCalledTimes(2);
     stop();
   });
 

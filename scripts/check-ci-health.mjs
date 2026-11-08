@@ -40,7 +40,7 @@
 // run them again. The TRUNK gate (`adopt.trunkWorkflow`, main-check.yml) runs
 // them on the qariah-main head, and its newest run is the state of qariah-main.
 // It fails when that run failed. It is silent when it has no completed run on
-// qariah-main, or when its newest run is more than 24 h older than the newest
+// qariah-main, or when its newest run is more than 36 h older than the newest
 // qariah-main commit. A gate is "not checked" when a read fails or its first
 // run is still in progress. Draft-PR runs never count: a draft's failure
 // belongs to that PR.
@@ -211,7 +211,8 @@ function classify(wf, runs, {staleDays}) {
 const RELEASE_LINE_WINDOW_DAYS = 14;
 // The trunk gate is stale when its newest run is this much older than the
 // newest commit on qariah-main: the gate stopped checking new commits.
-const TRUNK_STALE_HOURS = 24;
+// Main check runs once a day, and GitHub can start a scheduled run hours late.
+const TRUNK_STALE_HOURS = 36;
 
 // Push runs of a required gate. The trunk gate reads the runs of every event:
 // they are scheduled or started by hand.

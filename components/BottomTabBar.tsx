@@ -1,7 +1,7 @@
 import React, {useCallback, useMemo} from 'react';
 import {View, Pressable, Text, StyleSheet} from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {
   HeadphonesIcon,
   QuranIcon,
@@ -10,8 +10,7 @@ import {
   SettingsIcon,
 } from '@/components/Icons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {CommonActions} from 'expo-router/build/react-navigation/routers';
-import {BottomTabBarProps} from 'expo-router/build/react-navigation/bottom-tabs';
+import type {BottomTabBarProps} from 'expo-router/js-tabs';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
 import {
@@ -99,7 +98,8 @@ const TabItem = React.memo(function TabItem({
 const BottomTabBar: React.FC<BottomTabBarProps> = ({
   state,
   descriptors,
-  navigation,
+  emitter,
+  navigateToTab,
 }) => {
   const {theme} = useTheme();
   const glassColorScheme = useGlassColorScheme();
@@ -130,19 +130,17 @@ const BottomTabBar: React.FC<BottomTabBarProps> = ({
   const handleTabPress = useCallback(
     (route: (typeof state.routes)[number], index: number) => {
       const isFocused = state.index === index;
-      const event = navigation.emit({
+      const event = emitter.emit({
         type: 'tabPress',
         target: route.key,
         canPreventDefault: true,
       });
 
       if (!isFocused && !event.defaultPrevented) {
-        navigation.dispatch(
-          CommonActions.navigate({name: route.name, merge: true}),
-        );
+        navigateToTab(route.key);
       }
     },
-    [state.index, navigation],
+    [state.index, emitter, navigateToTab],
   );
 
   const Container = USE_GLASS ? GlassView : FrostedView;

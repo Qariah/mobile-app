@@ -20,9 +20,13 @@ data class WidgetSnapshot(
   val nowPlaying: WidgetNowPlaying?, val upNext: List<WidgetTrack>, val recent: List<WidgetTrack>,
   val defaultReciter: WidgetReciter?, val reciterRecents: Map<String, List<WidgetTrack>>,
   val lastRead: WidgetLastRead?, val tasbeeh: Map<String, WidgetTasbeehEntry>,
+  val adhkar: WidgetAdhkarPlayback? = null, // @ai
   // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage); null in an older app's snapshot.
   val language: String? = null,
 )
+
+/** The adhkar player's state (its own player, not nowPlaying); written since #454. */ // @ai
+data class WidgetAdhkarPlayback(val superId: String, val dhikrId: String, val isPlaying: Boolean) // @ai
 
 object SnapshotModels {
   const val VERSION = 1
@@ -56,6 +60,11 @@ object SnapshotModels {
         WidgetLastRead(it.getInt("page"), it.getInt("surahId"), it.getString("surahName"),
           it.getInt("juz"), it.getString("openingText"))
       }
+      // @ai-start
+      val ad = if (!o.has("adhkar") || o.isNull("adhkar")) null else o.getJSONObject("adhkar").let {
+        WidgetAdhkarPlayback(it.getString("superId"), it.getString("dhikrId"), it.getBoolean("isPlaying"))
+      }
+      // @ai-end
       val rr = o.getJSONObject("reciterRecents")
       val tb = o.getJSONObject("tasbeeh")
       WidgetSnapshot(
@@ -65,7 +74,8 @@ object SnapshotModels {
         tb.keys().asSequence().associateWith { k ->
           tb.getJSONObject(k).let { WidgetTasbeehEntry(it.getInt("count"), it.getInt("target"), it.getString("day")) }
         },
-        o.optStringOrNull("language"),
+        ad, // @ai
+        o.optStringOrNull("language"), // @ai Qariah (TECH_DEBT #357)
       )
     }
   } catch (e: Exception) { null }

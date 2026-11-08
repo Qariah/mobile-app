@@ -56,7 +56,20 @@
     "reciters": "القارئات",
     "surahs": "السور",
     "shuffle": "تشغيل عشوائي",
-    "finding": "جارٍ البحث عن تلاوات عشوائية لقارئات مختلفات…"
+    "finding": "جارٍ البحث عن تلاوات عشوائية لقارئات مختلفات…",
+    "reciterCount_zero": "لا توجد قارئات",
+    "reciterCount_one": "قارئة واحدة",
+    "reciterCount_two": "قارئتان",
+    "reciterCount_few": "{{count}} قارئات",
+    "reciterCount_many": "{{count}} قارئة",
+    "reciterCount_other": "{{count}} قارئة",
+    "surahCount_zero": "لا توجد سور",
+    "surahCount_one": "سورة واحدة",
+    "surahCount_two": "سورتان",
+    "surahCount_few": "{{count}} سور",
+    "surahCount_many": "{{count}} سورة",
+    "surahCount_other": "{{count}} سورة",
+    "shuffleCaption": "تلاوة عشوائية"
   },
   "recent": {
     "justNow": "الآن",
@@ -411,6 +424,12 @@
       "recitationsBody": "يعرض صف «التلاوات المضافة حديثًا» في تبويب الاستماع الآن أحدث التلاوات: السورة، والقارئة، ونطاق الآيات في التلاوة الجزئية.",
       "feedbackTitle": "شاركنا رأيك",
       "feedbackBody": "هل وجدت مشكلة أو لديك فكرة؟ أرسل إلينا ملاحظاتك في أي وقت من الإعدادات › الملاحظات › المساعدة والدعم."
+    },
+    "release_3_2_5": {
+      "ipadTitle": "تطبيق قارئة على iPad",
+      "ipadBody": "تخطيط مصمَّم للشاشة الأكبر: «مكتبتي» في شريط جانبي، و«الإعدادات» في عمودين، والمشغّل بعرض مقسّم. اقرأ التفسير والتدبّرات وملاحظاتك بجانب صفحة المصحف.",
+      "fixesTitle": "إصلاحات على iPhone",
+      "fixesBody": "يُصلح هذا التحديث تجمّد التطبيق عند بدء تشغيل تلاوة، وإغلاقًا مفاجئًا في شاشة قراءة القرآن."
     }
   },
   "counts": {
@@ -476,9 +495,33 @@
       "body": "التطبيق بالعربية، وأدوات مصغّرة للشاشة الرئيسية، وتلاوات جديدة. اضغط لمعرفة الجديد."
     }
   },
+  "lite": {
+    "settingsTitle": "الوضع الخفيف",
+    "current": "الآن: {{value}}",
+    "autoOnForPhone": "تلقائي (مفعّل لهذا الهاتف)",
+    "autoOffForPhone": "تلقائي (معطّل لهذا الهاتف)",
+    "auto": "تلقائي",
+    "on": "مفعّل",
+    "off": "معطّل",
+    "chooserBody": "يحتفظ الوضع الخفيف بالاستماع والتنزيلات والمصحف، ويجعل الشاشات أبسط وأسرع على الهواتف ذات الذاكرة الأقل. يُطبَّق اختيارك عند فتح التطبيق في المرة القادمة.",
+    "showText": "إظهار النص",
+    "textHidden": "يُخفي الوضع الخفيف نص الآيات لتبقى التلاوة سلسة."
+  },
+  "mushafLoading": {
+    "text": "جارٍ تجهيز المصحف. قد يستغرق ذلك بضع ثوانٍ."
+  },
   "mushafSettings": {
     "arabicOnly": "النص العربي فقط",
     "arabicOnlyPageView": "The Mushaf view shows the Arabic text only. Choose List to see the translation."
+  },
+  "deepLink": {
+    "recitationUnavailableTitle": "التلاوة غير متاحة",
+    "recitationUnavailableBody": "هذه السورة غير متاحة لهذه القارئة."
+  },
+  "ayahPanel": {
+    "title": "الآية {{key}}",
+    "close": "إغلاق اللوحة",
+    "moreOptions": "خيارات إضافية للآية {{key}}"
   },
   "countries": {
     "DZ": "الجزائر",

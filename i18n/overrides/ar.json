@@ -55,6 +55,13 @@
       "reciters_many": "{{count}} قارئة",
       "reciters_other": "{{count}} قارئة"
     },
+    "keyboard": {
+      "findSurahOrReciter": "البحث عن سورة أو قارئة"
+    },
+    "language": {
+      "iosNote": "يحفظ iOS لغة تطبيق قارئة في الإعدادات. عند تغييرها هناك، يُعاد فتح التطبيق باللغة الجديدة.",
+      "iosSettingsMessage": "اضغط على «اللغة» في إعدادات تطبيق قارئة واختر لغة، وسيُعاد فتح التطبيق بها."
+    },
     "tabs": {
       "home": "الاستماع",
       "surahs": "المصحف"
@@ -69,13 +76,17 @@
       "recitersFound_two": "قارئتان مطابقتان للفلاتر الحالية",
       "recitersFound_few": "{{count}} قارئات مطابقات للفلاتر الحالية",
       "recitersFound_many": "{{count}} قارئة مطابقة للفلاتر الحالية",
-      "recitersFound_other": "{{count}} قارئة مطابقة للفلاتر الحالية"
+      "recitersFound_other": "{{count}} قارئة مطابقة للفلاتر الحالية",
+      "chooseReciterForSurah": "اختر قارئة · {{surah}}",
+      "reciterCount_zero": "لا توجد قارئات",
+      "reciterCount_one": "قارئة واحدة",
+      "reciterCount_two": "قارئتان",
+      "reciterCount_few": "{{count}} قارئات",
+      "reciterCount_many": "{{count}} قارئة",
+      "reciterCount_other": "{{count}} قارئة"
     },
     "search": {
       "placeholder": "ابحث عن سورة أو قارئة"
-    },
-    "randomHero": {
-      "finding": "جارٍ البحث عن تلاوات عشوائية لقارئات مختلفات…"
     },
     "browseAllHero": {
       "titles": {
@@ -103,6 +114,12 @@
     "reciterProfile": {
       "thisReciter": "هذه القارئة",
       "shareMessage": "استمع إلى {{name}} على تطبيق {{appName}}"
+    },
+    "a11y": {
+      "openReciter": "يفتح صفحة القارئة"
+    },
+    "panes": {
+      "reciters": "القارئات"
     }
   },
   "reader": {

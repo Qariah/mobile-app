@@ -1,9 +1,9 @@
 // @ai
 // Divergence batch C3 (SHT-S6): the Qariah parts of the Settings index moved
 // out of the inherited app/(tabs)/(d.settings)/index.tsx. These tests check
-// the moved helpers, and a source check makes sure that the upstream file
-// still uses each slot (an upstream sync that takes the file whole would drop
-// the Qariah rows without an error).
+// the moved helpers, and a source check makes sure that the inherited files
+// still use the seam (an upstream sync that takes a file whole would drop the
+// Qariah rows without an error).
 import {readFileSync} from 'fs';
 import {join} from 'path';
 import {Alert, Linking, Platform} from 'react-native';
@@ -94,7 +94,7 @@ describe('openSupportEmail (Sprint 32)', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('opens a mail with the English subject and the debug block', async () => {
-    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
 
     await openSupportEmail('support');
     await openSupportEmail('featureRequest');
@@ -129,17 +129,54 @@ describe('openSupportEmail (Sprint 32)', () => {
   });
 });
 
-describe('the inherited Settings index uses each Qariah slot', () => {
-  it.each([
-    'useQariahAccountSettings(qariahSlot)',
-    '{qariahAccount.section}',
-    '{qariahAccount.signOutSheet}',
-    '<DebugIdRow {...qariahSlot} />',
-    '...getBackgroundPlaybackSettingsItems(t)',
-    'handleQariahSettingPress(type)',
-    "openSupportEmail('support')",
-    "openSupportEmail('featureRequest')",
-  ])('%s', slot => {
-    expect(INDEX_SOURCE).toContain(slot);
+// Sprint 52 Task 5: the Qariah rows reach both Settings lists through the
+// seam in settingsItems.ts (`branding.useSettingsSections`, `openSettingsItem`,
+// `settingsRouteNames`, `settingsOverlayComponent`). An upstream sync that
+// takes one of these files whole would drop the Qariah rows without an error.
+const source = (...parts: string[]): string =>
+  readFileSync(join(__dirname, '..', '..', '..', ...parts), 'utf8');
+
+describe.each([
+  [
+    'app/(tabs)/(d.settings)/index.tsx',
+    INDEX_SOURCE,
+    [
+      'useSettingsSections(t)',
+      'await openSettingsItem(type,',
+      '.filter(s => s.leading).map(renderSection)',
+      '.filter(s => !s.leading).map(renderSection)',
+      'item.readOnly ?',
+      '<DebugIdRow {...qariahSlot} />',
+      '<ForkOverlay />',
+    ],
+  ],
+  [
+    'components/settings/TabletSettingsList.tsx',
+    source('components', 'settings', 'TabletSettingsList.tsx'),
+    [
+      'useSettingsSections(t)',
+      '.filter(s => s.leading).map(renderSection)',
+      '.filter(s => !s.leading).map(renderSection)',
+      'item.readOnly',
+      '<ForkOverlay />',
+    ],
+  ],
+  [
+    'app/(tabs)/(d.settings)/_layout.tsx',
+    source('app', '(tabs)', '(d.settings)', '_layout.tsx'),
+    ['branding.settingsRouteNames', 'FORK_PAGES.map', '<ForkOverlay />'],
+  ],
+  [
+    'components/settings/settingsItems.ts',
+    source('components', 'settings', 'settingsItems.ts'),
+    [
+      'branding.useSettingsSections',
+      'branding.openSettingsItem?.(type)',
+      '...branding.settingsRouteNames',
+    ],
+  ],
+])('%s uses the Qariah Settings seam', (_file, text, slots) => {
+  it.each(slots)('%s', slot => {
+    expect(text).toContain(slot);
   });
 });

@@ -11,18 +11,75 @@
 // the fraction that was last set. So the Android fraction follows the iOS rung:
 //   - iOS ACTIVE, day d  → Android at the rung of day d;
 //   - iOS COMPLETE       → Android completed (100%);
-//   - iOS PAUSED, INACTIVE, no phased release, any other state → Android holds.
+//   - iOS PAUSED, INACTIVE, no phased release, any other state → Android holds;
+//   - a newer iOS version is live → Android holds, whatever the state says.
 // The mirror only raises the fraction. It never lowers it, and it never changes
 // a halted, draft or completed release. A pause on iOS
 // (`node scripts/asc-phased-release.mjs pause`) therefore holds both platforms.
+//
+// Why the last rule: when Apple releases a newer version, it ends the phased
+// release of the older one, and that state then reads COMPLETE although the
+// older version never reached 100%. On 2026-11-08 at 02:20Z the release of the
+// iOS hotfix 3.2.4 turned the PAUSED 3.2.3 (day 6) into COMPLETE, and the mirror
+// moved Android vc3763 from 50% to completed (100%) with no owner decision.
 
 // Apple's fixed ladder, by day index (the same table as asc-phased-release.mjs).
 export const LADDER = [1, 2, 5, 10, 20, 50, 100];
 
+// App Store states of a version that is live, or that Apple is about to make
+// live. Both the old `appStoreState` and the new `appVersionState` names.
+const LIVE_STATES = new Set([
+  'READY_FOR_SALE',
+  'PROCESSING_FOR_APP_STORE',
+  'PENDING_APPLE_RELEASE',
+  'READY_FOR_DISTRIBUTION',
+  'PROCESSING_FOR_DISTRIBUTION',
+]);
+
+// Compare two dotted version strings as numbers ("3.2.10" > "3.2.9").
+export function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+// The newest iOS version that supersedes `tracked`, or null.
+// `versions` is a list of appStoreVersions attributes ({versionString,
+// appStoreState, appVersionState}). A newer version in a live state supersedes
+// the tracked one; so does a tracked state of REPLACED_WITH_NEW_VERSION.
+export function supersededBy(versions, tracked) {
+  const states = v => [v?.appStoreState, v?.appVersionState].filter(Boolean);
+  const newer = (versions ?? [])
+    .filter(
+      v =>
+        compareVersions(v.versionString, tracked) > 0 &&
+        states(v).some(s => LIVE_STATES.has(s)),
+    )
+    .map(v => v.versionString)
+    .sort(compareVersions);
+  if (newer.length) return newer[newer.length - 1];
+  const me = (versions ?? []).find(v => v.versionString === tracked);
+  if (states(me).includes('REPLACED_WITH_NEW_VERSION'))
+    return 'a newer version';
+  return null;
+}
+
 // The Android target for an iOS phased-release state.
 // Returns {fraction, complete, reason}: `fraction` is a number in (0, 1], or
 // null for "hold"; `complete` is true when Android goes to 100%.
-export function iosTarget(phased) {
+// `opts.supersededBy` (from supersededBy()) makes the mirror hold.
+export function iosTarget(phased, opts = {}) {
+  if (opts.supersededBy) {
+    return {
+      fraction: null,
+      complete: false,
+      reason: `iOS superseded by ${opts.supersededBy}: its phased release ended early, so the owner sets the Android target`,
+    };
+  }
   if (!phased) {
     return {
       fraction: null,
@@ -127,9 +184,25 @@ export function planAndroid(target, release) {
 // The new production track for a plan. `set` changes only the fraction of the
 // matching release and keeps every other release (the completed one that Play
 // serves to the rest). `complete` leaves only the matching release, completed.
+// `halt` marks the matching staged release halted and keeps the rest: Play then
+// serves the completed release to every new install (the rollback path,
+// docs/operations/feedback-graph.md "Rollback and hotfix").
 export function trackForPlan(track, versionCode, plan) {
   const vc = String(versionCode);
   const match = r => (r.versionCodes ?? []).map(String).includes(vc);
+  if (plan.action === 'halt') {
+    const rel = track.releases.find(match);
+    if (!rel || rel.status !== 'inProgress')
+      throw new Error(
+        `halt: vc ${vc} is ${rel ? rel.status : 'not on the production track'}; only a staged (inProgress) release halts`,
+      );
+    return {
+      track: track.track,
+      releases: track.releases.map(r =>
+        match(r) ? {...r, status: 'halted'} : r,
+      ),
+    };
+  }
   if (plan.action === 'set') {
     return {
       track: track.track,

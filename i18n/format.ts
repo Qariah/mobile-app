@@ -11,12 +11,20 @@ function reciterNameKey(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-const arNamesByKey = new Map<string, string>();
-for (const reciter of fallbackReciters as {id: string; name: string}[]) {
-  const arabic = (arNamesById as Record<string, string>)[reciter.id];
-  if (arabic) {
-    arNamesByKey.set(reciterNameKey(reciter.name), arabic);
+// @ai Qariah (Lite step 1c): built on first use, not at import; it walks the
+// 510 KB fallback reciter list.
+let arNamesByKeyCache: Map<string, string> | null = null;
+function arNamesByKey(): Map<string, string> {
+  if (arNamesByKeyCache) return arNamesByKeyCache;
+  const byKey = new Map<string, string>();
+  for (const reciter of fallbackReciters as {id: string; name: string}[]) {
+    const arabic = (arNamesById as Record<string, string>)[reciter.id];
+    if (arabic) {
+      byKey.set(reciterNameKey(reciter.name), arabic);
+    }
   }
+  arNamesByKeyCache = byKey;
+  return byKey;
 }
 
 /** Converts ASCII digits to the language's digits (Arabic-Indic for Arabic). */
@@ -142,7 +150,7 @@ export function getReciterDisplayName(
       return fromCatalog;
     }
   }
-  return arNamesByKey.get(reciterNameKey(reciter.name)) ?? reciter.name;
+  return arNamesByKey().get(reciterNameKey(reciter.name)) ?? reciter.name;
 }
 
 /** Artist line on a queued track. Uploads keep their own name. */

@@ -458,6 +458,25 @@ class LockScreenService {
 
   private subscribeToStore(): void {
     this.storeUnsubscribe = usePlayerStore.subscribe(state => {
+      const {queue} = state;
+      const currentTrack = queue.tracks[queue.currentIndex];
+
+      // @ai The queue has no current track any more, for example after
+      // playerStore.cleanup() (Settings -> Clear cache), which pauses the
+      // main player before it resets the queue. Clear the main player's lock
+      // screen and notification controls once. Without this, a remote Play
+      // there resumed the old source while the app showed no player. This
+      // comes before the Mushaf and adhkar returns: clearLockScreenControls()
+      // is a native no-op unless the main player holds the entry. A track
+      // change cannot get here: every queue write sets the tracks and the
+      // index together.
+      if (!currentTrack && this.lastTrackId !== null) {
+        this.clearPlayer(expoAudioService.getPlayer());
+        this.lastTrackId = null;
+        this.mainHidden = false; // @ai #277
+        return;
+      }
+
       if (this.isMushafActive) return;
       // A held adhkar entry blocks main track changes only until the main
       // player actually plays; then the entry is dropped and main takes over.
@@ -472,20 +491,9 @@ class LockScreenService {
         this.dropAdhkarEntry();
       }
 
-      const {queue} = state;
-      const currentTrack = queue.tracks[queue.currentIndex];
-
       // Update when track changes
       if (currentTrack && currentTrack.id !== this.lastTrackId) {
         this.showMainTrack(currentTrack); // @ai #277: or hide it while there is no source
-      }
-
-      // @ai No current track any more: clear the main player's lock-screen controls once, or a remote
-      // Play resumes the old source while the app shows no player.
-      if (!currentTrack && this.lastTrackId !== null) {
-        this.clearPlayer(expoAudioService.getPlayer());
-        this.lastTrackId = null;
-        this.mainHidden = false; // @ai #277
       }
     });
   }

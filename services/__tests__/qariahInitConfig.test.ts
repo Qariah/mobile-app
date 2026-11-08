@@ -98,6 +98,10 @@ jest.mock('@/store/adhkarStore', () => ({
     loadCategories: mockStep('adhkarStore.loadCategories'),
   }),
 }));
+// Pass D: upstream's reciter-merge migration runs before the playlists load.
+jest.mock('@/services/reciterMergeMigration', () => ({
+  applyReciterMergesToSavedData: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('@/store/playlistsStore', () => ({
   usePlaylistsStore: mockStore({
     loadPlaylists: mockStep('playlistsStore.loadPlaylists'),
@@ -215,14 +219,16 @@ describe('Qariah startup sequence (shipping flags)', () => {
 
   it('runs critical services first, then starts the non-critical ones in order', async () => {
     await freshInitializer(false).initialize();
+    // Pass D: the playlists service awaits upstream's reciter-merge migration
+    // first, so its load comes after the other services have started.
     expect(mockCalls.slice(0, 7)).toEqual([
       'database.initialize',
       'playlist.initialize',
       'analytics.initialize',
-      'playlistsStore.loadPlaylists',
       'timestamps.initialize',
       'themeData.init',
       'fonts.loadAsync',
+      'playlistsStore.loadPlaylists',
     ]);
     for (const skipped of [
       'adhkar.initialize',

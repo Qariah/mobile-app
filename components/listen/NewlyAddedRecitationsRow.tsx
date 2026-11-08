@@ -4,7 +4,7 @@
 // `newly-added` row lists reciters and stays registered, switched off.
 import React, {useCallback, useMemo} from 'react';
 import {View, Text, StyleSheet, type ListRenderItem} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTranslation} from 'react-i18next';
 import {useTheme} from '@/hooks/useTheme';
 import {useRecitersVersion} from '@/hooks/useRecitersVersion';
@@ -17,6 +17,8 @@ import {RtlRowFlatList} from './RtlRowFlatList';
 interface NewlyAddedRecitationsRowProps {
   /** For tests. The default plays the recitation and opens the player. */
   onRecitationPress?: (recitation: NewlyAddedRecitation) => void;
+  /** iPad shelf card width; phones omit it and keep the fixed card size. */
+  cardWidth?: number;
 }
 
 function defaultRecitationPress(recitation: NewlyAddedRecitation) {
@@ -27,6 +29,7 @@ function defaultRecitationPress(recitation: NewlyAddedRecitation) {
 /** Renders nothing when the catalog has no dated recitations. */
 export function NewlyAddedRecitationsRow({
   onRecitationPress = defaultRecitationPress,
+  cardWidth,
 }: NewlyAddedRecitationsRowProps) {
   const {theme} = useTheme();
   const {t} = useTranslation('qariah');
@@ -44,8 +47,14 @@ export function NewlyAddedRecitationsRow({
     [onRecitationPress],
   );
   const renderItem: ListRenderItem<NewlyAddedRecitation> = useCallback(
-    ({item}) => <RecitationCard recitation={item} onPress={handlePress} />,
-    [handlePress],
+    ({item}) => (
+      <RecitationCard
+        recitation={item}
+        onPress={handlePress}
+        cardWidth={cardWidth}
+      />
+    ),
+    [handlePress, cardWidth],
   );
 
   if (recitations.length === 0) return null;
@@ -63,7 +72,10 @@ export function NewlyAddedRecitationsRow({
         keyExtractor={newlyAddedRecitationKey}
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.sectionContent}
+        contentContainerStyle={[
+          styles.sectionContent,
+          cardWidth !== undefined && styles.tabletSectionContent,
+        ]}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
         windowSize={3}
@@ -92,5 +104,9 @@ const styles = StyleSheet.create({
   sectionContent: {
     paddingHorizontal: moderateScale(16),
     gap: moderateScale(8),
+  },
+  // The shelf gap of components/RecitersView.tsx (TABLET_SHELF_GAP).
+  tabletSectionContent: {
+    gap: moderateScale(12),
   },
 });

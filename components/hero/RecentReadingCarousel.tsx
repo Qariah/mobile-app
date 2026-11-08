@@ -1,6 +1,12 @@
 import React, {useCallback, useMemo, useState} from 'react';
-import {FlatList, View, ViewStyle, useWindowDimensions} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {
+  FlatList,
+  LayoutChangeEvent,
+  View,
+  ViewStyle,
+  useWindowDimensions,
+} from 'react-native';
+import {moderateScale} from '@/utils/scale';
 import {useFocusEffect} from 'expo-router';
 import {SURAHS, Surah} from '@/data/surahData';
 import {
@@ -11,6 +17,7 @@ import {HeroSection} from './HeroSection';
 import {SurahHeroSection} from './SurahsHero';
 import {useTranslation} from 'react-i18next';
 import type {TFunction} from 'i18next';
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
 
 const SECTION_HEIGHT = moderateScale(150);
 const CARD_GAP = moderateScale(10);
@@ -21,14 +28,18 @@ const CARD_GAP = moderateScale(10);
 // that can be on the way back from the Mushaf reader while the window is
 // still in landscape. The card then kept a landscape width in portrait
 // (TECH_DEBT #273).
+// Sprint 52 Task 6: `availableWidth` is the window on a phone and the
+// measured pane on a tablet (the sidebar is not part of the pane). `inset`
+// is the space that the single card leaves at both edges.
 export function carouselCardWidth(
-  windowWidth: number,
+  availableWidth: number,
   entryCount: number,
+  inset: number = moderateScale(32),
 ): number {
   if (entryCount <= 1) {
-    return windowWidth - moderateScale(32);
+    return availableWidth - inset;
   }
-  return Math.round(windowWidth * 0.78);
+  return Math.round(availableWidth * 0.78);
 }
 
 function getSurahForPage(page: number): Surah | undefined {
@@ -64,6 +75,12 @@ interface RecentReadingCarouselProps {
    * stopping points to show. Already clamped to [1, 10] by the caller.
    */
   historySize: number;
+  /**
+   * @ai Sprint 52 Task 6 — the carousel sits in a half-width cell of the
+   * iPad row beside Continue Listening: no HeroSection wrapper, and the row
+   * supplies the side padding.
+   */
+  bare?: boolean;
 }
 
 interface DisplayEntry {
@@ -84,6 +101,7 @@ interface DisplayEntry {
 export function RecentReadingCarousel({
   onSurahLongPress,
   historySize,
+  bare = false,
 }: RecentReadingCarouselProps) {
   const {t} = useTranslation(['qariah', 'home']);
   const [recent, setRecent] = useState<RecentPage[]>(() =>
@@ -118,8 +136,34 @@ export function RecentReadingCarousel({
     return deduped;
   }, [recent, historySize, t]);
 
-  const {width: windowWidth} = useWindowDimensions(); // @ai
-  const cardWidth = carouselCardWidth(windowWidth, entries.length); // @ai
+  // @ai-start
+  // A tablet sizes the cards from the measured pane (the sidebar takes part
+  // of the window). The first frame uses a window-width guess. A phone
+  // keeps the window width: same widths as before.
+  const {width: windowWidth} = useWindowDimensions();
+  const {isTablet} = useResponsive();
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null);
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    const w = Math.round(e.nativeEvent.layout.width);
+    if (w <= 0) return;
+    setMeasuredWidth(prev => (prev === w ? prev : w));
+  }, []);
+  const availableWidth =
+    isTablet && measuredWidth !== null
+      ? measuredWidth
+      : bare
+        ? windowWidth / 2
+        : windowWidth;
+  // A tablet draws nothing until the pane is measured: no wrong first frame,
+  // no remount of the list on the first layout.
+  const awaitingLayout = isTablet && measuredWidth === null;
+  const sidePadding = bare ? 0 : moderateScale(16);
+  const cardWidth = carouselCardWidth(
+    availableWidth,
+    entries.length,
+    2 * sidePadding,
+  );
+  // @ai-end
 
   const cardStyle: ViewStyle = useMemo(
     () => ({width: cardWidth, height: SECTION_HEIGHT}),
@@ -150,48 +194,55 @@ export function RecentReadingCarousel({
 
   // Single entry → preserve the original hero look (no horizontal scroll
   // affordance). FlatList still works but the unnecessary peek looks odd.
+  // @ai-start
+  const wrap = (content: React.ReactElement) => (
+    <View
+      testID="recent-reading-carousel"
+      style={{width: '100%'}}
+      onLayout={onLayout}
+      accessible={false}>
+      {awaitingLayout ? (
+        <View style={{height: SECTION_HEIGHT}} />
+      ) : bare ? (
+        content
+      ) : (
+        <HeroSection mainHero={content} randomHero={false} />
+      )}
+    </View>
+  );
+  // @ai-end
   if (entries.length <= 1) {
-    return (
-      <HeroSection
-        mainHero={
-          <View style={{paddingHorizontal: moderateScale(16)}}>
-            {entries[0] ? (
-              <SurahHeroSection
-                surah={entries[0].surah}
-                onLongPress={onSurahLongPress}
-                title={entries[0].title}
-                style={cardStyle}
-                resumePage={entries[0].resumePage}
-              />
-            ) : null}
-          </View>
-        }
-        randomHero={false}
-      />
+    return wrap(
+      <View style={{paddingHorizontal: sidePadding}}>
+        {entries[0] ? (
+          <SurahHeroSection
+            surah={entries[0].surah}
+            onLongPress={onSurahLongPress}
+            title={entries[0].title}
+            style={cardStyle}
+            resumePage={entries[0].resumePage}
+          />
+        ) : null}
+      </View>,
     );
   }
 
-  return (
-    <HeroSection
-      mainHero={
-        <FlatList
-          // @ai — a new card width remounts the list at its start: with the
-          // old scroll offset, snapToInterval would stop between two cards.
-          key={`cards-${cardWidth}`}
-          data={entries}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          ItemSeparatorComponent={ItemSeparator}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: moderateScale(16),
-          }}
-          snapToInterval={cardWidth + CARD_GAP}
-          decelerationRate="fast"
-        />
-      }
-      randomHero={false}
-    />
+  return wrap(
+    <FlatList
+      // @ai — a new card width remounts the list at its start: with the
+      // old scroll offset, snapToInterval would stop between two cards.
+      key={`cards-${cardWidth}`}
+      data={entries}
+      keyExtractor={keyExtractor}
+      renderItem={renderItem}
+      ItemSeparatorComponent={ItemSeparator}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{
+        paddingHorizontal: sidePadding,
+      }}
+      snapToInterval={cardWidth + CARD_GAP}
+      decelerationRate="fast"
+    />,
   );
 }

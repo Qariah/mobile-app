@@ -119,7 +119,23 @@ function main() {
   );
   for (const r of results)
     console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.name} (${r.seconds} s)`);
+  if (event === 'pull_request') console.log(`  ${fixHasTestAdvisory()}`);
   process.exit(results.every(r => r.ok) ? 0 : 1);
+}
+
+/**
+ * The advisory line "every fix PR carries a test" (CLAUDE.md "Verification &
+ * testing", 2026-11-06): scripts/check-fix-has-test.mjs on the PR of the
+ * current branch. Advisory: it never changes the exit code. It becomes a
+ * blocking step when a week of runs shows no false FAIL.
+ */
+function fixHasTestAdvisory() {
+  const r = spawnSync('node', ['scripts/check-fix-has-test.mjs'], {
+    cwd: REPO,
+    encoding: 'utf8',
+  });
+  const line = `${r.stdout || ''}${r.stderr || ''}`.trim().split('\n')[0];
+  return `ADVISORY  ${line || `fix-has-test: could not run (exit ${r.status})`}`;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

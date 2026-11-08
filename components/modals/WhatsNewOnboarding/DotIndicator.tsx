@@ -56,12 +56,7 @@ interface DotProps {
 
 const DOT_SIZE_INACTIVE = moderateScale(8);
 const DOT_SIZE_ACTIVE = moderateScale(20);
-const DOT_PADDING_VERTICAL = moderateScale(16);
 const DOT_GAP = moderateScale(6);
-
-/** Full height of the indicator row; the modal reserves it, so the content stays in the card (#351). */
-export const DOT_INDICATOR_HEIGHT =
-  DOT_SIZE_INACTIVE + DOT_PADDING_VERTICAL * 2;
 
 function Dot({index, scrollX, pageWidth, color, fit}: DotProps) {
   const inactiveSize = DOT_SIZE_INACTIVE * fit;
@@ -112,6 +107,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: DOT_PADDING_VERTICAL,
+    paddingVertical: moderateScale(16),
   },
 });

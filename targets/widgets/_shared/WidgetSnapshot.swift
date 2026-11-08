@@ -43,6 +43,15 @@ enum WidgetTheme: String, Codable {
   case light, dark, system
 }
 
+// @ai-start
+/// The adhkar session's player, which is separate from nowPlaying.
+struct WidgetAdhkarPlayback: Codable, Hashable {
+  let superId: String
+  let dhikrId: String
+  let isPlaying: Bool
+}
+// @ai-end
+
 struct WidgetSnapshot: Codable {
   static let supportedVersion = 1
   let version: Int
@@ -55,6 +64,10 @@ struct WidgetSnapshot: Codable {
   let reciterRecents: [String: [WidgetTrack]]
   let lastRead: WidgetLastRead?
   let tasbeeh: [String: WidgetTasbeehEntry]
+  // nil when no adhkar session exists, or in snapshots from older app builds. // @ai
+  // Qariah: `var` with a nil default (upstream: `let`), so the memberwise calls in
+  // scripts/check-widget-*.sh compile without an adhkar argument. It still decodes.
+  var adhkar: WidgetAdhkarPlayback? = nil // @ai
   // @ai Qariah (TECH_DEBT #357): the app language (WidgetLanguage); nil in an older app's snapshot.
   var language: String? = nil
 

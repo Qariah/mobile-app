@@ -31,6 +31,13 @@ describe('expo-sqlite mock', () => {
     expect(row?.v).toBe(7);
   });
 
+  // @ai-start
+  it('makes its folder under the temp root of the run', () => {
+    expect(path.basename(path.dirname(databaseDir()))).toMatch(
+      /^bayaan-jest-tmp-\d+-/,
+    );
+  });
+
   it('removes the folder on each reset and makes a new one on the next use', async () => {
     const first = databaseDir();
     expect(fs.existsSync(first)).toBe(true);
@@ -66,4 +73,5 @@ describe('expo-sqlite mock', () => {
       fs.rmSync(callerDir, {recursive: true, force: true});
     }
   });
+  // @ai-end
 });

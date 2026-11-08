@@ -8,6 +8,12 @@ import React from 'react';
 import {Dimensions, StyleSheet, View} from 'react-native';
 import TestRenderer, {act, type ReactTestRenderer} from 'react-test-renderer';
 
+// Pass D: on a tablet, upstream's AdaptiveActionSheet shows a card with its
+// own height limit. These tests hold the phone sheet (TECH_DEBT #278).
+jest.mock('@/hooks/useResponsive', () => ({
+  ...jest.requireActual('@/hooks/useResponsive'),
+  useResponsive: () => ({isTablet: false, width: 402, height: 874}),
+}));
 jest.mock('react-native-actions-sheet', () => {
   const {View: MockView} = jest.requireActual('react-native');
   return {

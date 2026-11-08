@@ -11,12 +11,16 @@
 //   node scripts/play-rollout-mirror.mjs mirror [--apply]
 //   node scripts/play-rollout-mirror.mjs promote --from=beta --fraction=0.01 \
 //        [--version-code=<n>] [--notes-file=<file>] [--apply]
+//   node scripts/play-rollout-mirror.mjs halt [--version-code=<n>] [--apply]
 //
 // `status` prints the iOS phased release, the Android release and the target.
 // `mirror` sets the Android fraction to the iOS rung (a dry run without
 // --apply). `promote` puts a version code from another track on production as
 // a staged rollout (a dry run without --apply); Play reviews it before it
-// serves it.
+// serves it. `halt` stops the staged rollout of the version code (a dry run
+// without --apply): Play serves the completed release to every new install, the
+// users who have the build keep it, and the mirror never changes a halted
+// release. A halted release cannot resume; a new version code replaces it.
 //
 // The input is the `androidMirror` block of docs/operations/active-rollout.json:
 //   {"enabled": true, "iosVersion": "3.2.3", "androidVersionCode": 3763}
@@ -28,8 +32,8 @@
 //
 // Controls:
 //   - Hold both platforms: `node scripts/asc-phased-release.mjs pause`.
-//   - Stop Android at once: halt the release in the Play Console. The mirror
-//     never changes a halted release.
+//   - Stop Android at once: `halt --apply` here, or halt the release in the
+//     Play Console. The mirror never changes a halted release.
 //
 // Env (from .env.local): APP_STORE_CONNECT_API_KEY_ID, _ISSUER_ID and
 // ~/.appstoreconnect/private_keys/AuthKey_<KID>.p8; a Play key with the
@@ -47,6 +51,7 @@ import {
   pct,
   planAndroid,
   promoteTrack,
+  supersededBy,
   trackForPlan,
 } from './lib/play-rollout-mirror.mjs';
 
@@ -59,7 +64,7 @@ const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applica
 function usage(msg) {
   console.error(`❌ ${msg}`);
   console.error(
-    'usage: play-rollout-mirror.mjs status | mirror [--apply] | promote --from=<track> --fraction=<0-1> [--version-code=<n>] [--notes-file=<file>] [--apply]',
+    'usage: play-rollout-mirror.mjs status | mirror [--apply] | promote --from=<track> --fraction=<0-1> [--version-code=<n>] [--notes-file=<file>] [--apply] | halt [--version-code=<n>] [--apply]',
   );
   process.exit(2);
 }
@@ -71,7 +76,7 @@ for (const a of rest) {
   if (!m) usage(`unknown argument ${a}`);
   opts[m[1]] = m[2] ?? true;
 }
-if (!['status', 'mirror', 'promote'].includes(cmd))
+if (!['status', 'mirror', 'promote', 'halt'].includes(cmd))
   usage(`unknown command ${cmd ?? ''}`);
 const apply = opts.apply === true;
 
@@ -122,9 +127,21 @@ async function readIos(versionString) {
     `apps/${APP_STORE_ID}/appStoreVersions?filter[platform]=IOS&filter[versionString]=${encodeURIComponent(versionString)}&limit=1`,
   );
   const v = vs.data?.[0];
-  if (!v) return {version: null, phased: null};
+  // Every recent iOS version: a newer live one supersedes the tracked one.
+  const all = await get(
+    `apps/${APP_STORE_ID}/appStoreVersions?filter[platform]=IOS&limit=20`,
+  );
+  const newer = supersededBy(
+    (all.data ?? []).map(x => x.attributes),
+    versionString,
+  );
+  if (!v) return {version: null, phased: null, supersededBy: newer};
   const pr = await get(`appStoreVersions/${v.id}/appStoreVersionPhasedRelease`);
-  return {version: v.attributes, phased: pr.data?.attributes ?? null};
+  return {
+    version: v.attributes,
+    phased: pr.data?.attributes ?? null,
+    supersededBy: newer,
+  };
 }
 
 // ── Google Play ──────────────────────────────────────────────────────────
@@ -179,8 +196,10 @@ async function readBack(expect) {
     const ok =
       expect === 'complete'
         ? rel?.status === 'completed'
-        : rel?.status === 'inProgress' &&
-          Math.abs(Number(rel.userFraction) - expect) < 1e-9;
+        : expect === 'halt'
+          ? rel?.status === 'halted'
+          : rel?.status === 'inProgress' &&
+            Math.abs(Number(rel.userFraction) - expect) < 1e-9;
     if (!ok) throw new Error('the read back does not match the change');
   } finally {
     await p.discard();
@@ -236,13 +255,40 @@ if (cmd === 'promote') {
   process.exit(0);
 }
 
+if (cmd === 'halt') {
+  const p = await play();
+  try {
+    const track = await p.track('production');
+    const rel = findRelease(track, versionCode);
+    console.log(`Play production: ${describe(rel)}`);
+    const body = trackForPlan(track, versionCode, {action: 'halt'});
+    console.log(`production after: ${body.releases.map(describe).join('; ')}`);
+    if (!apply) {
+      console.log('dry run: nothing changed (add --apply)');
+      await p.discard();
+      process.exit(0);
+    }
+    await p.put('production', body);
+    await p.commit();
+    console.log(
+      `✓ committed edit ${p.id}: vc ${versionCode} halted. New installs get the completed release; a new version code replaces this one.`,
+    );
+  } catch (e) {
+    await p.discard();
+    console.error(`❌ ${e.message}`);
+    process.exit(1);
+  }
+  await readBack('halt');
+  process.exit(0);
+}
+
 if (cfg.enabled === false) {
   console.log('androidMirror.enabled is false: nothing to do');
   process.exit(3);
 }
 
 const ios = await readIos(cfg.iosVersion);
-const target = iosTarget(ios.phased);
+const target = iosTarget(ios.phased, {supersededBy: ios.supersededBy});
 console.log(
   `iOS  ${cfg.iosVersion}: ${ios.version ? `state=${ios.version.appStoreState ?? ios.version.appVersionState}` : 'no such version'}; ${target.reason}`,
 );

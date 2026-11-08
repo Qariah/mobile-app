@@ -7,6 +7,16 @@ import {
 } from '@/store/mushafSettingsStore';
 import {migratePersistedId} from '@/services/rewayah/RewayahIdentity';
 import {REWAYAH_DATA_MANIFEST, REWAYAH_DATA_MD5} from './rewayahDataManifest';
+import {
+  clearDkQueries,
+  decodeLineRows,
+  decodeVerseRows,
+  encodeLineRows,
+  encodeVerseRows,
+  readDkQuery,
+  writeDkQuery,
+  type VerseRangeRow,
+} from './dkQueryCache'; // @ai
 import {joinSlotTexts, layoutLineSlots, visibleWords} from './lineWordSpans';
 // @ai-start
 import {
@@ -336,6 +346,12 @@ export function getCurrentDbNamesByBase(): Map<string, string> {
   return byBase;
 }
 
+// @ai `trusted`: the copy's md5 matched its bundled asset this session.
+type ReadBundledDb<T> = (
+  db: SQLite.SQLiteDatabase,
+  trusted: boolean,
+) => Promise<T>;
+
 interface BundledDbSpec {
   name: string; // content-addressed on-device file name
   base: string; // e.g. dk_words_warsh
@@ -452,18 +468,6 @@ export type RewayahLoadState =
 
 // ── Row → cache builders ────────────────────────────────────────────────────
 
-interface WordRow {
-  id: number;
-  text: string;
-  location: string;
-}
-
-interface WordsData {
-  wordsById: Map<number, string>;
-  wordInfoById: Map<number, DKWordInfo>;
-  verseWords: Map<string, DKWordInfo[]>;
-}
-
 interface LayoutData {
   pageLines: Map<number, DKLine[]>;
   surahStartPages: Record<number, number>;
@@ -476,7 +480,7 @@ interface LayoutData {
 
 interface MainSnapshot {
   rewayah: RewayahId;
-  words: WordsData;
+  words: WordStore; // @ai: read on demand (WordStore)
   // null: the active layout is reused (same layout DB copy).
   layout: LayoutData | null;
   layoutDbName: string;
@@ -490,57 +494,9 @@ interface MainWaiter {
   reject: (error: unknown) => void;
 }
 
-function parseWordInfo(row: WordRow): DKWordInfo | null {
-  // location is "surah:ayah:word"
-  const parts = row.location.split(':');
-  if (parts.length < 3) return null;
-  return {
-    text: row.text,
-    verseKey: `${parts[0]}:${parts[1]}`,
-    wordPositionInVerse: parseInt(parts[2], 10),
-  };
-}
-
-function groupByVerse(infos: Iterable<DKWordInfo>): Map<string, DKWordInfo[]> {
-  const byVerse = new Map<string, DKWordInfo[]>();
-  for (const info of infos) {
-    const existing = byVerse.get(info.verseKey);
-    if (existing) existing.push(info);
-    else byVerse.set(info.verseKey, [info]);
-  }
-  for (const words of byVerse.values()) {
-    words.sort((a, b) => a.wordPositionInVerse - b.wordPositionInVerse);
-  }
-  return byVerse;
-}
-
-function buildWordsData(rows: readonly WordRow[]): WordsData {
-  const wordsById = new Map<number, string>();
-  const wordInfoById = new Map<number, DKWordInfo>();
-  for (const row of rows) {
-    wordsById.set(row.id, row.text);
-    const info = parseWordInfo(row);
-    if (info) wordInfoById.set(row.id, info);
-  }
-  return {
-    wordsById,
-    wordInfoById,
-    verseWords: groupByVerse(wordInfoById.values()),
-  };
-}
-
-function buildVerseWords(rows: readonly WordRow[]): Map<string, DKWordInfo[]> {
-  const infos: DKWordInfo[] = [];
-  for (const row of rows) {
-    const info = parseWordInfo(row);
-    if (info) infos.push(info);
-  }
-  return groupByVerse(infos);
-}
-
 function buildLayoutData(
   rows: readonly DKLine[],
-  wordInfoById: ReadonlyMap<number, DKWordInfo>,
+  surahOfWord: (wordId: number) => number | undefined, // @ai: WordStore
 ): LayoutData {
   const pageLines = new Map<number, DKLine[]>();
   const surahStartPages: Record<number, number> = {};
@@ -557,9 +513,7 @@ function buildLayoutData(
   // surah to the page where its actual verse content begins.
   for (const row of rows) {
     if (row.line_type !== 'ayah') continue;
-    const info = wordInfoById.get(row.first_word_id);
-    if (!info) continue;
-    const surahId = parseInt(info.verseKey.split(':')[0], 10);
+    const surahId = surahOfWord(row.first_word_id); // @ai
     if (surahId && !surahStartPages[surahId]) {
       surahStartPages[surahId] = row.page_number;
     }
@@ -612,28 +566,321 @@ async function hasTable(
   return row != null;
 }
 
-async function readWordRows(db: SQLite.SQLiteDatabase): Promise<WordRow[]> {
-  const rows = await db.getAllAsync<WordRow>(
-    'SELECT id, text, location FROM words;',
-  );
-  if (rows.length === 0) throw new Error('words table is empty');
-  // @ai-start
-  // A damaged copy (e.g. cut short inside its last page) can still return
-  // every row, some with NULL fields. Reject it here, inside the read, so the
-  // copy is deleted, re-imported and read again instead of failing (or
-  // dropping a word) later.
-  for (const row of rows) {
-    if (
-      typeof row.id !== 'number' ||
-      typeof row.location !== 'string' ||
-      typeof row.text !== 'string'
-    ) {
-      throw new Error(`words table has a malformed row (id ${row.id})`);
+// @ai-start
+// Qariah (Lite mode plan, step 3; planning/lite-mode-design.md, section 7f):
+// the words are read when a page or a verse needs them, not all at load.
+// Building all 83,668 words into maps took about 12 s on a Samsung A10s
+// before the first page could show, at every launch. A load now reads only
+// a verse index (one native GROUP BY: the first and last word id of each of
+// the 6,236 verses) after native integrity counts, and keeps the connection
+// open. A getter reads the WORD_CHUNK ids around a word with getFirstSync, so
+// every getter stays synchronous. In every bundled words DB the ids run
+// 1..83,668 and each verse is one id range (contract C1); the *.alldbs test
+// checks that, and that every getter gives what the old full build gave.
+//
+// A chunk read asks for one string: the texts in id order, joined by U+001F
+// (no text holds it). words.id is the INTEGER PRIMARY KEY, so the read seeks.
+// On a Samsung A10s, 2,048 rows as objects (getAllSync) took 119-151 ms; the
+// joined string takes 7-11 ms. A word's verse and position come from the
+// verse index (WordStore.info), so the read needs no location column.
+const WORD_CHUNK = 2048;
+const WORD_SEPARATOR = '\u001f';
+export const WORD_CHUNK_QUERY =
+  'SELECT group_concat(text, char(31) ORDER BY id) AS texts FROM words WHERE id BETWEEN ? AND ?;';
+// Chunks kept per words DB (about 49k words; least recently used go first).
+const MAX_WORD_CHUNKS = 24;
+const MAX_VERSE_SLOTS = 1024;
+
+interface VerseIndex {
+  /** Verse keys ("2:255") in word-id order. */
+  keys: string[];
+  first: Int32Array;
+  last: Int32Array;
+  surah: Int32Array;
+  byKey: Map<string, number>;
+}
+
+interface WordChunk {
+  start: number;
+  texts: string[];
+  /** Built on first use (WordStore.info). */
+  infos: (DKWordInfo | undefined)[];
+}
+
+/**
+ * The verse index of a words table. A copy whose md5 matched its asset
+ * (`trusted`) takes it from the query cache (dkQueryCache.ts) and stores it
+ * there after a query.
+ */
+async function readVerseIndex(
+  db: SQLite.SQLiteDatabase,
+  spec: BundledDbSpec,
+  trusted: boolean,
+): Promise<VerseIndex> {
+  const cached = trusted ? readDkQuery('verses', spec.base, spec.name) : null;
+  const cachedRows = cached ? decodeVerseRows(cached) : null;
+  if (cachedRows) {
+    try {
+      return buildVerseIndex(cachedRows);
+    } catch {
+      // A damaged entry: run the query below and store it again.
     }
   }
-  // @ai-end
+  const rows = await queryVerseRows(db);
+  const index = buildVerseIndex(rows);
+  if (trusted)
+    writeDkQuery('verses', spec.base, spec.name, encodeVerseRows(rows));
+  return index;
+}
+
+/** Integrity counts and the verse rows of a words table. */
+async function queryVerseRows(
+  db: SQLite.SQLiteDatabase,
+): Promise<VerseRangeRow[]> {
+  const rows = await db.getAllAsync<VerseRangeRow>(
+    'SELECT surah, ayah, MIN(id) AS first, MAX(id) AS last FROM words GROUP BY surah, ayah ORDER BY first;',
+  );
+  // A damaged copy (cut short, NULL fields) must fail here, inside the read,
+  // so the copy is deleted, re-imported and read again (as the full read's
+  // row checks did).
+  const counts = await db.getFirstAsync<{
+    n: number;
+    ids: number;
+    texts: number;
+    locations: number;
+  }>(
+    'SELECT COUNT(*) AS n, COUNT(id) AS ids, COUNT(text) AS texts, COUNT(location) AS locations FROM words;',
+  );
+  if (!counts || !counts.n) throw new Error('words table is empty');
+  if (
+    counts.ids !== counts.n ||
+    counts.texts !== counts.n ||
+    counts.locations !== counts.n
+  ) {
+    throw new Error('words table has a malformed row');
+  }
   return rows;
 }
+
+/** The verse index of `rows`; throws on a malformed or out-of-order row. */
+function buildVerseIndex(rows: readonly VerseRangeRow[]): VerseIndex {
+  const n = rows.length;
+  const index: VerseIndex = {
+    keys: new Array<string>(n),
+    first: new Int32Array(n),
+    last: new Int32Array(n),
+    surah: new Int32Array(n),
+    byKey: new Map(),
+  };
+  let previousLast = 0;
+  for (let i = 0; i < n; i++) {
+    const row = rows[i];
+    if (
+      !isWholeNumber(row.surah) ||
+      !isWholeNumber(row.ayah) ||
+      !isWholeNumber(row.first) ||
+      !isWholeNumber(row.last) ||
+      row.first <= previousLast ||
+      row.last < row.first
+    ) {
+      throw new Error(`words table has a malformed verse (row ${i})`);
+    }
+    const key = `${row.surah}:${row.ayah}`;
+    index.keys[i] = key;
+    index.first[i] = row.first;
+    index.last[i] = row.last;
+    index.surah[i] = row.surah;
+    index.byKey.set(key, i);
+    previousLast = row.last;
+  }
+  return index;
+}
+
+/** The index of the verse that holds `wordId`, or -1. */
+function verseIndexOfWord(index: VerseIndex, wordId: number): number {
+  let lo = 0;
+  let hi = index.keys.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (wordId < index.first[mid]) hi = mid - 1;
+    else if (wordId > index.last[mid]) lo = mid + 1;
+    else return mid;
+  }
+  return -1;
+}
+
+/**
+ * The words of one words DB, read on demand from an open connection. The
+ * service owns it: close() releases the connection (and the DB name's open
+ * count), after which every read returns nothing.
+ */
+class WordStore {
+  private chunks = new Map<number, WordChunk>();
+  private verseSlots = new Map<string, DKWordInfo[]>();
+  private closed = false;
+  private failed = false;
+
+  constructor(
+    readonly dbName: string,
+    private readonly db: SQLite.SQLiteDatabase,
+    readonly index: VerseIndex,
+    private readonly release: (
+      name: string,
+      db: SQLite.SQLiteDatabase,
+    ) => Promise<void>,
+    private readonly onReadFailed: (store: WordStore, error: unknown) => void,
+  ) {}
+
+  /** A read failed: every text from now on is ''. */
+  get hasFailed(): boolean {
+    return this.failed;
+  }
+
+  get wordCount(): number {
+    const n = this.index.keys.length;
+    return n === 0 ? 0 : this.index.last[n - 1];
+  }
+
+  text(wordId: number): string {
+    const chunk = this.chunkFor(wordId);
+    return (chunk && chunk.texts[wordId - chunk.start]) || '';
+  }
+
+  info(wordId: number): DKWordInfo | undefined {
+    const chunk = this.chunkFor(wordId);
+    if (!chunk) return undefined;
+    const offset = wordId - chunk.start;
+    if (offset >= chunk.texts.length) return undefined;
+    let info = chunk.infos[offset];
+    if (!info) {
+      // The verse and the word position come from the verse index: in every
+      // words DB, location is "surah:ayah:(id - first id of the verse + 1)".
+      const i = verseIndexOfWord(this.index, wordId);
+      if (i < 0) return undefined;
+      info = {
+        text: chunk.texts[offset],
+        verseKey: this.index.keys[i],
+        wordPositionInVerse: wordId - this.index.first[i] + 1,
+      };
+      chunk.infos[offset] = info;
+    }
+    return info;
+  }
+
+  /** The verse's slots (blank ones too) by word position, or undefined. */
+  verseWords(verseKey: string): DKWordInfo[] | undefined {
+    const cached = this.verseSlots.get(verseKey);
+    if (cached) {
+      this.verseSlots.delete(verseKey);
+      this.verseSlots.set(verseKey, cached);
+      return cached;
+    }
+    const i = this.index.byKey.get(verseKey);
+    if (i === undefined || this.closed) return undefined;
+    const slots: DKWordInfo[] = [];
+    for (let id = this.index.first[i]; id <= this.index.last[i]; id++) {
+      const info = this.info(id);
+      if (info && info.verseKey === verseKey) slots.push(info);
+    }
+    if (this.failed) return undefined; // Never keep a verse with words missing.
+    slots.sort((a, b) => a.wordPositionInVerse - b.wordPositionInVerse);
+    this.verseSlots.set(verseKey, slots);
+    if (this.verseSlots.size > MAX_VERSE_SLOTS) {
+      const oldest = this.verseSlots.keys().next().value;
+      if (oldest !== undefined) this.verseSlots.delete(oldest);
+    }
+    return slots;
+  }
+
+  /** The surah of the verse that holds `wordId`. */
+  surahOfWord(wordId: number): number | undefined {
+    const i = verseIndexOfWord(this.index, wordId);
+    return i < 0 ? undefined : this.index.surah[i];
+  }
+
+  close(): Promise<void> {
+    if (this.closed) return Promise.resolve();
+    this.closed = true;
+    this.chunks.clear();
+    this.verseSlots.clear();
+    return this.release(this.dbName, this.db);
+  }
+
+  private chunkFor(wordId: number): WordChunk | null {
+    if (!Number.isInteger(wordId) || wordId < 1) return null;
+    const k = Math.floor((wordId - 1) / WORD_CHUNK);
+    const hit = this.chunks.get(k);
+    if (hit) {
+      this.chunks.delete(k);
+      this.chunks.set(k, hit);
+      return hit;
+    }
+    const start = k * WORD_CHUNK + 1;
+    if (this.closed || this.failed || start > this.wordCount) return null;
+    const end = Math.min(start + WORD_CHUNK - 1, this.wordCount);
+    let texts: string[];
+    try {
+      const row = this.db.getFirstSync<{texts: string | null}>(
+        WORD_CHUNK_QUERY,
+        [start, end],
+      );
+      texts = row?.texts == null ? [] : row.texts.split(WORD_SEPARATOR);
+      // The ids of a chunk are contiguous (contract C1): one text for each.
+      if (texts.length !== end - start + 1) {
+        throw new Error(`${texts.length} texts for ids ${start}..${end}`);
+      }
+    } catch (error) {
+      // No retry on the next call: a broken copy would read again on every
+      // getter of a render. The service drops this store (dropFailedStore).
+      this.failed = true;
+      this.onReadFailed(this, error);
+      return null;
+    }
+    const chunk: WordChunk = {
+      start,
+      texts,
+      infos: new Array(texts.length),
+    };
+    this.chunks.set(k, chunk);
+    if (this.chunks.size > MAX_WORD_CHUNKS) {
+      const oldest = this.chunks.keys().next().value;
+      if (oldest !== undefined) this.chunks.delete(oldest);
+    }
+    return chunk;
+  }
+}
+
+/** Verse key → the page of its first word (getPageForVerse). */
+function buildVerseToPage(
+  pageLines: ReadonlyMap<number, DKLine[]>,
+  index: VerseIndex,
+): Map<string, number> {
+  const lines: DKLine[] = [];
+  for (const pageRows of pageLines.values()) {
+    for (const line of pageRows) {
+      if (line.line_type === 'ayah') lines.push(line);
+    }
+  }
+  lines.sort((a, b) => a.first_word_id - b.first_word_id);
+  const verseToPage = new Map<string, number>();
+  for (let i = 0; i < index.keys.length; i++) {
+    const wordId = index.first[i];
+    let lo = 0;
+    let hi = lines.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const line = lines[mid];
+      if (wordId < line.first_word_id) hi = mid - 1;
+      else if (wordId > line.last_word_id) lo = mid + 1;
+      else {
+        verseToPage.set(index.keys[i], line.page_number);
+        break;
+      }
+    }
+  }
+  return verseToPage;
+}
+// @ai-end
 
 // @ai-start
 const LINE_TYPES: ReadonlySet<unknown> = new Set<DKLine['line_type']>([
@@ -650,9 +897,15 @@ async function readLayoutRows(db: SQLite.SQLiteDatabase): Promise<DKLine[]> {
   const rows = await db.getAllAsync<DKLine>(
     'SELECT * FROM pages ORDER BY page_number, line_number;',
   );
+  checkLayoutRows(rows); // @ai
+  return rows;
+}
+
+// @ai-start
+// Same check as readVerseIndex: a damaged copy (or query cache entry) must
+// not drop a line.
+function checkLayoutRows(rows: readonly DKLine[]): void {
   if (rows.length === 0) throw new Error('pages table is empty');
-  // @ai-start
-  // Same check as readWordRows: a damaged copy must not drop a line.
   for (const row of rows) {
     if (
       !isWholeNumber(row.page_number) ||
@@ -666,9 +919,8 @@ async function readLayoutRows(db: SQLite.SQLiteDatabase): Promise<DKLine[]> {
       );
     }
   }
-  // @ai-end
-  return rows;
 }
+// @ai-end
 
 // Background work (worker loop, stale-copy sweeps) handles its own errors;
 // this only keeps an unexpected bug from becoming an unhandled rejection.
@@ -691,9 +943,9 @@ const MAX_IDLE_SIDE_ENTRIES = 1;
 export class DigitalKhattDataService {
   // Main cache: the active rewayah (what the mushaf renders). Replaced as a
   // whole by swapMain(); never cleared or partially filled in place.
-  private wordsById: Map<number, string> = new Map();
-  private wordInfoById: Map<number, DKWordInfo> = new Map();
-  private verseWords: Map<string, DKWordInfo[]> = new Map();
+  // @ai: its words are a WordStore, read on demand.
+  private words: WordStore | null = null;
+  private mainTextFailed = false; // @ai: see announceMainCommit
   private pageLines: Map<number, DKLine[]> = new Map();
   private surahStartPages: Record<number, number> = {};
   private pageToSurah: Record<number, number> = {};
@@ -711,8 +963,8 @@ export class DigitalKhattDataService {
   // Lets the player render text from a reciter's rewayah without mutating
   // currentRewayah (which the mushaf page follows). Populated lazily via
   // ensureRewayahLoaded(), plus the previously active rewayah after a switch.
-  // Each inner map mirrors `verseWords`.
-  private sideVerseWords: Map<RewayahId, Map<string, DKWordInfo[]>> = new Map();
+  // @ai: each entry is that rewayah's WordStore (an open connection).
+  private sideVerseWords: Map<RewayahId, WordStore> = new Map();
   private sideLoading: Map<RewayahId, Promise<void>> = new Map();
   private _initialized = false;
   private _initializing: Promise<void> | null = null;
@@ -743,6 +995,8 @@ export class DigitalKhattDataService {
   private sweepsInFlight: Map<string, Promise<void>> = new Map(); // @ai
   // On-device copies whose bytes matched the bundled asset this session.
   private verifiedCopies: Set<string> = new Set(); // @ai
+  // @ai Copies whose md5 matched the bundled asset this session (verifyCopy).
+  private md5MatchedCopies: Set<string> = new Set();
   // Bumped by resetDatabases so in-flight loads drop their results.
   private epoch = 0;
   // @ai-start
@@ -784,8 +1038,9 @@ export class DigitalKhattDataService {
 
   /**
    * Fires synchronously inside each commit that changes the active rewayah
-   * (including the first commit when it is not Hafs), after the maps are
-   * swapped and before cache subscribers are notified.
+   * (including the first commit when it is not Hafs), and inside the commit
+   * that reloads it after a failed read (@ai), after the maps are swapped and
+   * before cache subscribers are notified.
    */
   onRewayahChange(listener: RewayahChangeListener): () => void {
     this.rewayahListeners.add(listener);
@@ -814,8 +1069,14 @@ export class DigitalKhattDataService {
    * `<rewayah>@<wordsSha8>.<layoutSha8>` (plus `.<basmalaVersion>` for a
    * rewayah with its own basmala lines), or null before the first load.
    * Changes exactly when the served text changes.
+   *
+   * @ai Also null from the moment a read of the main words fails and until
+   * they load again, so the memos keyed by it compute again after the reload,
+   * and a layout with words missing is not filed. (A blank line gives an
+   * unusable layout, but a line that a chunk boundary cuts gives a usable one.)
    */
   getLayoutIdentityKey(): string | null {
+    if (!this.words || this.words.hasFailed) return null; // @ai
     return this.activeIdentity ? dataIdentityKey(this.activeIdentity) : null;
   }
 
@@ -938,9 +1199,11 @@ export class DigitalKhattDataService {
     this.desiredRewayah = null;
     this._initialized = false;
     this._initializing = null;
-    this.wordsById = new Map();
-    this.wordInfoById = new Map();
-    this.verseWords = new Map();
+    // @ai-start
+    // Open words connections close before their files are deleted.
+    const stores = [this.words, ...this.sideVerseWords.values()];
+    this.words = null;
+    // @ai-end
     this.pageLines = new Map();
     this.surahStartPages = {};
     this.pageToSurah = {};
@@ -954,6 +1217,9 @@ export class DigitalKhattDataService {
     this.sweptBases.clear();
     this.sweepsInFlight.clear(); // @ai
     this.verifiedCopies.clear(); // @ai
+    this.md5MatchedCopies.clear(); // @ai
+    clearDkQueries(); // @ai
+    await Promise.all(stores.map(store => store?.close())); // @ai
 
     const currentByBase = getCurrentDbNamesByBase();
     const names = new Set<string>();
@@ -1137,11 +1403,21 @@ export class DigitalKhattDataService {
           failure = error;
         }
 
+        // @ai: a snapshot that is not committed releases its connection.
+        const discard = (): void => {
+          if (snapshot) this.releaseStore(snapshot.words);
+        };
         try {
           // resetDatabases ran meanwhile and already rejected the waiters.
-          if (epoch !== this.epoch) continue;
+          if (epoch !== this.epoch) {
+            discard(); // @ai
+            continue;
+          }
           // Superseded: the newer request's waiter is queued; loop to it.
-          if ((this.desiredRewayah ?? this.currentRewayah) !== target) continue;
+          if ((this.desiredRewayah ?? this.currentRewayah) !== target) {
+            discard(); // @ai
+            continue;
+          }
           if (!snapshot) {
             this.desiredRewayah = null;
             this.loadErrors.set(target, failure);
@@ -1161,6 +1437,7 @@ export class DigitalKhattDataService {
           // Mushaf 1440 pinned the store to Hafs while this load ran: never
           // commit another rewayah under the Hafs label; Hafs overtakes it.
           if (target !== 'hafs' && this.hafsPinned()) {
+            discard();
             this.followHafsPin();
             continue;
           }
@@ -1209,26 +1486,32 @@ export class DigitalKhattDataService {
       this._initialized &&
       this.activeLayoutDbName === layoutSpec.name &&
       this.pageLines.size > 0;
-    const [words, layoutRows] = await Promise.all([
-      // @ai-start
-      // Built inside the read: a copy whose rows cannot be used is deleted,
-      // re-imported and read again like any unreadable copy (as the side
-      // cache's read does).
-      this.readBundledDb(wordsSpec, async db =>
-        buildWordsData(await readWordRows(db)),
-      ),
-      // @ai-end
-      reuseLayout ? null : this.readBundledDb(layoutSpec, readLayoutRows),
-    ]);
+    // @ai-start
+    // The words open as a WordStore (checked inside the read: a copy that
+    // fails the checks is deleted, re-imported and read again like any
+    // unreadable copy). If the layout fails, the store's connection closes.
+    const wordsLoad = this.openWordStore(wordsSpec);
+    let words: WordStore;
+    let layoutRows: DKLine[] | null;
+    try {
+      [words, layoutRows] = await Promise.all([
+        wordsLoad,
+        reuseLayout ? null : this.readLayout(layoutSpec), // @ai
+      ]);
+    } catch (error) {
+      wordsLoad.then(store => this.releaseStore(store)).catch(() => undefined);
+      throw error;
+    }
     // Surah start pages come from the words' verse keys, so build the layout
     // after the words.
     const layout = layoutRows
-      ? buildLayoutData(layoutRows, words.wordInfoById)
+      ? buildLayoutData(layoutRows, wordId => words.surahOfWord(wordId))
       : null;
     console.log(
-      `[DigitalKhattDataService] Loaded ${target}: ${words.wordsById.size} words, ${words.verseWords.size} verses` +
+      `[DigitalKhattDataService] Loaded ${target}: ${words.wordCount} words, ${words.index.keys.length} verses` +
         (layout ? `, layout for ${layout.pageLines.size} pages` : ''),
     );
+    // @ai-end
     return {
       rewayah: target,
       words,
@@ -1243,12 +1526,10 @@ export class DigitalKhattDataService {
   // follow in the same synchronous block.
   private swapMain(next: MainSnapshot): void {
     const prevRewayah = this.currentRewayah;
-    const prevVerseWords = this.verseWords;
+    const prevWords = this.words; // @ai
     const wasInitialized = this._initialized;
 
-    this.wordsById = next.words.wordsById;
-    this.wordInfoById = next.words.wordInfoById;
-    this.verseWords = next.words.verseWords;
+    this.words = next.words; // @ai
     if (next.layout) {
       this.pageLines = next.layout.pageLines;
       this.surahStartPages = next.layout.surahStartPages;
@@ -1263,18 +1544,27 @@ export class DigitalKhattDataService {
     this.loadErrors.delete(next.rewayah);
 
     // The new active rewayah reads from the main cache now.
+    // @ai-start
+    const sideCopy = this.sideVerseWords.get(next.rewayah);
     this.sideVerseWords.delete(next.rewayah);
+    if (sideCopy) this.releaseStore(sideCopy);
+    let keptPrev = false;
+    // @ai-end
     // Keep the outgoing rewayah readable (e.g. the player still showing a
     // track in it) instead of dropping it.
     if (wasInitialized && prevRewayah !== next.rewayah) {
-      if (prevVerseWords.size > 0 && !this.sideVerseWords.has(prevRewayah)) {
-        this.sideVerseWords.set(prevRewayah, prevVerseWords);
+      if (prevWords && !this.sideVerseWords.has(prevRewayah)) {
+        this.sideVerseWords.set(prevRewayah, prevWords);
+        keptPrev = true; // @ai
       }
       // @ai-start
       // It is the most recent copy nothing retains; older ones go unless a
       // surface shows them.
       this.trimSideCache();
       // @ai-end
+    }
+    if (prevWords && !keptPrev && prevWords !== next.words) {
+      this.releaseStore(prevWords); // @ai
     }
 
     // @ai-start
@@ -1300,7 +1590,13 @@ export class DigitalKhattDataService {
   private announceMainCommit(prevRewayah: RewayahId): void {
     this.cacheVersion += 1;
     const rewayah = this.currentRewayah;
-    if (prevRewayah !== rewayah) {
+    // @ai-start
+    // The line-text and layout caches filled during a failed read have words
+    // missing, and this commit serves the same rewayah again.
+    const textFailed = this.mainTextFailed;
+    this.mainTextFailed = false;
+    if (prevRewayah !== rewayah || textFailed) {
+      // @ai-end
       for (const listener of [...this.rewayahListeners]) {
         try {
           listener(rewayah);
@@ -1336,7 +1632,11 @@ export class DigitalKhattDataService {
   }
 
   private async openDb(name: string): Promise<SQLite.SQLiteDatabase> {
-    const db = await SQLite.openDatabaseAsync(name);
+    // @ai A connection of its own. A rewayah can load again while its store is
+    // open in the side cache. With the shared connection, the garbage
+    // collection of the old JS object closes the native connection (Android)
+    // under the new store.
+    const db = await SQLite.openDatabaseAsync(name, {useNewConnection: true});
     this.openDbCounts.set(name, (this.openDbCounts.get(name) ?? 0) + 1);
     return db;
   }
@@ -1359,12 +1659,15 @@ export class DigitalKhattDataService {
   // Reads a bundled DB through its content-addressed on-device copy, under
   // the per-name lock. If the copy is missing it is imported; if reading fails
   // the copy is deleted, re-imported and read once more before giving up.
+  // @ai: keepOpen leaves the connection open after a successful read (the
+  // read hands it to a WordStore, which closes it).
   private readBundledDb<T>(
     spec: BundledDbSpec,
-    read: (db: SQLite.SQLiteDatabase) => Promise<T>,
+    read: ReadBundledDb<T>, // @ai
+    keepOpen = false,
   ): Promise<T> {
     return this.withDbLock(spec.name, () =>
-      this.readBundledDbLocked(spec, read),
+      this.readBundledDbLocked(spec, read, keepOpen),
     ).then(result => {
       runInBackground('Stale-copy sweep', this.sweepStaleCopies([spec.base]));
       return result;
@@ -1373,7 +1676,8 @@ export class DigitalKhattDataService {
 
   private async readBundledDbLocked<T>(
     spec: BundledDbSpec,
-    read: (db: SQLite.SQLiteDatabase) => Promise<T>,
+    read: ReadBundledDb<T>, // @ai
+    keepOpen: boolean, // @ai
   ): Promise<T> {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -1385,7 +1689,7 @@ export class DigitalKhattDataService {
         await deleteDatabaseQuietly(spec.name);
       }
       try {
-        return await this.openAndRead(spec, read);
+        return await this.openAndRead(spec, read, keepOpen);
       } catch (error) {
         lastError = error;
       }
@@ -1398,10 +1702,12 @@ export class DigitalKhattDataService {
 
   private async openAndRead<T>(
     spec: BundledDbSpec,
-    read: (db: SQLite.SQLiteDatabase) => Promise<T>,
+    read: ReadBundledDb<T>, // @ai
+    keepOpen: boolean, // @ai
   ): Promise<T> {
     let db: SQLite.SQLiteDatabase | null = await this.openDb(spec.name);
     let imported = false; // @ai
+    let kept = false; // @ai
     try {
       if (!(await hasTable(db, spec.table))) {
         // First use of this data version (or a damaged copy): import the
@@ -1435,10 +1741,14 @@ export class DigitalKhattDataService {
         imported = true; // @ai
       }
       await this.verifyCopy(spec, imported); // @ai
-      return await read(db);
+      // @ai-start
+      const result = await read(db, this.md5MatchedCopies.has(spec.name));
+      kept = keepOpen;
+      return result;
     } finally {
-      if (db) await this.closeDb(spec.name, db);
+      if (db && !kept) await this.closeDb(spec.name, db);
     }
+    // @ai-end
   }
 
   // @ai-start
@@ -1483,6 +1793,8 @@ export class DigitalKhattDataService {
       console.warn(
         `[DigitalKhattDataService] ${spec.name} was just imported but its md5 ${md5} is not ${expected}; reading it anyway`,
       );
+    } else {
+      this.md5MatchedCopies.add(spec.name);
     }
     this.verifiedCopies.add(spec.name);
   }
@@ -1571,12 +1883,102 @@ export class DigitalKhattDataService {
     }
   }
 
+  // @ai-start
+  /** Opens `spec`'s words as a WordStore (see readVerseIndex). */
+  private openWordStore(spec: BundledDbSpec): Promise<WordStore> {
+    return this.readBundledDb(
+      spec,
+      async (db, trusted) =>
+        new WordStore(
+          spec.name,
+          db,
+          await readVerseIndex(db, spec, trusted),
+          (name, open) => this.closeDb(name, open),
+          (store, error) => this.onWordReadFailed(store, error),
+        ),
+      true,
+    );
+  }
+
+  /**
+   * The page lines of `spec`. An entry of the query cache (written from a
+   * copy whose md5 matched the asset) needs no DB work; else the copy is
+   * read, and stored in the cache when its md5 matched.
+   */
+  private async readLayout(spec: BundledDbSpec): Promise<DKLine[]> {
+    const cached = readDkQuery('lines', spec.base, spec.name);
+    const cachedRows = cached ? decodeLineRows<DKLine>(cached) : null;
+    if (cachedRows) {
+      try {
+        checkLayoutRows(cachedRows);
+        return cachedRows;
+      } catch {
+        // A damaged entry: read the copy below and store it again.
+      }
+    }
+    return this.readBundledDb(spec, async (db, trusted) => {
+      const rows = await readLayoutRows(db);
+      const encoded = trusted ? encodeLineRows(rows) : null;
+      if (encoded) writeDkQuery('lines', spec.base, spec.name, encoded);
+      return rows;
+    });
+  }
+
+  /** Closes a store nothing reads any more. */
+  private releaseStore(store: WordStore): void {
+    runInBackground(`Closing ${store.dbName}`, store.close());
+  }
+
+  // A chunk read failed. Its getter gave '', but '' is also a real word text
+  // (7 of the 8 words DBs have such words), so a page would draw as valid with
+  // words missing. Deferred: the read ran inside a render, and this wakes
+  // subscribers.
+  private onWordReadFailed(store: WordStore, error: unknown): void {
+    console.warn(
+      `[DigitalKhattDataService] Reading words from ${store.dbName} failed:`,
+      error,
+    );
+    Promise.resolve().then(() => this.dropFailedStore(store, error));
+  }
+
+  // The rewayah of `store` reads 'error', so its surfaces offer their retry,
+  // and its copy goes, so that retry imports the bundled asset again.
+  private dropFailedStore(store: WordStore, error: unknown): void {
+    let rewayah: RewayahId | null = null;
+    if (store === this.words) {
+      rewayah = this.currentRewayah;
+      this.words = null;
+      this.mainTextFailed = true;
+      this._initialized = false;
+      this._initializing = null; // initialize() must load it again.
+    } else {
+      for (const [side, words] of this.sideVerseWords) {
+        if (words === store) rewayah = side;
+      }
+      if (rewayah !== null) this.sideVerseWords.delete(rewayah);
+    }
+    // A switch or a reset already dropped it.
+    if (rewayah === null) return;
+    this.loadErrors.set(rewayah, new RewayahLoadError(rewayah, error));
+    runInBackground(
+      `Replacing ${store.dbName}`,
+      this.withDbLock(store.dbName, async () => {
+        await store.close();
+        this.verifiedCopies.delete(store.dbName);
+        this.md5MatchedCopies.delete(store.dbName);
+        await deleteDatabaseQuietly(store.dbName);
+      }),
+    );
+    this.notifyCacheChange();
+  }
+  // @ai-end
+
   getPageLines(pageNum: number): DKLine[] {
     return this.pageLines.get(pageNum) || [];
   }
 
   getWordText(wordId: number): string {
-    return this.wordsById.get(wordId) || '';
+    return this.words?.text(wordId) ?? ''; // @ai
   }
 
   /**
@@ -1618,7 +2020,7 @@ export class DigitalKhattDataService {
   // @ai-end
 
   getWordInfo(wordId: number): DKWordInfo | undefined {
-    return this.wordInfoById.get(wordId);
+    return this.words?.info(wordId); // @ai
   }
 
   getSurahStartPages(): Record<number, number> {
@@ -1637,10 +2039,12 @@ export class DigitalKhattDataService {
    * word unit (see lineWordSpans.ts).
    */
   getVerseWords(verseKey: string, rewayah?: RewayahId): DKWordInfo[] {
-    const slots =
+    // @ai: from the WordStore of the main or the side cache.
+    const store =
       !rewayah || rewayah === this.currentRewayah
-        ? this.verseWords.get(verseKey)
-        : this.sideVerseWords.get(rewayah)?.get(verseKey);
+        ? this.words
+        : this.sideVerseWords.get(rewayah);
+    const slots = store?.verseWords(verseKey);
     return slots ? visibleWords(slots) : [];
   }
 
@@ -1739,11 +2143,9 @@ export class DigitalKhattDataService {
     spec: BundledDbSpec,
     epoch: number,
   ): Promise<void> {
-    let verseWords: Map<string, DKWordInfo[]>;
+    let words: WordStore; // @ai
     try {
-      verseWords = await this.readBundledDb(spec, async db =>
-        buildVerseWords(await readWordRows(db)),
-      );
+      words = await this.openWordStore(spec); // @ai
     } catch (error) {
       if (epoch === this.epoch) {
         this.sideLoading.delete(rewayah);
@@ -1756,7 +2158,10 @@ export class DigitalKhattDataService {
       }
       throw error;
     }
-    if (epoch !== this.epoch) return;
+    if (epoch !== this.epoch) {
+      this.releaseStore(words); // @ai
+      return;
+    }
     this.sideLoading.delete(rewayah);
     this.loadErrors.delete(rewayah);
     // If it became the active rewayah meanwhile, the main cache has it.
@@ -1764,10 +2169,14 @@ export class DigitalKhattDataService {
       // @ai-start
       // The newest copy (re-inserted: map order is recency); older copies
       // nothing retains are dropped beyond the bound.
+      const previous = this.sideVerseWords.get(rewayah);
       this.sideVerseWords.delete(rewayah);
-      this.sideVerseWords.set(rewayah, verseWords);
+      if (previous && previous !== words) this.releaseStore(previous);
+      this.sideVerseWords.set(rewayah, words);
       this.trimSideCache();
       // @ai-end
+    } else {
+      this.releaseStore(words); // @ai
     }
     // Side cache for this rewayah is now ready; wake any consumer reading
     // it (e.g. SkiaVerseText on the player screen rendering a non-mushaf
@@ -1813,7 +2222,11 @@ export class DigitalKhattDataService {
     for (const rewayah of [...this.sideVerseWords.keys()].reverse()) {
       if ((this.sideRetainCounts.get(rewayah) ?? 0) > 0) continue;
       idle += 1;
-      if (idle > MAX_IDLE_SIDE_ENTRIES) this.sideVerseWords.delete(rewayah);
+      if (idle > MAX_IDLE_SIDE_ENTRIES) {
+        const store = this.sideVerseWords.get(rewayah);
+        this.sideVerseWords.delete(rewayah);
+        if (store) this.releaseStore(store);
+      }
     }
   }
   // @ai-end
@@ -1865,26 +2278,14 @@ export class DigitalKhattDataService {
     if (!this.verseToPage) {
       // Never cache a map built from an empty cache (before the first load);
       // commits replace the maps atomically, so a built map is never partial.
-      if (
-        !this._initialized ||
-        this.wordInfoById.size === 0 ||
-        this.pageLines.size === 0
-      ) {
+      // @ai-start
+      // From the verse index and the layout: no word is read.
+      const words = this.words;
+      if (!this._initialized || !words || this.pageLines.size === 0) {
         return undefined;
       }
-      const verseToPage = new Map<string, number>();
-      for (const [pageNum, lines] of this.pageLines) {
-        for (const line of lines) {
-          if (line.line_type !== 'ayah') continue;
-          for (let wid = line.first_word_id; wid <= line.last_word_id; wid++) {
-            const info = this.wordInfoById.get(wid);
-            if (info && !verseToPage.has(info.verseKey)) {
-              verseToPage.set(info.verseKey, pageNum);
-            }
-          }
-        }
-      }
-      this.verseToPage = verseToPage;
+      this.verseToPage = buildVerseToPage(this.pageLines, words.index);
+      // @ai-end
     }
     return this.verseToPage.get(verseKey);
   }

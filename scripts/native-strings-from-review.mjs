@@ -257,6 +257,57 @@ const ROWS = {
     {part: 0, catalog: ['Play']},
     {part: 1, catalog: ['Pause']},
   ],
+  // Sprint 52 Task 1b (TECH_DEBT #357): the text of the upstream widget
+  // redesign (Pass D), String Catalog keys and Android resources.
+  31: [{catalog: ['Now playing'], widget: ['bayaan_widget_text_now_playing']}],
+  32: [{catalog: ['Paused'], widget: ['bayaan_widget_text_paused']}],
+  33: [
+    {catalog: ['%lldm left'], placeholders: {n: '%lld'}},
+    {widget: ['bayaan_widget_text_minutes_left'], placeholders: {n: '%1$d'}},
+  ],
+  34: [{catalog: ['%lldh %lldm left'], placeholders: {h: '%lld', m: '%lld'}}],
+  35: [
+    {catalog: ['Page %lld of %lld'], placeholders: {n: '%lld', total: '%lld'}},
+  ],
+  36: [
+    {
+      catalog: ['Page %lld · Juz %lld'],
+      placeholders: {n: '%lld', juz: '%lld'},
+    },
+    {
+      widget: ['bayaan_widget_text_page_juz'],
+      placeholders: {n: '%1$d', juz: '%2$d'},
+    },
+  ],
+  37: [{widget: ['bayaan_widget_text_page'], placeholders: {n: '%1$d'}}],
+  38: [
+    {
+      catalog: ['Resume reading'],
+      widget: ['bayaan_widget_text_resume_reading'],
+    },
+  ],
+  39: [{catalog: ['Open the mushaf']}],
+  40: [{widget: ['bayaan_widget_text_start']}],
+  41: [{widget: ['bayaan_widget_text_last_read']}],
+  42: [{catalog: ['page'], widget: ['bayaan_widget_text_page_label']}],
+  43: [
+    {widget: ['bayaan_widget_text_page_label_juz'], placeholders: {n: '%1$d'}},
+  ],
+  44: [
+    {catalog: ['with %@'], placeholders: {reciter: '%@'}},
+    {
+      widget: ['bayaan_widget_text_with_reciter'],
+      placeholders: {reciter: '%1$s'},
+    },
+  ],
+  45: [
+    {catalog: ['Ayah of the Day · %@'], placeholders: {ref: '%@'}},
+    {
+      widget: ['bayaan_widget_text_ayah_reference'],
+      placeholders: {ref: '%1$s'},
+    },
+  ],
+  46: [{catalog: ['Listen']}],
 };
 
 const CSV_PLACEHOLDER = /{(\w+)}/g;

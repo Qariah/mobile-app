@@ -25,11 +25,7 @@ import {
 } from 'react-native';
 // Qariah: a bare Linking.openURL rejects unhandled when the OS declines the URL (QARIAHV2-1Y).
 import {openExternalUrl} from '@/utils/openExternalUrl';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
 import {useTheme} from '@/hooks/useTheme';
@@ -48,6 +44,10 @@ interface CommunityReflectionsContentProps {
   /** The verse's label in the shown rewayah's numbering (the provider is
    *  asked for the Hafs verse surahNumber:ayahNumber). Default "S:A". */
   label?: string;
+  /** Beside the reader (the iPad ayah panel): no verse badge. */
+  inPanel?: boolean;
+  /** Shown instead of the default empty state when there is no reflection. */
+  emptyState?: React.ReactNode;
   // @ai-end
 }
 
@@ -58,7 +58,7 @@ type FetchState =
 
 export const CommunityReflectionsContent: React.FC<
   CommunityReflectionsContentProps
-> = ({surahNumber, ayahNumber, label}) => {
+> = ({surahNumber, ayahNumber, label, inPanel = false, emptyState}) => {
   const {theme} = useTheme();
   const {t} = useTranslation('sheets'); // @ai
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -99,7 +99,7 @@ export const CommunityReflectionsContent: React.FC<
         contentContainerStyle={styles.scrollInner}
         showsVerticalScrollIndicator={false}
         bounces={true}>
-        <View style={styles.verseBadge}>
+        <View style={[styles.verseBadge, inPanel && styles.hidden] /* @ai */}>
           {/* @ai: the rewayah's own label when given */}
           <Text style={styles.verseBadgeText}>{label ?? verseKey}</Text>
         </View>
@@ -112,6 +112,8 @@ export const CommunityReflectionsContent: React.FC<
           <Text style={styles.emptyText}>
             {t('communityReflections.loadFailed')}
           </Text>
+        ) : state.data.length === 0 && emptyState ? (
+          emptyState // @ai
         ) : state.data.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Feather
@@ -218,6 +220,7 @@ const createStyles = (theme: Theme) =>
     container: {
       flex: 1,
     },
+    hidden: {display: 'none'}, // @ai
     scrollContent: {
       flex: 1,
     },

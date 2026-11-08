@@ -8,7 +8,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {useTranslation} from 'react-i18next';
 import type {QariahVerseNotes} from './useQariahVerseNotes';

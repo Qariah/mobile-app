@@ -256,3 +256,63 @@ describe('notices', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 });
+
+// @ai-start Sprint 52 Task 8: the ayah panel. Beside the reader (a window of
+// 900 pt or more) a 360 pt space ends the toolbar, so its buttons stay over
+// the reader pane; the centred card below 900 pt is modal, so the toolbar
+// goes while it shows.
+describe('the ayah panel', () => {
+  const {Dimensions} = jest.requireActual('react-native');
+  const {closeAyahPanel, openAyahPanel, registerAyahPanelHost} =
+    jest.requireActual('@/components/mushaf/ayah-panel/ayahPanelStore');
+  let unregister: (() => void) | null = null;
+  const original = Dimensions.get('window');
+
+  function setWindow(width: number, height: number) {
+    act(() => {
+      Dimensions.set({
+        window: {width, height, scale: 2, fontScale: 1},
+        screen: {width, height, scale: 2, fontScale: 1},
+      });
+    });
+  }
+
+  function openPanel() {
+    unregister = registerAyahPanelHost();
+    act(() =>
+      openAyahPanel(
+        {verseKey: '2:2', surahNumber: 2, ayahNumber: 2, source: 'mushaf'},
+        'tafsir',
+      ),
+    );
+  }
+
+  afterEach(() => {
+    act(() => {
+      unregister?.();
+      closeAyahPanel();
+    });
+    unregister = null;
+    setWindow(original.width, original.height);
+  });
+
+  const panelSpaces = () =>
+    renderer?.root.findAll(n => n.props.width === 360 && !n.props.icon) ?? [];
+
+  it('ends the toolbar with a 360 pt space beside the reader', () => {
+    setWindow(1194, 834);
+    expect(panelSpaces()).toHaveLength(0);
+    openPanel();
+    expect(button('play.fill')).toBeDefined();
+    expect(panelSpaces().length).toBeGreaterThan(0);
+  });
+
+  it('hides the toolbar while the modal card shows', () => {
+    setWindow(834, 1194);
+    openPanel();
+    expect(buttons()).toEqual([]);
+    act(() => closeAyahPanel());
+    expect(buttons().length).toBeGreaterThan(0);
+  });
+});
+// @ai-end

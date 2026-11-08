@@ -6,11 +6,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
 import Color from 'color';
@@ -88,6 +84,14 @@ interface TafseerContentProps {
   unitStart?: UnitStart;
   // @ai-end
   onBack: () => void;
+  // @ai-start
+  /**
+   * Shown beside the reader for one ayah (the iPad ayah panel): no verse
+   * badge and Arabic text (the page shows them), no Prev / Next (the panel
+   * follows the selected ayah).
+   */
+  inPanel?: boolean;
+  // @ai-end
 }
 
 // @ai-start
@@ -97,6 +101,7 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
   rewayah,
   unitStart, // @ai
   onBack,
+  inPanel = false, // @ai
 }) => {
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -220,7 +225,7 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
         showsVerticalScrollIndicator={false}
         bounces={true}>
         {/* Verse badge */}
-        <View style={styles.verseBadge}>
+        <View style={[styles.verseBadge, inPanel && styles.hidden] /* @ai */}>
           <Text style={styles.verseBadgeText}>
             {localizeDigits(page.label)}
           </Text>
@@ -228,15 +233,17 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
 
         {/* Arabic text */}
         {/* @ai-start */}
-        <SkiaVersePreview
-          verseKey={page.previewVerseKey}
-          text={page.previewText}
-          rewayah={rewayah}
-        />
+        {inPanel ? null : (
+          <SkiaVersePreview
+            verseKey={page.previewVerseKey}
+            text={page.previewText}
+            rewayah={rewayah}
+          />
+        )}
         {/* @ai-end */}
 
         {/* Divider */}
-        <View style={styles.divider} />
+        <View style={[styles.divider, inPanel && styles.hidden] /* @ai */} />
 
         {hasNoTafaseer ? (
           <Pressable
@@ -246,7 +253,7 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
               SheetManager.hideAll();
               usePlayerStore.getState().setSheetMode('hidden');
               setTimeout(() => {
-                router.push('/(tabs)/(a.home)/translations');
+                router.push('/translations'); // @ai
               }, 300);
             }}>
             <StackedVolumesIcon
@@ -374,7 +381,12 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
       </ScrollView>
 
       {/* Footer — Prev / Next */}
-      <View style={[styles.footer, {paddingBottom: verticalScale(16)}]}>
+      <View
+        style={[
+          styles.footer,
+          {paddingBottom: verticalScale(16)},
+          inPanel && styles.hidden, // @ai — the panel follows the selected ayah
+        ]}>
         <Pressable
           onPress={goToPrevious}
           disabled={isFirst}
@@ -444,6 +456,7 @@ const createStyles = (theme: Theme) =>
     container: {
       flex: 1,
     },
+    hidden: {display: 'none'}, // @ai
     // Scroll content
     scrollContent: {
       flex: 1,

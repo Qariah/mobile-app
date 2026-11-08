@@ -1,5 +1,62 @@
 [
   {
+    "version": "3.2.5",
+    "releaseDate": "2026-11-08",
+    "title": "Qariah on iPad",
+    "highlights": [
+      {
+        "title": "Qariah on iPad",
+        "description": "A layout made for the larger screen: your Collection in a sidebar, Settings in two columns and the player in two panes. Read Tafsir, Reflections and your notes beside the Mushaf page.",
+        "icon": "tablet-portrait-outline"
+      },
+      {
+        "title": "Fixes on iPhone",
+        "description": "Playback no longer freezes when a recitation starts, and a crash in the Quran reader is fixed.",
+        "icon": "checkmark-circle-outline"
+      },
+      {
+        "title": "Lite mode on low-memory Android phones",
+        "description": "On an Android phone with less than 3 GB of memory, Qariah starts in Lite mode: simpler screens that stay fast, with listening, downloads, background audio and the Mushaf. Change it anytime in Settings › Lite mode.",
+        "icon": "speedometer-outline"
+      },
+      {
+        "title": "Tell us what you think",
+        "description": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support.",
+        "icon": "chatbubbles-outline"
+      }
+    ],
+    "fullChangelog": {
+      "features": [
+        "iPad: a layout made for the larger screen, with your Collection in a sidebar, wider rows, Settings in two columns and the player in two panes",
+        "iPad: Tafsir, Reflections and Personal Notes open in a panel beside the Mushaf page in a wide window, and as a centred card in a narrow one",
+        "Lite mode on Android phones with less than 3 GB of memory or a 32-bit processor: simpler and faster screens that keep listening, reciter profiles, downloads, background audio and Mushaf reading. Settings › Lite mode offers Automatic, On and Off; the choice applies at the next launch"
+      ],
+      "improvements": [
+        "The splash screen no longer waits for the Mushaf data on low-memory Android phones",
+        "A bookmark tap and the Repeat action in the verse sheet open the Mushaf reader at once",
+        "The app keeps the splash until a restored Mushaf page is drawn, so no blank page shows",
+        "The Mushaf keeps its line layout across launches and loads the word data faster",
+        "The player keeps its position and its queue up to date while the app is in the background, so the return after a long listen does not freeze",
+        "Android: lighter now-playing bars that stop when their screen is not on view"
+      ],
+      "fixes": [
+        "iPhone: playback no longer freezes for a few seconds when a recitation starts",
+        "iPhone: the Quran reader no longer closes after many changes in List view with word by word on",
+        "A shared link to a Qariah plays the recitation that has the surah",
+        "Copy and share a translation as plain text, with no footnote code",
+        "The \"Share as Image\" file carries the Qariah’s name",
+        "The Mushaf fallback fonts load once, after a failed preload, and a failed load tries again",
+        "The player header uses the same Mushaf font as the reader",
+        "A change of the riwayah in the reader keeps the opened verse and the selection",
+        "A failed word-data read shows an error, and a retry draws the page again",
+        "The Home Screen widgets refresh their snapshot when the Mushaf data is ready"
+      ],
+      "technical": [
+        "A newer app engine: Expo SDK 58 and React Native 0.88"
+      ]
+    }
+  },
+  {
     "version": "3.2.3",
     "releaseDate": "2026-11-01",
     "title": "Qariah in Arabic, widgets and new recitations",

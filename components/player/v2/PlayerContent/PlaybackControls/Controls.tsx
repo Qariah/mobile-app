@@ -1,6 +1,6 @@
 import React, {useCallback, useState} from 'react';
 import {View, Pressable, Text, StyleSheet} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {usePlayerStore} from '@/services/player/store/playerStore';
@@ -16,6 +16,7 @@ import {
 import {localizeDigits} from '@/i18n/format';
 import {forceLTR} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next'; // Qariah: the control labels
+import {usePlayerA11y} from '@/hooks/usePlayerA11y'; // @ai
 // @ai-end
 
 const SEEK_INTERVAL = 15; // seconds
@@ -24,9 +25,9 @@ const SEEK_INTERVAL = 15; // seconds
 export const Controls = () => {
   const {theme} = useTheme();
   const {t} = useTranslation(['common', 'qariah']); // @ai Qariah: the control labels
+  const a11y = usePlayerA11y(); // @ai
   const {play, pause, skipToNext, skipToPrevious, seekTo} = usePlayerActions();
   const playbackState = usePlayerStore(s => s.playback.state);
-  const playbackPosition = usePlayerStore(s => s.playback.position);
   const currentIndex = usePlayerStore(s => s.queue.currentIndex);
   const tracksLength = usePlayerStore(s => s.queue.tracks.length);
   const trackLoading = usePlayerStore(s => s.loading.trackLoading);
@@ -78,13 +79,15 @@ export const Controls = () => {
 
   const handleSeekBackward = useCallback(async () => {
     if (trackLoading) return;
-    await seekTo(Math.max(0, playbackPosition - SEEK_INTERVAL));
-  }, [trackLoading, playbackPosition, seekTo]);
+    // @ai Qariah: read at the press, so that the position does not re-render every control.
+    const {position} = usePlayerStore.getState().playback;
+    await seekTo(Math.max(0, position - SEEK_INTERVAL));
+  }, [trackLoading, seekTo]);
 
   const handleSeekForward = useCallback(async () => {
     if (trackLoading) return;
-    await seekTo(playbackPosition + SEEK_INTERVAL);
-  }, [trackLoading, playbackPosition, seekTo]);
+    await seekTo(usePlayerStore.getState().playback.position + SEEK_INTERVAL);
+  }, [trackLoading, seekTo]);
 
   const isLastTrack = currentIndex === tracksLength - 1;
   const seekSeconds = localizeDigits(SEEK_INTERVAL); // @ai
@@ -93,6 +96,7 @@ export const Controls = () => {
     <View style={[styles.container, forceLTR]}>
       <Pressable
         onPress={handleSeekBackward}
+        {...a11y.skipBack(SEEK_INTERVAL, trackLoading)}
         disabled={trackLoading}
         accessibilityRole="button" // @ai
         accessibilityLabel={t('qariah:a11y.player.skipBack', {
@@ -123,6 +127,7 @@ export const Controls = () => {
       <View style={styles.centerControls}>
         <Pressable
           onPress={handlePrevious}
+          {...a11y.previous(trackLoading)}
           style={[styles.sideButton, trackLoading && styles.disabledButton]}
           accessibilityRole="button" // @ai
           accessibilityLabel={t('qariah:a11y.player.previous')} // @ai
@@ -138,6 +143,7 @@ export const Controls = () => {
         <View style={styles.playPauseContainer}>
           <Pressable
             onPress={handlePlayPause}
+            {...a11y.playPause(optimisticIsPlaying, trackLoading)}
             disabled={trackLoading}
             accessibilityRole="button" // @ai
             accessibilityLabel={
@@ -154,6 +160,7 @@ export const Controls = () => {
         </View>
         <Pressable
           onPress={handleNext}
+          {...a11y.next(isLastTrack || trackLoading)}
           style={[styles.sideButton, isLastTrack && styles.disabledButton]}
           accessibilityRole="button" // @ai
           accessibilityLabel={t('actions.next')} // @ai
@@ -167,6 +174,7 @@ export const Controls = () => {
       </View>
       <Pressable
         onPress={handleSeekForward}
+        {...a11y.skipForward(SEEK_INTERVAL, trackLoading)}
         disabled={trackLoading}
         accessibilityRole="button" // @ai
         accessibilityLabel={t('qariah:a11y.player.skipForward', {

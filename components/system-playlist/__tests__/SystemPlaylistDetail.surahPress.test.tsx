@@ -11,6 +11,20 @@ import SystemPlaylistDetail from '@/components/system-playlist/SystemPlaylistDet
 import type {SystemPlaylist} from '@/data/systemPlaylists';
 
 const mockPush = jest.fn();
+// Pass D: each surah row sits in upstream's native options menu scope,
+// whose module reaches the native audio service. The rows render as before.
+jest.mock('@/components/sheets/options/surahOptions', () => ({
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  SurahOptionsRow: ({children}) => children,
+}));
+// Expo SDK 58's expo-font has no asset registry in Jest; icons are not under test.
+jest.mock('@expo/vector-icons', () => ({
+  Feather: () => null,
+  Ionicons: () => null,
+}));
+jest.mock('@/hooks/useGlassHeaderHeight', () => ({
+  useGlassHeaderHeight: () => 0,
+}));
 jest.mock('expo-router', () => ({
   useRouter: () => ({push: mockPush, back: jest.fn()}),
   useNavigation: () => ({setOptions: jest.fn()}),
@@ -155,12 +169,13 @@ describe('SystemPlaylistDetail — a surah tap (#555)', () => {
     fireEvent.press(mulk);
 
     await waitFor(() => expect(mockActions.play).toHaveBeenCalled());
+    // Pass D: upstream (#404) keeps the playlist order and starts at the tap.
     expect(mockActions.updateQueue).toHaveBeenCalledWith(
       [
-        {id: 'r-1:67', surahId: '67'},
         {id: 'r-1:36', surahId: '36'},
+        {id: 'r-1:67', surahId: '67'},
       ],
-      0,
+      1,
     );
     expect(mockPush).not.toHaveBeenCalled();
   });

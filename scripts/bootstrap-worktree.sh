@@ -92,7 +92,7 @@ fi
 #     #2 — Debug fails on the Sentry upload step without sentry.properties). ----
 if [[ "${1:-}" == "--ios" ]]; then
   echo "→ Running pod install (SENTRY_DISABLE_AUTO_UPLOAD=true) ..."
-  ( cd "$HERE/ios" && SENTRY_DISABLE_AUTO_UPLOAD=true pod install )
+  ( cd "$HERE/ios" && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 SENTRY_DISABLE_AUTO_UPLOAD=true pod install )
   echo "  ✓ pods installed"
   echo "  ↳ Reminder: start Metro FROM THIS WORKTREE, or the device loads the"
   echo "    wrong bundle (Sprint 28 rule #2)."

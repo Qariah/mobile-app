@@ -52,6 +52,14 @@ enum WidgetLanguage {
     guard let code = resolve(language) else { return String(value) }
     return value.formatted(.number.grouping(.never).locale(locale(code)))
   }
+
+  /// WidgetLogic.minutesLeftLabel as String Catalog keys ("%lldm left",
+  /// "%lldh %lldm left"): a Text shows it in the language and the digits of
+  /// its `.widgetLanguage` environment. Same rounding as minutesLeftLabel.
+  static func minutesLeft(_ seconds: Double) -> LocalizedStringKey {
+    let minutes = Int((max(0, seconds) / 60).rounded(.up))
+    return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m left" : "\(minutes)m left"
+  }
 }
 
 extension View {

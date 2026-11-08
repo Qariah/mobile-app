@@ -13,8 +13,9 @@
 import React from 'react';
 import {Platform, Pressable, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {OnboardingColumn} from '@/components/onboarding/OnboardingColumn'; // @ai
 import {useRouter} from 'expo-router';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import {useTranslation} from 'react-i18next';
@@ -38,32 +39,34 @@ export default function OnboardingWelcome() {
     <SafeAreaView
       style={[styles.container, {backgroundColor: theme.colors.background}]}
       edges={['top', 'bottom']}>
-      <View style={styles.content}>
-        <Text style={[styles.eyebrow, {color: theme.colors.textSecondary}]}>
-          {t('qariah:onboarding.welcomeTitle')}
-        </Text>
-        <Text style={[styles.title, {color: theme.colors.text}]}>
-          {t('qariah:onboarding.welcomeHeadline')}
-        </Text>
-        <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          {t('qariah:onboarding.welcomeBody')}
-        </Text>
-      </View>
-      <View style={styles.footer}>
-        <Pressable
-          onPress={() => router.push('/onboarding/sign-in')}
-          style={({pressed}) => [
-            styles.cta,
-            {backgroundColor: theme.colors.primary},
-            pressed && styles.ctaPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={t('qariah:onboarding.getStarted')}>
-          <Text style={[styles.ctaText, {color: theme.colors.background}]}>
-            {t('qariah:onboarding.getStarted')}
+      <OnboardingColumn>
+        <View style={styles.content}>
+          <Text style={[styles.eyebrow, {color: theme.colors.textSecondary}]}>
+            {t('qariah:onboarding.welcomeTitle')}
           </Text>
-        </Pressable>
-      </View>
+          <Text style={[styles.title, {color: theme.colors.text}]}>
+            {t('qariah:onboarding.welcomeHeadline')}
+          </Text>
+          <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
+            {t('qariah:onboarding.welcomeBody')}
+          </Text>
+        </View>
+        <View style={styles.footer}>
+          <Pressable
+            onPress={() => router.push('/onboarding/sign-in')}
+            style={({pressed}) => [
+              styles.cta,
+              {backgroundColor: theme.colors.primary},
+              pressed && styles.ctaPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={t('qariah:onboarding.getStarted')}>
+            <Text style={[styles.ctaText, {color: theme.colors.background}]}>
+              {t('qariah:onboarding.getStarted')}
+            </Text>
+          </Pressable>
+        </View>
+      </OnboardingColumn>
     </SafeAreaView>
   );
 }
@@ -71,7 +74,6 @@ export default function OnboardingWelcome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
     paddingHorizontal: moderateScale(28),
   },
   content: {

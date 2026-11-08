@@ -45,6 +45,18 @@ jest.mock('@/hooks/useTheme', () => ({
   }),
 }));
 jest.mock('@/hooks/useGlassProps', () => ({USE_GLASS: false}));
+// Pass D: the Notes list takes upstream's bottom padding and native options
+// menu; both modules reach the player store (native audio) in Jest.
+jest.mock('@/hooks/useBottomInset', () => ({
+  useBottomInset: () => 0,
+  useLibraryListBottomPadding: () => 0,
+}));
+jest.mock('@/components/sheets/options/OptionsMenu', () => ({
+  useNativeOptionsMenu: () => false,
+}));
+jest.mock('@/components/sheets/options/collectionOptions', () => ({
+  CollectionOptionsMenu: () => null,
+}));
 jest.mock('@/hooks/useCollectionNativeHeader', () => ({
   useCollectionNativeHeader: jest.fn(),
 }));

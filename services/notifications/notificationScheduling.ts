@@ -268,7 +268,8 @@ function subscribeNotificationPrefs(
 }
 
 function subscribeAppStateActive(listener: () => void): () => void {
-  let last: AppStateStatus | null = AppState.currentState;
+  // React Native 0.88 types `AppState.currentState` as a string. @ai
+  let last: AppStateStatus | string | null | undefined = AppState.currentState;
   const subscription = AppState.addEventListener('change', state => {
     const previous = last;
     last = state;

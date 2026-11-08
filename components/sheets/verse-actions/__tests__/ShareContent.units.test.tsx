@@ -101,7 +101,7 @@ import {ShareContent} from '../ShareContent';
 import {shareUrl} from '@/utils/shareUtils';
 import {showToast} from '@/utils/toastUtils';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
-import branding from '@/config/branding'; // Qariah
+import branding from '@/config/branding'; // @ai
 import type {RewayahId} from '@/services/rewayah/RewayahIdentity';
 import {
   buildRewayahVerseUnits,
@@ -112,8 +112,7 @@ import {
 declare const global: {IS_REACT_ACT_ENVIRONMENT?: boolean};
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-// Qariah: the share host comes from branding (RFC-007), not a literal.
-const BASE = branding.shareBaseUrl;
+const BASE = branding.shareBaseUrl; // @ai: the host shareUrl() reads (RFC-007)
 
 const fixture =
   require('@/services/mushaf/__fixtures__/verseUnitsFixture.json') as {
@@ -184,9 +183,10 @@ beforeEach(() => {
   mockCards.length = 0;
   mockUnits.models = new Map([['warsh', warsh]]);
   jest.clearAllMocks();
-  shareSpy = jest
-    .spyOn(Share, 'share')
-    .mockImplementation(async () => ({action: 'sharedAction'}));
+  shareSpy = jest.spyOn(Share, 'share').mockImplementation(async () => ({
+    action: 'sharedAction',
+    activityType: undefined,
+  }));
   useMushafSettingsStore.setState({rewayah: 'hafs', mushafRenderer: 'dk_v2'});
 });
 

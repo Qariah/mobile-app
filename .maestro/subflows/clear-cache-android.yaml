@@ -1,0 +1,36 @@
+# Reusable (Android only): Settings → Storage → the "Clear" button of the "Clear cache" card →
+# the confirm dialog's "CLEAR" → the "Success" dialog → "OK". It ends on the Storage screen
+# with no dialog open. Call it when the tab bar is on screen.
+#
+# Two flow faults that the 3936 audit found (#781):
+#   - The confirm dialog is a native AlertDialog. Its positive button is `android:id/button1`
+#     ("CLEAR"). The "Clear" button of the Storage card stays in the hierarchy behind the
+#     dialog, so a text tap on "Clear" hits the card button again. Tap the dialog button by id.
+#   - The "Success / Cache has been cleared. / OK" dialog stays open until a tap on "OK".
+#
+# iOS runs the same steps in its case script (`scripts/iphone-device-test.sh QP-08`).
+appId: com.qariah.app
+---
+- tapOn: '.*Settings'
+- scrollUntilVisible:
+    element: 'Storage'
+    direction: DOWN
+- tapOn: 'Storage'
+# The "Remove downloads" card has a "Remove" button; only the "Clear cache" card has "Clear".
+- scrollUntilVisible:
+    element: 'Clear'
+    direction: DOWN
+- assertVisible: 'Clear cache'
+- tapOn: 'Clear'
+- extendedWaitUntil:
+    visible: '.*This will clear your cache.*'
+    timeout: 5000
+- tapOn:
+    id: 'android:id/button1'
+- extendedWaitUntil:
+    visible: '.*Cache has been cleared.*'
+    timeout: 8000
+- tapOn: 'OK'
+- extendedWaitUntil:
+    notVisible: '.*Cache has been cleared.*'
+    timeout: 5000

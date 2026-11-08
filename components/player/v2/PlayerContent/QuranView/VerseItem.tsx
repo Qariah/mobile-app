@@ -20,6 +20,8 @@ import {
 } from '@/store/verseAnnotationsStore';
 import {useVerseSelectionStore} from '@/store/verseSelectionStore';
 import {SheetManager} from 'react-native-actions-sheet';
+import {showVerseActions} from '@/components/mushaf/ayah-panel/showVerseActions'; // @ai
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
 import {mediumHaptics} from '@/utils/haptics';
 import {tajweedColors} from '@/constants/tajweedColors';
 import type {IndexedTajweedData} from '@/utils/tajweedLoader';
@@ -161,7 +163,8 @@ export const VerseItem = memo<VerseItemProps>(
     unitRow, // @ai
   }) => {
     const {theme} = useTheme();
-    const {t} = useTranslation(['player', 'common']);
+    const {t} = useTranslation(['player', 'common', 'qariah']); // @ai qariah
+    const {isTablet} = useResponsive(); // @ai Sprint 52 Task 8
     const verseKey = verse.verse_key;
     const arabicTextWeight = useMushafSettingsStore(s => s.arabicTextWeight);
     const mushafRewayah = useMushafSettingsStore(s => s.rewayah);
@@ -352,7 +355,10 @@ export const VerseItem = memo<VerseItemProps>(
           unitRow.unit.ayah,
           unitRow.rewayah,
         );
-        SheetManager.show('verse-actions', {payload});
+        // @ai Sprint 52 Task 8: a long-press moves an open ayah panel; the
+        // ••• button opens the verse actions.
+        if (withHaptics) showVerseActions(payload);
+        else SheetManager.show('verse-actions', {payload});
       },
       [unitRow, source, selectVerse],
     );
@@ -368,19 +374,18 @@ export const VerseItem = memo<VerseItemProps>(
       // @ai-end
       mediumHaptics();
       selectVerse(verseKey, verse.surah_number, verse.ayah_number);
-      SheetManager.show('verse-actions', {
-        payload: {
-          verseKey,
-          surahNumber: verse.surah_number,
-          ayahNumber: verse.ayah_number,
-          // arabicText omitted — the sheet reads from DK so it always
-          // matches the current rewayah instead of the static Hafs
-          // text on this VerseItem prop.
-          translation: verse.translation || '',
-          transliteration: verse.transliteration || '',
-          source: source ?? 'player',
-          rewayah,
-        },
+      // @ai Sprint 52 Task 8: or moves an open ayah panel to this ayah.
+      showVerseActions({
+        verseKey,
+        surahNumber: verse.surah_number,
+        ayahNumber: verse.ayah_number,
+        // arabicText omitted — the sheet reads from DK so it always
+        // matches the current rewayah instead of the static Hafs
+        // text on this VerseItem prop.
+        translation: verse.translation || '',
+        transliteration: verse.transliteration || '',
+        source: source ?? 'player',
+        rewayah,
       });
     }, [
       verseKey,
@@ -598,7 +603,11 @@ export const VerseItem = memo<VerseItemProps>(
       <Pressable
         style={containerStyle}
         onPress={handlePress}
-        onLongPress={handleLongPress}>
+        onLongPress={handleLongPress}
+        // @ai Sprint 52 Task 8: on a tablet the card holds the ••• button, so
+        // VoiceOver and XCUITest must reach it as its own element. Phones
+        // keep the card as one element, as before.
+        accessible={isTablet ? false : undefined}>
         {/* @ai — the unnumbered basmala row: no number, no actions */}
         {isUnnumbered ? null : (
           <View style={styles.verseInfoContainer}>
@@ -633,7 +642,12 @@ export const VerseItem = memo<VerseItemProps>(
               )}
               <Pressable
                 onPress={handleOptionsPress}
-                hitSlop={8}
+                hitSlop={10} // @ai — 44 pt (Sprint 52 Task 8)
+                accessibilityRole="button" // @ai
+                // @ai Sprint 52 Task 8: "More options for ayah 67:1"
+                accessibilityLabel={t('qariah:ayahPanel.moreOptions', {
+                  key: `${verse.surah_number}:${verse.ayah_number}`,
+                })}
                 style={styles.optionsButton}>
                 <Feather
                   name="more-horizontal"

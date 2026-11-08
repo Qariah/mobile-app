@@ -9,7 +9,9 @@
 //   3. that the car integration does not open the uploads DB while user
 //      uploads are off (b7045d5e);
 //   4. the slow-cold-start watchdog: armed at the start, cleared at the end;
-//   5. that a throw in a Qariah hook does not stop the boot.
+//   5. that a throw in a Qariah hook does not stop the boot;
+//   6. that the deferred Mushaf preload starts only after the splash hides
+//      (planning/samsung-a10s-device-plan.md, F1).
 // The real modules: appBoot, qariahBoot, AppInitializer, qariahInitConfig,
 // services/car (index) and CarSnapshotService. Every other module is mocked
 // at its boundary and writes its call into `mockCalls`.
@@ -33,6 +35,19 @@ const mockSentry = {
   captureException: jest.fn(),
   flush: jest.fn(() => Promise.resolve(true)),
 };
+
+/** The splash: the deferred Mushaf preload waits for its hide. */
+const mockSplash = {hidden: Promise.resolve(), hide: (): void => undefined};
+function mockResetSplash(): void {
+  let resolve: () => void = () => undefined;
+  mockSplash.hidden = new Promise<void>(r => {
+    resolve = r;
+  });
+  mockSplash.hide = () => {
+    mockCalls.push('splash.hidden');
+    resolve();
+  };
+}
 
 function mockRecord(entry: string, boundary: string = entry): void {
   mockCalls.push(entry);
@@ -173,6 +188,19 @@ jest.mock('@/services/verse-annotations/VerseAnnotationService', () => ({
 jest.mock('@/services/mushaf/MushafPreloadService', () => ({
   mushafPreloadService: {initialize: mockAsync('mushafPreload.initialize')},
 }));
+jest.mock('@/utils/bootSplash', () => ({
+  whenSplashHidden: () => mockSplash.hidden,
+}));
+const mockLite = {on: false};
+jest.mock('@/services/lite/liteMode', () => ({
+  isLiteMode: () => mockLite.on,
+}));
+const mockSession = {lastScreenWasMushaf: false};
+jest.mock('@/services/mushaf/MushafSessionStore', () => ({
+  mushafSessionStore: {
+    getLastScreenWasMushaf: () => mockSession.lastScreenWasMushaf,
+  },
+}));
 jest.mock('@/services/mushaf/QulDataService', () => ({
   qulDataService: {initialize: mockAsync('qul.initialize')},
 }));
@@ -234,6 +262,18 @@ jest.mock('@/store/reciterStore', () => ({
   useReciterStore: mockStore({defaultReciter: {id: ''}}),
 }));
 jest.mock('@/store/ambientStore', () => ({useAmbientStore: mockStore({})}));
+// Pass D: bootApp() starts upstream's foreground rehydrate over every
+// persisted store (services/persistedStores), whose imports reach native
+// audio modules. The boot order under test does not depend on them.
+jest.mock('@/services/persistedStores', () => ({PERSISTED_STORES: []}));
+jest.mock('@/services/rehydrateOnForeground', () => ({
+  initForegroundRehydration: jest.fn(),
+}));
+// Upstream's reciter-merge migration runs before the playlists load; the
+// merge list names Bayaan reciters only.
+jest.mock('@/services/reciterMergeMigration', () => ({
+  applyReciterMergesToSavedData: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('@/store/adhkarSettingsStore', () => ({
   useAdhkarSettingsStore: mockStore({}),
 }));
@@ -349,6 +389,9 @@ const SKIPPED_AT_BOOT: Record<string, string[]> = {
 
 beforeEach(() => {
   mockCalls.length = 0;
+  mockResetSplash();
+  mockLite.on = false;
+  mockSession.lastScreenWasMushaf = false;
   mockFontKeys.length = 0;
   mockThrowAt.clear();
   mockPending.clear();
@@ -390,15 +433,16 @@ describe('Qariah boot (characterization, shipping flags)', () => {
   it('runs the boot steps and the Qariah hooks in this order', async () => {
     await freshBoot()();
     await settle();
+    mockSplash.hide();
+    await settle();
     expect(mockCalls).toEqual([
       // qariahBootStarted(): the sentinel, before any await.
       'sentinel.started 3.2.2 (2620)',
       'sentinel.step start',
       'expoAudio.initialize',
       'sentinel.step expo-audio-ready',
-      // qariahAfterAudioReady(): the deferred Mushaf preload, not awaited.
-      'mushafPreload.initialize',
-      'fonts.loadAsync',
+      // qariahAfterAudioReady() starts nothing yet: the deferred Mushaf
+      // preload waits for the splash to hide (the end of this list).
       'sentinel.step catalog-fetch-start',
       'catalog.getAllReciters',
       'sentinel.step catalog-ready',
@@ -411,10 +455,12 @@ describe('Qariah boot (characterization, shipping flags)', () => {
       'database.initialize',
       'playlist.initialize',
       'analytics.initialize',
-      'playlistsStore.loadPlaylists',
       'timestamps.initialize',
       'themeData.init',
       'fonts.loadAsync',
+      // Pass D: the playlists service awaits upstream's reciter-merge
+      // migration first, so its load comes after the others start.
+      'playlistsStore.loadPlaylists',
       'timestampStore.loadFollowAlongRegistry',
       // AppInitializer starts the car integration after the services.
       'car.snapshotService.start',
@@ -426,6 +472,10 @@ describe('Qariah boot (characterization, shipping flags)', () => {
       'sentinel.step ready',
       // qariahBootCompleted(): clears the sentinel after 'ready'.
       'sentinel.completed',
+      // The splash hides: the deferred Mushaf preload, not awaited.
+      'splash.hidden',
+      'mushafPreload.initialize',
+      'fonts.loadAsync',
     ]);
   });
 
@@ -460,13 +510,52 @@ describe('Qariah boot (characterization, shipping flags)', () => {
     ]);
   });
 
-  it('loads the DigitalKhatt fonts with the deferred preload, and the other Arabic fonts in AppInitializer', async () => {
+  it('loads the other Arabic fonts in AppInitializer, and the DigitalKhatt fonts with the deferred preload after the splash hides', async () => {
     await freshBoot()();
+    await settle();
+    expect(mockFontKeys).toEqual([UPSTREAM_FONTS]);
+    mockSplash.hide();
+    await settle();
     expect(mockFontKeys).toEqual([
-      ['DigitalKhattV1', 'DigitalKhattV2'],
       UPSTREAM_FONTS,
+      ['DigitalKhattV1', 'DigitalKhattV2'],
     ]);
   });
+
+  // Lite mode (planning/lite-mode-design.md, section 11): the same deferred
+  // preload as every phone, 3 s after the splash hides, so Lite's first
+  // screen can finish first.
+  it('starts the Lite Mushaf preload 3 s after the splash hides', async () => {
+    jest.useFakeTimers();
+    mockLite.on = true;
+    await freshBoot()();
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(mockCalls).toContain('sentinel.completed');
+    expect(mockCalls).not.toContain('mushafPreload.initialize');
+    mockSplash.hide();
+    await jest.advanceTimersByTimeAsync(2999);
+    expect(mockCalls).not.toContain('mushafPreload.initialize');
+    await jest.advanceTimersByTimeAsync(1);
+    expect(mockCalls).toContain('mushafPreload.initialize');
+    expect(mockFontKeys).toEqual([
+      UPSTREAM_FONTS,
+      ['DigitalKhattV1', 'DigitalKhattV2'],
+    ]);
+  });
+
+  // A launch that reopens the reader needs the data first: the preload
+  // starts during the boot, before the splash hides (Lite mode too).
+  it.each([false, true])(
+    'starts the preload during the boot when the reader will be restored (Lite %s)',
+    async lite => {
+      mockLite.on = lite;
+      mockSession.lastScreenWasMushaf = true;
+      await freshBoot()();
+      await settle();
+      expect(mockCalls).toContain('mushafPreload.initialize');
+      expect(mockCalls).not.toContain('splash.hidden');
+    },
+  );
 
   it('does not wait for the deferred Mushaf preload', async () => {
     mockPending.set('mushafPreload.initialize', new Promise(() => undefined));
@@ -481,12 +570,16 @@ describe('Qariah boot (characterization, shipping flags)', () => {
       expect(mockCalls).not.toContain(call);
     }
     // deferMushafPreload: the preload runs once, from qariahAfterAudioReady(),
-    // not as the AppInitializer 'Mushaf Preload' service.
+    // not as the AppInitializer 'Mushaf Preload' service, and only after the
+    // splash hides.
+    expect(mockCalls).not.toContain('mushafPreload.initialize');
+    mockSplash.hide();
+    await settle();
     expect(mockCalls.filter(c => c === 'mushafPreload.initialize')).toEqual([
       'mushafPreload.initialize',
     ]);
-    expect(mockCalls.indexOf('mushafPreload.initialize')).toBeLessThan(
-      mockCalls.indexOf('catalog.getAllReciters'),
+    expect(mockCalls.indexOf('mushafPreload.initialize')).toBe(
+      mockCalls.indexOf('splash.hidden') + 1,
     );
   });
 
@@ -634,6 +727,9 @@ describe('a throw in a Qariah hook', () => {
     async (_hook: string, boundary: string) => {
       mockThrowAt.add(boundary);
       await expect(freshBoot()()).resolves.toBeUndefined();
+      await settle();
+      // The deferred preload's boundary runs only after the splash hides.
+      mockSplash.hide();
       await settle();
       expect(mockCalls).toEqual(
         expect.arrayContaining([

@@ -26,6 +26,7 @@
 import type {SkStrutStyle} from '@shopify/react-native-skia';
 import type {JustResultByLine} from '@/services/mushaf/JustificationService';
 import {FONTSIZE, SPACEWIDTH} from '@/services/mushaf/QuranTextService';
+import {readStoredLineFit, storeLineFit} from '@/services/mushaf/lineFitStore'; // @ai
 
 /** Narrowest spacing drawn (font units at FONTSIZE): a font size must stay
  *  positive, so an overshoot never takes a space to or below zero. */
@@ -120,10 +121,23 @@ export function getLineFit(key: string): LineFit | undefined {
     lineFits.delete(key);
     lineFits.set(key, fit);
   }
-  return fit;
+  // @ai-start
+  // Qariah: else the fit an earlier launch of this build stored
+  // (services/mushaf/lineFitStore.ts).
+  if (fit) return fit;
+  const stored = readStoredLineFit(key);
+  if (stored) rememberLineFit(key, stored);
+  return stored;
+  // @ai-end
 }
 
 export function setLineFit(key: string, fit: LineFit): void {
+  rememberLineFit(key, fit); // @ai
+  storeLineFit(key, fit); // @ai Qariah: kept across launches.
+}
+
+// @ai Qariah: the session cache part of setLineFit.
+function rememberLineFit(key: string, fit: LineFit): void {
   lineFits.set(key, fit);
   if (lineFits.size > LINE_FIT_LIMIT) {
     const oldest = lineFits.keys().next().value;

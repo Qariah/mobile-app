@@ -1,0 +1,35 @@
+# QP-08 (Android), second half — after "Clear cache" stops the audio, the next play works
+# (#235). `player/clear-cache-stops.yaml` is the first half. Issue #781.
+#
+# The flow does the whole sequence itself in one app session: play, clear the cache, play
+# again. So it does not depend on the order of the flows, or on clear-cache-stops.yaml.
+# The Surahs search keeps "Mulk" after the first play; `subflows/play-al-mulk.yaml` erases it.
+#
+# Android only (tag `android-only`): see clear-cache-stops.yaml. iOS runs QP-08 by its case
+# script: `scripts/iphone-device-test.sh QP-08`.
+#
+# Right after the flow, the agent reads `adb -s <serial> shell dumpsys media_session`:
+# the Qariah session shows `state=3` (PLAYING).
+appId: com.qariah.app
+tags:
+  - regression
+  - player
+  - android-only
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+
+# 1. Play, then clear the cache: the mini player goes away.
+- runFlow: ../../../subflows/play-al-mulk.yaml
+# Leave the Al-Mulk page (back to "All Surahs"). The second play starts from that screen.
+- pressKey: back
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow: ../../../subflows/clear-cache-android.yaml
+- assertNotVisible:
+    id: 'mini-player-bar'
+
+# 2. Play again: the mini player comes back, names the surah and the reciter, and offers
+#    Pause (the subflow checks all three).
+- runFlow: ../../../subflows/play-al-mulk.yaml

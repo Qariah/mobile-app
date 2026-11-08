@@ -99,6 +99,16 @@ jest.mock('@gorhom/bottom-sheet', () => {
   };
 });
 
+// @ai Sprint 52: these suites test the phone sheet.
+jest.mock('@/hooks/useResponsive', () => ({
+  useResponsive: () => ({isTablet: false}),
+}));
+// @ai Sprint 52: the card width constant lives in the action sheet module,
+// which pulls in reanimated; Jest needs only the numbers.
+jest.mock('@/components/sheets/AdaptiveActionSheet', () => ({
+  SHEET_MAX_WIDTH: 560,
+  SHEET_MAX_HEIGHT: 760,
+}));
 jest.mock('react-native-size-matters', () => ({
   // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
   moderateScale: v => v,

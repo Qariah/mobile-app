@@ -21,11 +21,13 @@
 import React, {useCallback, useEffect, useMemo} from 'react';
 import {Modal, Platform, Pressable, Text, View} from 'react-native';
 import {Feather} from '@expo/vector-icons';
-import {moderateScale, ScaledSheet} from 'react-native-size-matters';
+import {moderateScale, ScaledSheet} from '@/utils/scale';
 import Color from 'color';
 import {useTranslation} from 'react-i18next';
 import {useRouter} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
+import {SHEET_MAX_WIDTH} from '@/components/sheets/AdaptiveActionSheet'; // @ai
 import type {Theme} from '@/utils/themeUtils';
 import {appDirection} from '@/utils/rtl';
 import branding from '@/config/branding';
@@ -51,6 +53,7 @@ export const SOFT_PROMPT_TYPE_KEYS = [
 export function NotificationSoftPrompt(): React.JSX.Element | null {
   const visible = useSoftPromptStore(s => s.visible);
   const {theme} = useTheme();
+  const {isTablet} = useResponsive();
   const {t} = useTranslation(['qariah', 'common']);
   const router = useRouter();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -92,8 +95,15 @@ export function NotificationSoftPrompt(): React.JSX.Element | null {
       onShow={confirmSoftPromptShown}
       onRequestClose={onSecondary}
       testID="notification-soft-prompt">
-      <View style={[styles.backdrop, {direction: appDirection}]}>
-        <View style={styles.card}>
+      <View
+        style={[
+          styles.backdrop,
+          isTablet && styles.backdropTablet,
+          {direction: appDirection},
+        ]}>
+        <View
+          testID="notification-soft-prompt-card"
+          style={[styles.card, isTablet && styles.cardTablet]}>
           <View style={styles.row}>
             <View style={styles.iconCircle}>
               <Feather
@@ -174,6 +184,16 @@ const createStyles = (theme: Theme) =>
       backgroundColor: 'rgba(0, 0, 0, 0.35)',
       paddingHorizontal: moderateScale(16),
       paddingBottom: moderateScale(40),
+    },
+    // Sprint 52: on a tablet the card is centred, at most SHEET_MAX_WIDTH wide.
+    backdropTablet: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingBottom: 0,
+    },
+    cardTablet: {
+      width: '100%',
+      maxWidth: SHEET_MAX_WIDTH,
     },
     card: {
       backgroundColor: theme.colors.background,

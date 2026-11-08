@@ -1325,11 +1325,11 @@ test('focus metric: the file check accepts the metric kind and names its problem
 test('focus metric: the production versionCodes come from card.builds (Android only)', () => {
   assert.deepEqual(focus.productionCodes(ROLLOUT_CFG), [1717, 2027]);
   // The committed file: 2027 and 1717 (owner 2026-10-25: 1717 counts in
-  // Google's score too).
+  // Google's score too), and 3763 since the 3.2.3 rollout (2026-11-01).
   const live = JSON.parse(
     readFileSync(join(ROOT, 'docs/operations/active-rollout.json'), 'utf8'),
   );
-  assert.deepEqual(focus.productionCodes(live), [1717, 2027]);
+  assert.deepEqual(focus.productionCodes(live), [1717, 2027, 3763]);
   assert.deepEqual(
     focus.productionCodes({
       card: {
@@ -1778,10 +1778,13 @@ test('daily-card --anr: the JSON keeps the old fields and adds anr.sentry.week; 
     assert.equal(w.android.frozeUsers, 15);
     // card.builds names one Android production build since PR #641. Since
     // 2026-10-24 the week also counts the older build that still has users
-    // (1717, Android in the PostHog stub): weekReleases.
+    // (1717, Android in the PostHog stub): weekReleases. Since 2026-11-01
+    // card.builds also names 3763 (the 3.2.3 rollout); the stub has no
+    // sessions for it, so it counts 0.
     assert.deepEqual(
       w.android.byBuild.map(b => [b.build, b.users, b.frozeUsers]),
       [
+        ['3763', 0, 0],
         ['2027', 694, 3],
         ['1717', 883, 12],
       ],

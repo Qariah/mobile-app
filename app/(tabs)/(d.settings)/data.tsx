@@ -22,7 +22,7 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
-import {moderateScale, ScaledSheet} from 'react-native-size-matters';
+import {moderateScale, ScaledSheet} from '@/utils/scale';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
 import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';

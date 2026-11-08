@@ -271,10 +271,13 @@ const SkiaVerseText: React.FC<SkiaVerseTextProps> = ({
   // previous paragraphs when the memo recomputes (and on unmount). The cleanup
   // runs with the prior `built` value, so the paragraph being rendered this
   // frame is never disposed early.
-  // Defer the dispose behind the UI queue: a queued Skia draw can still hold the paragraph (GH #458).
+  //
+  // The dispose is DEFERRED behind a worklets UI-queue barrier. A direct
+  // dispose frees a paragraph that a queued Skia draw still holds, and the UI
+  // thread then aborts the app. See `utils/skiaDeferredDispose.ts`.
   useEffect(() => {
     return () => {
-      disposeAfterPendingDraws([built.paragraph, built.strokeParagraph]);
+      disposeAfterPendingDraws([built.paragraph, built.strokeParagraph]); // @ai
     };
   }, [built]);
 

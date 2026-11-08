@@ -11,6 +11,8 @@ import {usePlayerStore} from '@/services/player/store/playerStore';
 // @ai-start
 import i18n from '@/i18n';
 import {getSurahDisplayName} from '@/i18n/format';
+import {findRewayatForSurah} from '@/utils/rewayatForSurah';
+import {showToast} from '@/utils/toastUtils';
 // @ai-end
 
 // @ai-start
@@ -34,17 +36,33 @@ export default function RecitationDeepLinkReceiver(): React.ReactElement {
       return;
     }
 
-    const rw =
-      (rewayah && reciter.rewayat.find(r => r.id === rewayah)) ||
-      reciter.rewayat[0];
-    if (!rw) {
+    const surahNum = parseInt(surah, 10);
+    if (Number.isNaN(surahNum)) {
       router.replace('/');
       return;
     }
 
-    const surahNum = parseInt(surah, 10);
-    if (Number.isNaN(surahNum)) {
-      router.replace('/');
+    const openReciterProfile = (rewayatId?: string): void => {
+      router.replace('/(tabs)/(a.home)');
+      setTimeout(() => {
+        router.push({
+          pathname: '/(tabs)/(a.home)/reciter/[id]',
+          params: {id: reciter.id, ...(rewayatId ? {rewayatId} : {})},
+        });
+      }, 100);
+    };
+
+    // The requested rewayah when it has the surah, else the first rewayah that
+    // has it. A reciter's first rewayah need not have every surah (#732): a
+    // track for a rewayah without the surah gives a player that cannot play.
+    const rw = findRewayatForSurah(reciter, surahNum, rewayah);
+    if (!rw) {
+      showToast(
+        i18n.t('qariah:deepLink.recitationUnavailableTitle'),
+        i18n.t('qariah:deepLink.recitationUnavailableBody'),
+        'error',
+      );
+      openReciterProfile();
       return;
     }
 
@@ -76,13 +94,7 @@ export default function RecitationDeepLinkReceiver(): React.ReactElement {
         }
       }
 
-      router.replace('/(tabs)/(a.home)');
-      setTimeout(() => {
-        router.push({
-          pathname: '/(tabs)/(a.home)/reciter/[id]',
-          params: {id: reciter.id},
-        });
-      }, 100);
+      openReciterProfile(rw.id);
     };
 
     startPlaybackAndNavigate();

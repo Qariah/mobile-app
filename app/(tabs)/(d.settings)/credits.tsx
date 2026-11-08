@@ -1,7 +1,7 @@
 import React, {useMemo} from 'react';
 import {View, Text, ScrollView, Pressable, Linking} from 'react-native';
 import {useTheme} from '@/hooks/useTheme';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import Color from 'color';
 import {Theme} from '@/utils/themeUtils';
@@ -108,7 +108,8 @@ function getCredits(
         },
         {
           title: 'Wikipedia contributors',
-          // @ai Qariah: no digit post-processing, so "CC BY-SA 4.0" keeps its digits in Arabic.
+          // @ai No digit post-processing: the licence name stays
+          // "CC BY-SA 4.0" in Arabic, not "CC BY-SA ٤.٠".
           description: t('credits.items.wikipediaNames', {postProcess: []}),
           link: 'https://creativecommons.org/licenses/by-sa/4.0/',
         },

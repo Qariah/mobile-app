@@ -54,7 +54,7 @@ function clearNoticeLater(announcementId: string): void {
 
 /** The part of `AppState` that this module uses, so a test can pass a fake. */
 export interface AppStateSource {
-  currentState: AppStateStatus | null | undefined;
+  currentState: AppStateStatus | string | null | undefined;
   addEventListener(
     type: 'change',
     listener: (state: AppStateStatus) => void,
@@ -87,7 +87,8 @@ export function startForegroundAnnouncementRecord(
   if (started) return;
   started = true;
   try {
-    const appState = deps.appState ?? AppState;
+    // React Native 0.88 types `AppState.currentState` as a string. @ai
+    const appState: AppStateSource = deps.appState ?? AppState;
     const record =
       deps.record ??
       ((isFreshInstall: boolean) =>

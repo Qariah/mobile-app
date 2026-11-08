@@ -17,12 +17,16 @@ jest.mock('posthog-react-native', () => ({
   useFeatureFlag: () => undefined,
   useFeatureFlagWithPayload: () => [undefined, undefined],
 }));
-jest.mock('expo-router', () => ({usePathname: () => '/'}));
+jest.mock('expo-router', () => ({
+  usePathname: () => '/',
+  useSegments: () => [],
+}));
 jest.mock('@sentry/react-native', () => ({
   captureMessage: (name: string, options?: unknown) => {
     mockSentryOptions[name] = options;
     mockLog.push(`sentry:${name}`);
   },
+  setTag: () => undefined,
 }));
 jest.mock('@/config/qariahFeatureFlags', () => ({
   isQariahFeatureEnabled: () => true,

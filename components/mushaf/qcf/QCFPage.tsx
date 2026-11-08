@@ -41,7 +41,7 @@ import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import {runOnJS} from 'react-native-worklets';
 import * as Haptics from 'expo-haptics';
 import Color from 'color';
-import {SheetManager} from 'react-native-actions-sheet';
+import {showVerseActions} from '@/components/mushaf/ayah-panel/showVerseActions'; // @ai
 import {
   digitalKhattDataService,
   BASMALLAH_TEXT,
@@ -67,7 +67,10 @@ import {useMushafFontMgr} from '@/hooks/useMushafFontMgr';
 import {getTextAllahNameCharMap} from '@/services/mushaf/AllahNameHighlightService';
 import {themeDataService} from '@/services/mushaf/ThemeDataService';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
-import {usePlaybackVerseKeys} from '@/store/mushafPlayerStore'; // @ai
+import {
+  usePlaybackBasmalaSurah, // @ai
+  usePlaybackVerseKeys, // @ai
+} from '@/store/mushafPlayerStore';
 import {useMushafVerseSelectionStore} from '@/store/mushafVerseSelectionStore';
 import {
   createTextStrokePaint,
@@ -193,6 +196,9 @@ const QCFPage: React.FC<QCFPageProps> = ({
   // @ai — every Hafs verse the reciter is reciting (a rewayah recitation's
   // verse can cover several Hafs verses); empty when idle.
   const playbackVerseKeys = usePlaybackVerseKeys();
+  // @ai — the surah whose basmala is being recited (the intro before its
+  // first verse): its basmallah line is painted as a recited verse is.
+  const basmalaSurah = usePlaybackBasmalaSurah();
 
   const surahHeaderFonts = useMemo(() => {
     const qcTypeface = mushafPreloadService.quranCommonTypeface;
@@ -364,6 +370,18 @@ const QCFPage: React.FC<QCFPageProps> = ({
         : null;
     for (let i = 0; i < pageLines.length; i++) {
       const line = pageLines[i];
+      // @ai-start
+      if (
+        line.line_type === 'basmallah' &&
+        basmalaSurah !== null &&
+        digitalKhattDataService.getBasmalaSurah(line) === basmalaSurah
+      ) {
+        byLine.set(i, [
+          {start: 0, end: BASMALLAH_TEXT.length - 1, color: playbackBgColor},
+        ]);
+        continue;
+      }
+      // @ai-end
       if (line.line_type !== 'ayah') continue;
       const words = qcfDataService.getWordsForLine(
         pageNumber,
@@ -414,6 +432,7 @@ const QCFPage: React.FC<QCFPageProps> = ({
     selectedPageNumber,
     selectedVerseKeys,
     playbackVerseKeys, // @ai
+    basmalaSurah, // @ai
     playbackBgColor,
     selectionBgColor,
     showThemes,
@@ -858,14 +877,13 @@ const QCFPage: React.FC<QCFPageProps> = ({
 
     const firstKey = keys[0];
     const [surahStr, ayahStr] = firstKey.split(':');
-    SheetManager.show('verse-actions', {
-      payload: {
-        verseKey: firstKey,
-        surahNumber: parseInt(surahStr, 10),
-        ayahNumber: parseInt(ayahStr, 10),
-        verseKeys: keys.length > 1 ? keys : undefined,
-        source: 'mushaf',
-      },
+    // @ai Sprint 52 Task 8: or moves the ayah panel
+    showVerseActions({
+      verseKey: firstKey,
+      surahNumber: parseInt(surahStr, 10),
+      ayahNumber: parseInt(ayahStr, 10),
+      verseKeys: keys.length > 1 ? keys : undefined,
+      source: 'mushaf',
     });
 
     dragStartVerseKeyRef.current = null;

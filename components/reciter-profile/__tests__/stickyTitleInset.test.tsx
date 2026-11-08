@@ -14,7 +14,7 @@ import TestRenderer from 'react-test-renderer';
 import {Animated, StyleSheet} from 'react-native';
 import {readFileSync} from 'fs';
 import {join} from 'path';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {
   NAVIGATION_TITLE_INSET,
   NavigationButtons,

@@ -3,18 +3,15 @@ import {
   View,
   Text,
   useWindowDimensions,
-  Switch,
   Pressable,
   StyleSheet,
 } from 'react-native';
-import {
-  ScaledSheet,
-  moderateScale,
-  verticalScale,
-} from 'react-native-size-matters';
+import {NativeSwitch} from '@/components/native/NativeSwitch'; // @ai
+import {ScaledSheet, moderateScale, verticalScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
-import ActionSheet, {SheetProps, ScrollView} from 'react-native-actions-sheet';
+import {SheetProps, ScrollView} from 'react-native-actions-sheet';
+import ActionSheet from '@/components/sheets/AdaptiveActionSheet';
 import Color from 'color';
 import {Feather} from '@expo/vector-icons';
 import {
@@ -153,11 +150,6 @@ export const AdhkarLayoutSheet = (props: SheetProps<'adhkar-layout'>) => {
     setTransliterationFontSize,
   } = useAdhkarSettingsStore();
 
-  const trackColor = {
-    false: Color(theme.colors.text).alpha(0.1).toString(),
-    true: Color(theme.colors.text).alpha(0.65).toString(),
-  };
-
   return (
     <ActionSheet
       id={props.sheetId}
@@ -198,10 +190,7 @@ export const AdhkarLayoutSheet = (props: SheetProps<'adhkar-layout'>) => {
                 <Text style={styles.optionLabel}>
                   {t('adhkarLayout.showTranslation')}
                 </Text>
-                <Switch
-                  trackColor={trackColor}
-                  thumbColor="#FFFFFF"
-                  ios_backgroundColor={trackColor.false}
+                <NativeSwitch
                   onValueChange={toggleTranslation}
                   value={showTranslation}
                   style={styles.switchStyle}
@@ -231,10 +220,7 @@ export const AdhkarLayoutSheet = (props: SheetProps<'adhkar-layout'>) => {
                 <Text style={styles.optionLabel}>
                   {t('adhkarLayout.showTransliteration')}
                 </Text>
-                <Switch
-                  trackColor={trackColor}
-                  thumbColor="#FFFFFF"
-                  ios_backgroundColor={trackColor.false}
+                <NativeSwitch
                   onValueChange={toggleTransliteration}
                   value={showTransliteration}
                   style={styles.switchStyle}

@@ -28,6 +28,14 @@ const mockActions = {
   updateSettings: jest.fn(),
 };
 
+// Pass D: the speed and sleep-timer buttons sit in upstream's native menus
+// (Expo UI). The test reads the buttons, so the menus render their children.
+jest.mock('@/components/player/v2/ListeningMenus', () => ({
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  PlaybackSpeedMenu: ({children}) => children,
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  SleepTimerMenu: ({children}) => children,
+}));
 jest.mock('@/services/player/store/playerStore', () => {
   // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
   const usePlayerStore = selector => selector(mockState);

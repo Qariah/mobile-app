@@ -282,6 +282,38 @@ describe('removeFromQueue() clears the loading state (#237)', () => {
     expect(state.queue.currentIndex).toBe(0);
     expect(state.loading.trackLoading).toBe(false);
   });
+
+  // @ai The trailing write re-reads the queue after the reload. Before, it
+  // wrote the tracks that it read before the await, so a track queued
+  // during the reload was lost.
+  it('a track queued during the reload stays in the queue', async () => {
+    await startQueue(1, 'playing');
+    const removeLoad = deferred();
+    mockedAudio.loadTrack.mockImplementationOnce(() => removeLoad.promise);
+
+    // Remove b: the reload of c waits on the network.
+    const remove = usePlayerStore.getState().removeFromQueue([1]);
+    await flush();
+    // The user queues d in that time.
+    await usePlayerStore.getState().addToQueue([makeTrack('d')]);
+    expect(usePlayerStore.getState().queue.tracks.map(t => t.id)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+
+    removeLoad.resolve();
+    await remove;
+    await flush();
+
+    const state = usePlayerStore.getState();
+    expect(state.queue.tracks.map(t => t.id)).toEqual(['a', 'c', 'd']);
+    expect(state.queue.total).toBe(3);
+    expect(state.queue.currentIndex).toBe(1);
+    expect(state.playback.state).toBe('playing');
+    expect(state.loading.trackLoading).toBe(false);
+  });
 });
 
 /**

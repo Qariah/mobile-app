@@ -3,7 +3,7 @@
 # a skip, a finished run, a hard stop, a limit, a failure.
 #
 # Usage:
-#   bash scripts/run-end.sh <triage|drafts|autoSprint> <DONE|SKIPPED|STOPPED-LIMIT|FAILED> [build]
+#   bash scripts/run-end.sh <triage|drafts|autoSprint|auditor|promoter|steward|upstreamSteward|retro> <DONE|SKIPPED|STOPPED-LIMIT|FAILED> [build]
 #
 # What it does:
 #   1. Reads the final counts of this run. The run-limits hook saw THIS command before it
@@ -11,7 +11,9 @@
 #      the limits end here (the handshake is in .claude/hooks/qariah-run-limits.cjs).
 #      This script cannot know the session_id, so it reads the newest .last.json for this
 #      task that ended in the last 15 minutes. With none, the counts are "unknown".
-#   2. autoSprint only: removes the .claude/.autonomous-run marker that the sprint armed.
+#   2. autoSprint, auditor, promoter: removes the .claude/.autonomous-run marker that the run
+#      armed. The auditor and the promoter write their name in it. A run does not remove the
+#      marker of another run (an empty marker is the auto-sprint's).
 #   3. Posts one line as a comment on the pinned GitHub issue "Daily card" (label `ops`),
 #      and creates and pins that issue if it is missing:
 #        run-health task=<t> date=<YYYY-MM-DD> status=<s> build=<n|none> toolCalls=<n> minutes=<n>
@@ -32,10 +34,10 @@ set -uo pipefail
 task="${1:-}"
 status="${2:-}"
 build="${3:-none}"
-case "$task" in triage | drafts | autoSprint) ;; *) task="" ;; esac
+case "$task" in triage | drafts | autoSprint | auditor | promoter | steward | upstreamSteward | retro) ;; *) task="" ;; esac
 case "$status" in DONE | SKIPPED | STOPPED-LIMIT | FAILED) ;; *) status="" ;; esac
 if [ -z "$task" ] || [ -z "$status" ]; then
-  echo "usage: bash scripts/run-end.sh <triage|drafts|autoSprint> <DONE|SKIPPED|STOPPED-LIMIT|FAILED> [build]" >&2
+  echo "usage: bash scripts/run-end.sh <triage|drafts|autoSprint|auditor|promoter|steward|upstreamSteward|retro> <DONE|SKIPPED|STOPPED-LIMIT|FAILED> [build]" >&2
   exit 2
 fi
 case "$build" in
@@ -73,9 +75,35 @@ line="run-health task=$task date=$run_date status=$status build=$build toolCalls
 echo "$line"
 
 # --- 2. marker -----------------------------------------------------------------------
-if [ "$task" = autoSprint ] && [ -f "$root/.claude/.autonomous-run" ]; then
-  rm -f "$root/.claude/.autonomous-run" && echo "run-end: removed .claude/.autonomous-run"
-fi
+case "$task" in
+  autoSprint | auditor | promoter)
+    if [ -f "$root/.claude/.autonomous-run" ]; then
+      owner="$(cat "$root/.claude/.autonomous-run" 2>/dev/null || true)"
+      if [ -z "$owner" ] && [ "$task" = autoSprint ] || [ "$owner" = "$task" ]; then
+        rm -f "$root/.claude/.autonomous-run" && echo "run-end: removed .claude/.autonomous-run"
+      else
+        echo "run-end: left .claude/.autonomous-run in place (it is held by ${owner:-the auto-sprint})"
+      fi
+    fi
+    ;;
+esac
+
+# --- 4. the run is over ----------------------------------------------------------------
+# The limits ended with this command (the hook wrote <sid>.last.json). From here the
+# session writes its report and ends. It does no follow-up work: the run-limits hook
+# denies a write in this session for 24 h (RUN OVER). A question or a finding goes to
+# the owner queue, where the Steward answers it within 2 hours.
+run_over() {
+  if [ "$tool_calls" = unknown ]; then
+    echo "run-end: WARN the run-limits hook did not see this run (no .last.json for $task). The RUN OVER rule is not armed for this session."
+  fi
+  cat <<EOT
+run-end: THE RUN IS OVER. Write the report, then end the session. Do no follow-up work here.
+run-end: A question, a finding or an owner item goes to the queue, never to the report as prose:
+run-end:   node scripts/owner-queue.mjs ask --kind=decision|action|info --title=<text> --body-file=<path> --run=$task
+run-end: The report's "What Omar must do" lists owner-queue issue numbers only.
+EOT
+}
 
 # --- 3. post -------------------------------------------------------------------------
 title="Daily card"
@@ -128,6 +156,7 @@ if [ "${RUN_END_DRY_RUN:-}" = "1" ]; then
   else
     echo "run-end: dry run, not posted (target: a new issue \"$title\")"
   fi
+  run_over
   exit 0
 fi
 
@@ -142,3 +171,4 @@ if [ -z "$issue" ]; then
 fi
 gh api -X POST "repos/$REPO/issues/$issue/comments" -f body="$line" >/dev/null 2>&1 || post_fail "the REST comment failed"
 echo "run-end: posted on https://github.com/$REPO/issues/$issue"
+run_over

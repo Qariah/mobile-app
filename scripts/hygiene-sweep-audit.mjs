@@ -162,8 +162,24 @@ for (const b of sprintBranches) {
 }
 
 // ---------------------------------------------------------------- 4. Open PRs
-const openPrs = ghJson(['pr', 'list', '--repo', REPO, '--state', 'open', '--limit', '50',
-  '--json', 'number,title,baseRefName,isDraft,updatedAt']) || [];
+// REST, not `gh pr list`: the Claude Cloud GitHub proxy refuses GraphQL, and the
+// weekly retro runs this script in a cloud session (since 2026-11-06).
+const restPulls = (repo) => {
+  const rows = ghJson(['api', '-X', 'GET', `repos/${repo}/pulls`, '-f', 'state=open', '-f', 'per_page=50']);
+  if (!Array.isArray(rows)) {
+    note('low', 'GitHub', `could not read the open PRs of ${repo}; the PR checks did not run.`);
+    return [];
+  }
+  return rows.map((p) => ({
+    number: p.number,
+    title: p.title,
+    baseRefName: p.base?.ref,
+    isDraft: Boolean(p.draft),
+    updatedAt: p.updated_at,
+    author: { login: p.user?.login },
+  }));
+};
+const openPrs = restPulls(REPO);
 for (const pr of openPrs) {
   const age = Math.round((Date.parse(TODAY) - Date.parse(pr.updatedAt)) / 86400000);
   if (age > 30) {
@@ -233,7 +249,8 @@ for (const m of evergreen.matchAll(refRe)) {
 // The project memory path is derived from the account's home dir, so it silently goes
 // stale after a machine/account migration and every "read working memory" instruction
 // then points at nothing.
-for (const m of claude.matchAll(/~\/\.claude\/projects\/(-[A-Za-z0-9-]+)\/memory/g)) {
+// A cloud session has another $HOME and no memory folder: the check is the Mac's.
+for (const m of process.env.CLAUDE_CODE_REMOTE === 'true' ? [] : claude.matchAll(/~\/\.claude\/projects\/(-[A-Za-z0-9-]+)\/memory/g)) {
   const slug = m[1];
   const expected = '-' + process.env.HOME.replace(/^\//, '').replace(/\//g, '-') + '-claude-qariah-v2';
   if (slug !== expected) {
@@ -265,8 +282,7 @@ for (const d of skillDirs) {
 for (const s of skillIssues) note('medium', 'Skills', s);
 
 // ---------------------------------------------------------------- 9. Upstream PR queue
-const upstreamPrs = ghJson(['pr', 'list', '--repo', UPSTREAM, '--state', 'open', '--limit', '50',
-  '--json', 'number,title,author,updatedAt']) || [];
+const upstreamPrs = restPulls(UPSTREAM);
 const ours = upstreamPrs.filter((p) => p.author?.login === 'omar-zarka');
 const stalest = ours.length
   ? Math.max(...ours.map((p) => Math.round((Date.parse(TODAY) - Date.parse(p.updatedAt)) / 86400000)))

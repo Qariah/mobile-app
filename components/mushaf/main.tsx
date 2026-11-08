@@ -6,13 +6,14 @@ import {
   Text,
   Pressable,
   ScrollView,
-  ViewToken,
+  type ListViewToken,
   StatusBar,
   BackHandler,
   Platform,
   useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
+import {isRTL} from '@/utils/rtl'; // @ai Sprint 52 AP-19
 import {useResponsive} from '@/hooks/useResponsive';
 import {FlatList} from 'react-native-gesture-handler';
 import Animated, {
@@ -32,13 +33,18 @@ import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {FrostedView} from '@/components/FrostedView';
 import {BackButton} from '@/components/BackButton';
 import MushafSearchView from './MushafSearchView';
-import {moderateScale} from 'react-native-size-matters';
+// @ai-start
+import {TabletDialog} from '@/components/layout/TabletDialog';
+import {SHEET_MAX_HEIGHT} from '@/components/sheets/AdaptiveActionSheet';
+// @ai-end
+import {moderateScale} from '@/utils/scale';
 import Color from 'color';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {
   getJuzForPage,
   getPageEdgeLayout,
   getPageLabelOffsets,
+  singlePageLayout, // @ai
   useMushafLayout,
   usesSymmetricPageEdges, // @ai
   type MushafLayoutMetrics,
@@ -90,9 +96,33 @@ import {
   mushafPageTestID,
   useMushafRotationStage,
 } from './MushafRotationStage'; // @ai
-import {pageForSpread} from './rotationTurnState'; // @ai
-import {readerListKey} from './readerListKey'; // @ai
+import {readerListKey, readingListKey} from './readerListKey'; // @ai
+import {useReaderListStart} from './readerListStart'; // @ai Sprint 52 Task 8
+// @ai-start Sprint 52 Task 8: the ayah panel
+import {AyahPanelHost} from './ayah-panel/AyahPanelHost';
+import {
+  AYAH_PANEL_WIDTH,
+  closeAyahPanel,
+  isAyahPanelOpen,
+  registerAyahPanelHost,
+  useAyahPanelStore,
+} from './ayah-panel/ayahPanelStore';
+import {
+  readerAccessibility,
+  useAyahPanelPresentation,
+} from './ayah-panel/useAyahPanelPresentation';
+// @ai-end
 import {pageFrameKey, usePageDrawReport} from './pageDrawReport'; // @ai
+import {
+  noteReaderPageDrawn,
+  readerViewReportsNoDraw,
+} from '@/services/mushaf/readerRestoreGate'; // @ai
+// @ai-start
+import {ReaderKeyCommands} from '@/components/keyboard/ReaderKeyCommands';
+import {keyCommandsSupported} from '@/services/keyboard/keyCommands';
+import {closeTopSheet} from '@/services/keyboard/keyActions';
+import {ReadingSettingsPopover} from '@/components/popovers/ToolPopovers'; // @ai
+// @ai-end
 
 const TOTAL_PAGES = 604;
 const ANIMATION_DURATION = 300;
@@ -121,6 +151,15 @@ function pageToSpreadIndex(page: number): number {
 function spreadPrimaryPage(spread: Spread): number {
   return spread.right;
 }
+
+// @ai-start
+/** The page a visible spread stands for: the current page if the spread
+ *  holds it, otherwise the spread's first page. */
+function spreadPageToKeep(spread: Spread, current: number): number {
+  if (current === spread.right || current === spread.left) return current;
+  return spreadPrimaryPage(spread);
+}
+// @ai-end
 
 // ============================================================================
 // Helpers
@@ -197,6 +236,7 @@ const DKPageViewBase: React.FC<{
   const handleReady = useCallback(() => {
     setPageReady(true);
     rotationStage.notePagePainted(pageNumber);
+    noteReaderPageDrawn(); // @ai Qariah: Listen may render now (readerRestoreGate.ts).
   }, [rotationStage, pageNumber]);
   const insets = useSafeAreaInsets();
   // Each later draw of the page drops the stage's portrait snapshot (#272).
@@ -583,9 +623,14 @@ export default function MushafViewer({
   useKeepAwake(undefined, {suppressDeactivateWarnings: true});
   const {t} = useTranslation(['reader', 'common', 'qariah']);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  // @ai — read by onViewableItemsChanged, which must not change identity.
-  const currentPageRef = useRef(currentPage);
+  // @ai-start
+  // Read by the viewability handler, which must not change identity. A spread
+  // shows two pages, so keep whichever one the reader was already on instead
+  // of snapping to the spread's first page (page 2 would become page 1 after
+  // a round trip to landscape).
+  const currentPageRef = useRef(initialPage);
   currentPageRef.current = currentPage;
+  // @ai-end
   // @ai-start
   // Twelve pages open one surah and start another (591 has At-Tariq and
   // Al-A'la; 601-604 start three apiece). `pageToSurah` can only name one
@@ -638,6 +683,12 @@ export default function MushafViewer({
     s => s.rewayahFallbackFrom,
   ); // @ai
   const isVertical = scrollDirection === 'vertical';
+  // @ai Qariah: the continuous views and the reading view report no page draw;
+  // Listen renders after them (services/mushaf/readerRestoreGate.ts).
+  const reportsNoDraw = readerViewReportsNoDraw(scrollDirection, viewMode);
+  useEffect(() => {
+    if (reportsNoDraw) noteReaderPageDrawn();
+  }, [reportsNoDraw]);
   const isBookLayout = pageLayout === 'book';
   const edgeBg = isDarkMode ? '#000' : readingColors.card;
   const pageBg = isDarkMode ? readingColors.card : readingColors.background;
@@ -662,6 +713,32 @@ export default function MushafViewer({
   // shrinking the height never remounts the reader.
   // @ai — the lists remount on `listKey` (readerListKey.ts, #275); `orientationKey` starts a rotation turn.
   const orientationKey = windowWidth > windowHeight ? 'landscape' : 'portrait';
+  // @ai-start Sprint 52 Task 8
+  // The ayah panel: beside the reader pane from 900 pt, a card below. Only a
+  // tablet reader registers, so phones keep the verse-actions sheet.
+  const ayahPanel = useAyahPanelPresentation(isTablet);
+  const panelDocked = ayahPanel === 'side';
+  const panelDockedRef = useRef(panelDocked);
+  panelDockedRef.current = panelDocked;
+  useEffect(() => (isTablet ? registerAyahPanelHost() : undefined), [isTablet]);
+  // The panel shows the page of its ayah. When the ayah is on the other page
+  // of the reader's spread, the reader takes the ayah's page, in this render,
+  // before a list remounts: one page beside the panel (an 11-inch iPad) is
+  // that page, and the spread after close holds it.
+  const panelPage = useAyahPanelStore(s => s.page);
+  const panelRevision = useAyahPanelStore(s => s.revision);
+  const [pageSyncRevision, setPageSyncRevision] = useState(panelRevision);
+  if (pageSyncRevision !== panelRevision) {
+    setPageSyncRevision(panelRevision);
+    if (
+      panelPage !== null &&
+      panelPage !== currentPage &&
+      pageToSpreadIndex(panelPage) === pageToSpreadIndex(currentPage)
+    ) {
+      setCurrentPage(panelPage);
+    }
+  }
+  // @ai-end
 
   // Measured size of the FlatList container. Using `useWindowDimensions()`
   // alone overestimates the available space on iPad because the stack
@@ -670,15 +747,30 @@ export default function MushafViewer({
   const [containerSize, setContainerSize] = useState<{
     width: number;
     height: number;
+    docked?: boolean; // @ai Sprint 52 Task 8: measured beside the panel
   } | null>(null);
 
   const onContainerLayout = useCallback((e: LayoutChangeEvent) => {
     const {width, height} = e.nativeEvent.layout;
+    const docked = panelDockedRef.current; // @ai
     setContainerSize(prev => {
-      if (prev && prev.width === width && prev.height === height) return prev;
-      return {width, height};
+      if (
+        prev &&
+        prev.width === width &&
+        prev.height === height &&
+        prev.docked === docked // @ai
+      )
+        return prev;
+      return {width, height, docked}; // @ai docked
     });
   }, []);
+  // @ai Sprint 52 Task 8: a size measured with the panel open (or closed) is
+  // stale once it closes (or opens); the window size less the panel stands
+  // in until onLayout measures again, so the list remounts once.
+  const measuredSize =
+    containerSize && !!containerSize.docked === panelDocked
+      ? containerSize
+      : null;
 
   // On rotation the measured size is stale for a frame — fall back to window
   // dims until `onLayout` reports the new size.
@@ -697,10 +789,89 @@ export default function MushafViewer({
     insets,
     toolbarHeight: USE_GLASS ? 0 : 60,
     headerHeight: USE_GLASS ? 0 : 60,
-    containerWidth: isTablet ? containerSize?.width : undefined,
-    containerHeight: isTablet ? containerSize?.height : undefined,
+    // @ai — beside the ayah panel the pane is narrower than the window, also
+    // before onLayout measures it.
+    containerWidth: isTablet
+      ? (measuredSize?.width ??
+        (panelDocked ? windowWidth - AYAH_PANEL_WIDTH : undefined))
+      : undefined,
+    containerHeight: isTablet ? measuredSize?.height : undefined, // @ai
+    // @ai — a pane beside the panel in a landscape window keeps a spread
+    // when each page is 420 pt or more (the 13-inch iPad).
+    landscapeWindow: panelDocked ? windowWidth >= windowHeight : undefined,
   });
   const listKey = readerListKey(metrics); // @ai — #258, #275
+  // @ai-start Sprint 52 Task 8 (AP-19)
+  // The key of the two horizontal page lists: the geometry (listKey) and
+  // what the list shows. A switch between Mushaf and List on a tablet that
+  // shows spreads changes the list's items (spreads or pages), so the list
+  // remounts at the reader's page instead of keeping a spread offset.
+  const pagerShowsSpreads = metrics.facingPages && viewMode === 'mushaf';
+  const pagerKey = `${listKey}|${viewMode}|${
+    pagerShowsSpreads ? 'spreads' : 'pages'
+  }`;
+  // Each pager list keeps the page it mounted at, and its reports move the
+  // reader only once it shows that page (on Android in RTL the scroll view
+  // first reports page 1; readerListStart.ts).
+  const {
+    page: listStartPage,
+    accepts: listAccepts,
+    release: listRelease,
+  } = useReaderListStart(
+    `${pagerKey}|${isVertical ? 'scroll' : 'pager'}`,
+    currentPage,
+    page => (pagerShowsSpreads ? pageToSpreadIndex(page) : page - 1),
+  );
+  // @ai-start Sprint 52 AP-19: on Android in RTL, a horizontal FlatList can
+  // draw index 0 although it mounted with `initialScrollIndex` (the reader
+  // then holds page 2 while the list shows page 1). Scroll each new pager
+  // list to its start once, two frames after the mount (the FlashList
+  // pattern in CLAUDE.md "RN / UI component gotchas"). The start gate above
+  // ignores the list's early reports, and the report of this scroll opens it.
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !isRTL || isVertical) return;
+    const index = pagerShowsSpreads
+      ? Math.min(pageToSpreadIndex(listStartPage), SPREAD_COUNT - 1)
+      : Math.min(listStartPage - 1, TOTAL_PAGES - 1);
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        flatListRef.current?.scrollToIndex({index, animated: false});
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+    // Once for each mount of a pager list (its key); the start page is
+    // frozen for that mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagerKey, isVertical]);
+  // @ai-end
+  // @ai-end
+  // @ai-start
+  // The vertical mushaf shows one page per row, also where the pager shows
+  // spreads.
+  const scrollMetrics = useMemo(() => singlePageLayout(metrics), [metrics]);
+  // iPad: the list and translation views take the measured pane, not the
+  // launch-time screen size. Phones keep their layout.
+  const readingPageSize = useMemo(
+    () =>
+      isTablet
+        ? {width: metrics.screenWidth, height: metrics.screenHeight}
+        : undefined,
+    [isTablet, metrics.screenWidth, metrics.screenHeight],
+  );
+  // A tap on the status bar scrolls a vertical reader back to page 1. On
+  // iPad the toolbar sits close enough to the status bar (the mini in
+  // landscape) that tapping its buttons did that too, so iPads turn it off.
+  const scrollsToTop = !isTablet;
+  // @ai-end
+  // @ai Sprint 52 Task 8: the vertical list keeps its verse while its text
+  // column keeps its width (the ayah panel opening beside a 680 pt column).
+  const verticalListKey = readingPageSize
+    ? readingListKey(readingPageSize.width)
+    : listKey;
 
   // Reanimated overlay animation (same pattern as PlayerContent)
   const overlayOpacity = useSharedValue(1);
@@ -844,11 +1015,18 @@ export default function MushafViewer({
     );
   }, [currentPage, isDarkMode, t]);
 
+  // @ai-start
+  const openReadingSettingsSheet = useCallback(() => {
+    SheetManager.show('mushaf-layout', {payload: {context: 'mushaf'}});
+  }, []);
+  // @ai-end
+
   // iOS 26: configure Stack navigator header based on current mode
   useEffect(() => {
     if (!USE_GLASS) return;
 
-    if (isImmersive || isSearchMode) {
+    // @ai Sprint 52 Task 8: the ayah card is modal, as the search card.
+    if (isImmersive || isSearchMode || ayahPanel === 'card') {
       // Hide native header — search overlay renders its own UI
       navigation.setOptions({
         headerShown: false,
@@ -932,35 +1110,42 @@ export default function MushafViewer({
           <Pressable
             onPress={handleSharePage}
             hitSlop={8}
-            // @ai Qariah (#259): a label, so VoiceOver and the regression flows find the iOS 26 header buttons.
-            accessibilityRole="button"
-            accessibilityLabel={t('qariah:a11y.sharePage')}>
+            accessibilityRole="button" // @ai
+            accessibilityLabel={t('mushaf.sharePage')} // @ai
+          >
             <Feather
               name="share"
               size={moderateScale(20)}
               color={theme.colors.text}
             />
           </Pressable>
-          <Pressable
-            onPress={() =>
-              SheetManager.show('mushaf-layout', {
-                payload: {context: 'mushaf'},
-              })
-            }
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('mushaf.settings')}
-            testID="mushaf-settings-button">
-            <Ionicons
-              name="options-outline"
-              size={moderateScale(22)}
-              color={theme.colors.text}
-            />
-          </Pressable>
+          {/* @ai-start */}
+          {/* iPad: a popover anchored to the button. Elsewhere: the sheet. */}
+          <ReadingSettingsPopover
+            context="mushaf"
+            onFallbackPress={openReadingSettingsSheet}>
+            {onPress => (
+              <Pressable
+                onPress={onPress}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('mushaf.settings')}
+                testID="mushaf-settings-button">
+                <Ionicons
+                  name="options-outline"
+                  size={moderateScale(22)}
+                  color={theme.colors.text}
+                />
+              </Pressable>
+            )}
+          </ReadingSettingsPopover>
+          {/* @ai-end */}
         </View>
       ),
     });
   }, [
+    ayahPanel, // @ai
+    openReadingSettingsSheet,
     isImmersive,
     isSearchMode,
     currentPage,
@@ -974,8 +1159,10 @@ export default function MushafViewer({
   ]);
 
   const onViewableItemsChanged = useCallback(
-    ({viewableItems}: {viewableItems: ViewToken[]}) => {
+    ({viewableItems}: {viewableItems: ListViewToken[]}) => {
       if (viewableItems.length === 0) return;
+      // @ai Sprint 52 Task 8: not before a new list shows its start page.
+      if (!listAccepts(viewableItems[0].index)) return;
       const first = viewableItems[0].item;
       if (first == null) return;
       // Page number depends on data shape: `number` for single-page data,
@@ -984,10 +1171,7 @@ export default function MushafViewer({
       const page: number =
         typeof first === 'number'
           ? first
-          : pageForSpread(
-              currentPageRef.current,
-              spreadPrimaryPage(first as Spread),
-            );
+          : spreadPageToKeep(first as Spread, currentPageRef.current); // @ai
       setCurrentPage(page);
       useMushafPlayerStore.setState({currentPage: page});
       mushafSessionStore.setLastReadPage(page);
@@ -999,7 +1183,7 @@ export default function MushafViewer({
         useMushafSettingsStore.getState().updateActiveChain(surahId, page);
       }
     },
-    [trackPageChange],
+    [trackPageChange, listAccepts], // @ai listAccepts
   );
 
   const viewabilityConfig = useMemo(
@@ -1011,10 +1195,11 @@ export default function MushafViewer({
 
   // Convert a logical page number to the current FlatList's item index
   // (spread index when facing-pages is active, page index otherwise).
+  // The List view pages singly even where the Mushaf shows spreads. @ai
+  const showsSpreads = metrics.facingPages && viewMode === 'mushaf'; // @ai
   const pageToFlatListIndex = useCallback(
-    (page: number) =>
-      metrics.facingPages ? pageToSpreadIndex(page) : page - 1,
-    [metrics.facingPages],
+    (page: number) => (showsSpreads ? pageToSpreadIndex(page) : page - 1), // @ai
+    [showsSpreads], // @ai
   );
 
   const navigateToPage = useCallback(
@@ -1042,13 +1227,21 @@ export default function MushafViewer({
       if (isVertical) {
         continuousListRef.current?.scrollToPage(targetPage);
       } else {
+        listRelease(); // @ai — the reader moves the list
         flatListRef.current?.scrollToIndex({
           index: pageToFlatListIndex(targetPage),
           animated: false,
         });
       }
     },
-    [isVertical, mushafRenderer, pageToFlatListIndex, readingColors.text], // @ai
+    // @ai: listRelease
+    [
+      isVertical,
+      mushafRenderer,
+      pageToFlatListIndex,
+      readingColors.text,
+      listRelease,
+    ],
   );
 
   const navigateToPageAnimated = useCallback(
@@ -1056,13 +1249,14 @@ export default function MushafViewer({
       if (isVertical) {
         continuousListRef.current?.scrollToPage(targetPage, true);
       } else {
+        listRelease(); // @ai — the reader moves the list
         flatListRef.current?.scrollToIndex({
           index: pageToFlatListIndex(targetPage),
           animated: true,
         });
       }
     },
-    [isVertical, pageToFlatListIndex],
+    [isVertical, pageToFlatListIndex, listRelease], // @ai
   );
 
   // In vertical mode, scroll to the exact verse during playback
@@ -1180,13 +1374,14 @@ export default function MushafViewer({
       if (isVertical) {
         continuousListRef.current?.scrollToPage(page);
       } else {
+        listRelease(); // @ai — the reader moves the list
         flatListRef.current?.scrollToIndex({
           index: pageToFlatListIndex(page),
           animated: false,
         });
       }
     },
-    [isVertical, pageToFlatListIndex],
+    [isVertical, pageToFlatListIndex, listRelease], // @ai
   );
 
   const openSearchMode = useCallback(() => setIsSearchMode(true, false), []);
@@ -1237,11 +1432,32 @@ export default function MushafViewer({
     return () => sub.remove();
   }, [isSearchMode]);
 
-  return (
+  // @ai-start
+  // Esc on an iPad keyboard (reading standards §6): the topmost overlay,
+  // then search, then immersive mode.
+  const handleEscapeKey = useCallback(() => {
+    if (closeTopSheet()) return;
+    // @ai Sprint 52 Task 8: then the ayah panel.
+    if (isAyahPanelOpen()) {
+      closeAyahPanel();
+      return;
+    }
+    if (isSearchMode) setIsSearchMode(false);
+    else if (isImmersive) toggleImmersive();
+  }, [isSearchMode, isImmersive, setIsSearchMode, toggleImmersive]);
+  // @ai-end
+
+  // @ai Sprint 52 Task 8: the reader pane; on a tablet the ayah panel sits
+  // beside it (below).
+  const reader = (
     <View
       onLayout={onContainerLayout}
+      // @ai — the ayah card is modal: the reader under it is hidden from
+      // VoiceOver and TalkBack.
+      {...readerAccessibility(ayahPanel)}
       style={[
         styles.container,
+        styles.readerPane, // @ai
         {
           backgroundColor: isVertical
             ? readingColors.background
@@ -1250,6 +1466,18 @@ export default function MushafViewer({
               : readingColors.card,
         },
       ]}>
+      {/* @ai-start */}
+      {keyCommandsSupported() && (
+        <ReaderKeyCommands
+          currentPage={currentPage}
+          pageStep={!isVertical && showsSpreads ? 2 : 1}
+          canTurnPage={!isSearchMode}
+          turnTo={navigateToPageAnimated}
+          openSearch={openSearchWithFocus}
+          onEscape={handleEscapeKey}
+        />
+      )}
+      {/* @ai-end */}
       {/* Content area: horizontal FlatList or vertical continuous view */}
       {/* @ai — the stage keeps the page coherent during an iOS rotation. */}
       <MushafRotationStage
@@ -1276,11 +1504,12 @@ export default function MushafViewer({
             onTap={toggleImmersive}
             initialPage={currentPage}
             onCurrentPageChange={handleContinuousPageChange}
-            metrics={metrics}
+            metrics={scrollMetrics} // @ai
+            scrollsToTop={scrollsToTop} // @ai
           />
         ) : isVertical && viewMode === 'list' ? (
           <ContinuousListView
-            key={listKey}
+            key={verticalListKey} // @ai Sprint 52 Task 8
             ref={continuousListRef}
             textColor={readingColors.text}
             labelColor={readingColors.textSecondary}
@@ -1288,10 +1517,12 @@ export default function MushafViewer({
             onTap={toggleImmersive}
             initialPage={currentPage}
             onCurrentPageChange={handleContinuousPageChange}
+            width={readingPageSize?.width} // @ai
+            scrollsToTop={scrollsToTop} // @ai
           />
         ) : metrics.facingPages && viewMode === 'mushaf' ? (
           <FlatList
-            key={listKey}
+            key={pagerKey} // @ai Sprint 52 Task 8
             ref={flatListRef}
             data={spreads}
             renderItem={({item}) => (
@@ -1313,10 +1544,16 @@ export default function MushafViewer({
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
+            // @ai Sprint 52 Task 8: the page the list mounted at, not the
+            // live page that its own first reports could change.
             initialScrollIndex={Math.min(
-              pageToSpreadIndex(currentPage),
+              pageToSpreadIndex(listStartPage),
               SPREAD_COUNT - 1,
             )}
+            onScrollBeginDrag={listRelease} // @ai
+            // @ai — a settled scroll is a real one (also a VoiceOver or
+            // TalkBack page turn, which sends no drag).
+            onMomentumScrollEnd={listRelease}
             getItemLayout={(_, index) => ({
               length: metrics.screenWidth,
               offset: metrics.screenWidth * index,
@@ -1333,7 +1570,7 @@ export default function MushafViewer({
           />
         ) : (
           <FlatList
-            key={listKey}
+            key={pagerKey} // @ai Sprint 52 Task 8
             ref={flatListRef}
             data={pages}
             renderItem={({item}) => {
@@ -1353,6 +1590,7 @@ export default function MushafViewer({
                     onTap={toggleImmersive}
                     // @ai TECH_DEBT #265 — the page takes the pager item size.
                     metrics={metrics}
+                    pageSize={readingPageSize} // @ai
                   />
                 );
               }
@@ -1375,7 +1613,12 @@ export default function MushafViewer({
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            initialScrollIndex={Math.min(currentPage - 1, TOTAL_PAGES - 1)}
+            // @ai Sprint 52 Task 8: the page the list mounted at.
+            initialScrollIndex={Math.min(listStartPage - 1, TOTAL_PAGES - 1)}
+            onScrollBeginDrag={listRelease} // @ai
+            // @ai — a settled scroll is a real one (also a VoiceOver or
+            // TalkBack page turn, which sends no drag).
+            onMomentumScrollEnd={listRelease}
             getItemLayout={(_, index) => ({
               length: metrics.screenWidth,
               offset: metrics.screenWidth * index,
@@ -1468,22 +1711,26 @@ export default function MushafViewer({
 
                 {/* Right: settings */}
                 <View style={[styles.headerSide, {alignItems: 'flex-end'}]}>
-                  <Pressable
-                    style={styles.headerIcon}
-                    onPress={() =>
-                      SheetManager.show('mushaf-layout', {
-                        payload: {context: 'mushaf'},
-                      })
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={t('mushaf.settings')}
-                    testID="mushaf-settings-button">
-                    <Ionicons
-                      name="options-outline"
-                      size={moderateScale(22)}
-                      color={theme.colors.text}
-                    />
-                  </Pressable>
+                  {/* @ai-start */}
+                  <ReadingSettingsPopover
+                    context="mushaf"
+                    onFallbackPress={openReadingSettingsSheet}>
+                    {onPress => (
+                      <Pressable
+                        style={styles.headerIcon}
+                        onPress={onPress}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('mushaf.settings')}
+                        testID="mushaf-settings-button">
+                        <Ionicons
+                          name="options-outline"
+                          size={moderateScale(22)}
+                          color={theme.colors.text}
+                        />
+                      </Pressable>
+                    )}
+                  </ReadingSettingsPopover>
+                  {/* @ai-end */}
                 </View>
               </View>
               {/* @ai — Hafs is standing in for a rewayah that failed to load */}
@@ -1545,7 +1792,29 @@ export default function MushafViewer({
       {/* ================================================================ */}
       {/* Search mode overlay                                               */}
       {/* ================================================================ */}
-      {isSearchMode && (
+      {/* @ai-start */}
+      {/* iPad: a centered card over the dimmed page, not a full screen */}
+      {isSearchMode && isTablet && (
+        <View style={styles.searchCardLayer}>
+          <TabletDialog
+            onClose={() => setIsSearchMode(false)}
+            height={SHEET_MAX_HEIGHT}>
+            <MushafSearchView
+              onNavigateToPage={navigateToPage}
+              onResumeChain={resumeChain}
+              onNavigateToSurah={navigateToSurah}
+              onNavigateToVerse={navigateToVerse}
+              onClose={() => setIsSearchMode(false)}
+              surahStartPages={surahStartPages}
+              pageToSurah={pageToSurah}
+              autoFocusSearch={autoFocusSearch}
+              inCard={true}
+            />
+          </TabletDialog>
+        </View>
+      )}
+      {/* @ai-end */}
+      {isSearchMode && !isTablet /* @ai */ && (
         <MushafSearchView
           onNavigateToPage={navigateToPage}
           onResumeChain={resumeChain}
@@ -1559,13 +1828,50 @@ export default function MushafViewer({
       )}
     </View>
   );
+
+  // @ai-start Sprint 52 Task 8
+  // Phones: the reader alone, as before. Tablets: a row of the reader pane
+  // (`flex: 1, minWidth: 0`, so it measures the space left) and the ayah
+  // panel at the trailing edge, the pattern of the Settings split. The
+  // reader keeps its place in the tree, so opening the panel does not
+  // remount it. In RTL the row mirrors and the panel is at the left.
+  if (!isTablet) return reader;
+  return (
+    <View style={[styles.container, styles.panelRow]} accessible={false}>
+      {reader}
+      <AyahPanelHost
+        presentation={ayahPanel}
+        // The iOS 26 Stack header and toolbar span the window, over the panel.
+        topInset={USE_GLASS ? rawHeaderHeight : insets.top}
+        bottomInset={insets.bottom + (USE_GLASS ? GLASS_TOOLBAR_HEIGHT : 0)}
+      />
+    </View>
+  );
+  // @ai-end
 }
 // @ai-end
+
+// @ai Sprint 52 Task 8: height of the iOS 26 Stack toolbar over the panel.
+const GLASS_TOOLBAR_HEIGHT = 50;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // @ai-start Sprint 52 Task 8
+  panelRow: {
+    flexDirection: 'row',
+  },
+  readerPane: {
+    minWidth: 0,
+  },
+  // @ai-end
+  // @ai-start
+  searchCardLayer: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 20,
+  },
+  // @ai-end
   page: {
     // width and height are provided inline per-page so pages stay in sync
     // with live window dimensions (rotation / iPad split-view aware).

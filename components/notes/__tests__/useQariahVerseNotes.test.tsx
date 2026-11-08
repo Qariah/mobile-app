@@ -244,3 +244,64 @@ describe('Remove Personal Note / Remove Reflection', () => {
     expect(SheetManager.hide).not.toHaveBeenCalled();
   });
 });
+
+// @ai-start Sprint 52 Task 8: the iPad ayah panel uses the hook with no
+// sheet. It stays open, so nothing hides a sheet and the notes are read again.
+describe('in the ayah panel (no sheetId)', () => {
+  const getNotesForVerse = () =>
+    jest.requireMock('@/services/verse-annotations/VerseAnnotationService')
+      .verseAnnotationService.getNotesForVerse as jest.Mock;
+
+  it('lists the Personal Notes, oldest first, without the Reflections', async () => {
+    mockNotes.set('2:255', [
+      note('p2', {createdAt: 2}),
+      note('r1', {qfPostId: 'post-1'}),
+      note('p1', {createdAt: 1}),
+    ]);
+    const {result} = renderNotes({sheetId: undefined});
+    await waitFor(() =>
+      expect(result.current.personalNotes.map(n => n.id)).toEqual(['p1', 'p2']),
+    );
+  });
+
+  it('"Add Personal Note" opens the editor for one more note', async () => {
+    mockNotes.set('2:255', [note('p1')]);
+    const {result} = renderNotes({sheetId: undefined});
+    await waitFor(() => expect(result.current.hasPersonalNote).toBe(true));
+    act(() => result.current.addPersonalNote());
+    expect(openEditor).toHaveBeenCalledTimes(1);
+    expect(result.current.editorPublish).toBe(false);
+  });
+
+  it('opens a saved note with no sheet to hide, and reads again after', async () => {
+    mockNotes.set('2:255', [note('p1')]);
+    (SheetManager.show as jest.Mock).mockReturnValueOnce(Promise.resolve());
+    const {result} = renderNotes({sheetId: undefined});
+    await waitFor(() => expect(result.current.hasPersonalNote).toBe(true));
+    const reads = getNotesForVerse().mock.calls.length;
+    await act(() => result.current.openNote(result.current.personalNotes[0]));
+    expect(SheetManager.hide).not.toHaveBeenCalled();
+    expect(SheetManager.show).toHaveBeenCalledWith(
+      'verse-note',
+      expect.objectContaining({
+        payload: expect.objectContaining({noteId: 'p1'}),
+      }),
+    );
+    await waitFor(() =>
+      expect(getNotesForVerse().mock.calls.length).toBeGreaterThan(reads),
+    );
+  });
+
+  it('removes the Personal Notes and shows what is left', async () => {
+    mockNotes.set('2:255', [note('p1'), note('r1', {qfPostId: 'post-1'})]);
+    mockCounts.set('2:255', 1);
+    const {result} = renderNotes({sheetId: undefined});
+    await waitFor(() => expect(result.current.hasPersonalNote).toBe(true));
+    await act(() => result.current.onRemovePersonalNote());
+    expect(mockCalls).toEqual(['qf p1', 'delete p1']);
+    expect(SheetManager.hide).not.toHaveBeenCalled();
+    // The service mock still holds the row; the hook reads it again.
+    expect(getNotesForVerse().mock.calls.length).toBeGreaterThan(1);
+  });
+});
+// @ai-end

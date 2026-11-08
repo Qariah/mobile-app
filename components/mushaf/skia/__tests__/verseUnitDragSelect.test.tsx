@@ -326,3 +326,61 @@ describe('Hafs page 1: the selection and payload as before', () => {
     });
   });
 });
+
+// @ai-start Sprint 52 Task 8: with the iPad ayah panel open, a long-press
+// moves the panel to the pressed unit; a drag over several units opens the
+// verse actions as before.
+describe('the ayah panel (Sprint 52 Task 8)', () => {
+  const {
+    closeAyahPanel,
+    openAyahPanel,
+    registerAyahPanelHost,
+    useAyahPanelStore,
+  } = jest.requireActual('@/components/mushaf/ayah-panel/ayahPanelStore');
+  let unregister: (() => void) | null = null;
+
+  beforeEach(() => {
+    show('warsh');
+    unregister = registerAyahPanelHost();
+    mount();
+    press('1:6');
+    release();
+    mockSheets.length = 0;
+    openAyahPanel(
+      {
+        verseKey: '1:6',
+        surahNumber: 1,
+        ayahNumber: 6,
+        source: 'mushaf',
+        rewayah: 'warsh',
+        unitKeys: ['1:6'],
+      },
+      'tafsir',
+    );
+  });
+
+  afterEach(() => {
+    unregister?.();
+    unregister = null;
+    closeAyahPanel();
+  });
+
+  it('a long-press moves the panel to the unit, with no sheet', () => {
+    press('1:7');
+    release();
+    expect(mockSheets).toEqual([]);
+    const state = useAyahPanelStore.getState();
+    expect(state.payload.unitKeys).toEqual(['1:7']);
+    expect(state.tab).toBe('tafsir');
+    expect(selection().keys).toEqual(['1:7']);
+  });
+
+  it('a drag over two units opens the verse actions and keeps the panel', () => {
+    press('1:5');
+    dragTo('1:6');
+    release();
+    expect(mockSheets).toHaveLength(1);
+    expect(useAyahPanelStore.getState().payload.unitKeys).toEqual(['1:6']);
+  });
+});
+// @ai-end

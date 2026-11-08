@@ -1,6 +1,7 @@
 import {create} from 'zustand';
 import {useEffect, useRef} from 'react';
 import {usePlayerStore} from './playerStore';
+import {selectForegroundPosition} from './foregroundPlayerState'; // @ai Qariah
 
 interface ProgressState {
   position: number;
@@ -50,7 +51,9 @@ export function useProgress() {
   } = useProgressStore();
 
   // Subscribe to playerStore for progress updates
-  const playback = usePlayerStore(state => state.playback);
+  // @ai Qariah: no UI change from the position while the app is in the background.
+  const playbackPosition = usePlayerStore(selectForegroundPosition);
+  const playbackDuration = usePlayerStore(state => state.playback.duration);
 
   // Use refs to access latest values without causing effect re-runs
   const isSeekingRef = useRef(isSeeking);
@@ -82,20 +85,20 @@ export function useProgress() {
 
     // Update duration if changed significantly
     if (
-      playback.duration > 0 &&
-      Math.abs(playback.duration - durationRef.current) > 0.5
+      playbackDuration > 0 &&
+      Math.abs(playbackDuration - durationRef.current) > 0.5
     ) {
-      setDuration(playback.duration);
+      setDuration(playbackDuration);
     }
 
     // Update position if not seeking and changed significantly
     if (
       !seekPositionRef.current &&
-      Math.abs(playback.position - positionRef.current) > 0.5
+      Math.abs(playbackPosition - positionRef.current) > 0.5
     ) {
-      setPosition(playback.position);
+      setPosition(playbackPosition);
     }
-  }, [playback.position, playback.duration, setPosition, setDuration]);
+  }, [playbackPosition, playbackDuration, setPosition, setDuration]);
 
   return {
     position,

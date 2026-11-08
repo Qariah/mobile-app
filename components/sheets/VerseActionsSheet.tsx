@@ -13,14 +13,11 @@ import {
   type StyleProp, // @ai
   type ViewStyle, // @ai
 } from 'react-native';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
-import ActionSheet, {
-  SheetProps,
-  SheetManager,
-  ScrollView,
-} from 'react-native-actions-sheet';
+import {SheetProps, SheetManager, ScrollView} from 'react-native-actions-sheet';
+import ActionSheet from '@/components/sheets/AdaptiveActionSheet';
 import {Feather, MaterialCommunityIcons} from '@expo/vector-icons';
 import {useVerseSelectionStore} from '@/store/verseSelectionStore';
 import {useMushafVerseSelectionStore} from '@/store/mushafVerseSelectionStore';
@@ -102,6 +99,7 @@ import {CommunityReflectionsContent} from './verse-actions/CommunityReflectionsC
 import {isFeatureEnabled} from '@/config/featureFlags';
 import {useQariahVerseNotes} from '@/components/notes/useQariahVerseNotes';
 import {QariahVerseNoteRows} from '@/components/notes/QariahVerseNoteRows';
+import {useAyahPanelHandOff} from '@/components/mushaf/ayah-panel/useAyahPanelHandOff'; // @ai
 
 const surahData = require('@/data/surahData.json');
 
@@ -131,6 +129,13 @@ const SCREEN_TITLE_KEYS = {
   wbw: 'verseActions.wordByWord',
   'community-reflections': 'verseActions.communityReflections',
 } as const;
+// @ai-end
+
+// @ai-start
+// Share of the window height a sub-screen (translation, tafsir…) fills.
+// Read from useWindowDimensions at render, not once at import: the Mushaf
+// rotates, and a portrait height overflows the screen in landscape.
+const SHEET_HEIGHT_FRACTION = 0.85;
 // @ai-end
 
 // Enable LayoutAnimation on Android
@@ -198,7 +203,7 @@ const pendingStyles = StyleSheet.create({
 
 export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   const {theme} = useTheme();
-  const {height: windowHeight} = useWindowDimensions(); // @ai TECH_DEBT #278
+  const {height: windowHeight} = useWindowDimensions(); // @ai
   const styles = createStyles(theme);
   const {t} = useTranslation(['sheets', 'common']);
   const [activeScreen, setActiveScreenRaw] = useState<ActiveScreen>(null);
@@ -375,6 +380,9 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   const handleNote = useCallback(() => {
     setActiveScreen('note');
   }, []);
+  // @ai Qariah (Sprint 52 Task 8): on a tablet in the Mushaf reader, Tafsir,
+  // Reflections and Personal Notes open the ayah panel beside the page.
+  const openInAyahPanel = useAyahPanelHandOff(payload, isRange, props.sheetId);
   // @ai Qariah: Personal Notes and Reflections (components/notes).
   const qariahNotes = useQariahVerseNotes({
     sheetId: props.sheetId,
@@ -383,6 +391,14 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
     selection: readySelection,
     openEditor: handleNote,
   });
+  // @ai Sprint 52 Task 8: the Personal Notes tab of the panel; the editor
+  // opens in it when the verse has no note yet.
+  const handlePersonalNote = useCallback(() => {
+    if (openInAyahPanel('notes', {compose: !qariahNotes.hasPersonalNote})) {
+      return;
+    }
+    qariahNotes.onPersonalNote();
+  }, [openInAyahPanel, qariahNotes]);
 
   // @ai-start
   const handleCopy = useCallback(async () => {
@@ -453,8 +469,9 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   }, []);
 
   const handleTafseer = useCallback(() => {
+    if (openInAyahPanel('tafsir')) return; // @ai
     setActiveScreen('tafseer');
-  }, []);
+  }, [openInAyahPanel]); // @ai
 
   const handleTheme = useCallback(() => {
     setActiveScreen('theme');
@@ -467,8 +484,9 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   // RFC-018 — open the community-reflections popup. Only reachable when a
   // fork wires branding.communityReflectionsProvider (the row is gated).
   const handleCommunityReflections = useCallback(() => {
+    if (openInAyahPanel('reflections')) return; // @ai
     setActiveScreen('community-reflections');
-  }, []);
+  }, [openInAyahPanel]); // @ai
 
   // QUL data: theme label and per-feature availability
   const [hasSimilarVerses, setHasSimilarVerses] = useState(false);
@@ -676,16 +694,10 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
     const trackRewayatId = currentTrack?.rewayatId;
     const trackReciterName = currentTrack?.reciterName;
 
-    const page =
-      digitalKhattDataService.getPageForVerse(firstKey) ||
-      useMushafPlayerStore.getState().currentPage ||
-      1;
-
     const mushafStore = useMushafPlayerStore.getState();
     if (trackRewayatId && trackReciterName) {
       mushafStore.setReciter(trackRewayatId, trackReciterName);
     }
-    useMushafPlayerStore.setState({currentPage: page});
 
     if (playerState.playback.state === 'playing') {
       playerState.pause();
@@ -694,26 +706,25 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
     await SheetManager.hide(props.sheetId);
     playerState.setSheetMode('hidden');
 
-    useMushafPlayerStore.setState({
-      currentPage: page,
-      pendingStartVerseKey: firstKey,
-    });
+    useMushafPlayerStore.setState({pendingStartVerseKey: firstKey});
     // Start at the selected verse itself, in its own rewayah. @ai
     if (ready.units) mushafStore.setPendingStart(ready.units[0]);
 
+    // @ai-start
+    // RFC-023 step 1: the player can show this sheet before the Mushaf data
+    // loads, and a page lookup here then gave an old page or page 1. Open the
+    // reader at once with the verse and no page. The reader opens the page of
+    // the verse and shows the options when the data is ready (app/mushaf.tsx).
     router.push({
       pathname: '/mushaf',
       params: {
-        page: String(page),
         surah: String(sNum),
         ayah: String(aNum),
-        ...(anchorKey !== null ? {anchor: anchorKey} : {}), // @ai
+        ...(anchorKey !== null ? {anchor: anchorKey} : {}),
+        playerOptions: '1',
       },
     });
-
-    SheetManager.show('mushaf-player-options', {
-      payload: {currentPage: page},
-    });
+    // @ai-end
   }, [readySelection, requireSelection, props.sheetId]); // @ai
 
   useEffect(() => {
@@ -754,7 +765,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
       id={props.sheetId}
       containerStyle={[
         styles.sheetContainer,
-        activeScreen && {height: windowHeight * 0.85}, // @ai
+        activeScreen && {height: windowHeight * SHEET_HEIGHT_FRACTION}, // @ai
       ]}
       indicatorStyle={activeScreen ? {height: 0} : styles.indicator}
       gestureEnabled={true}
@@ -772,6 +783,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
             <View style={styles.backRowContainer}>
               <Pressable
                 onPress={handleBack}
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.backRow,
                   pressed && {opacity: 0.6},
@@ -796,14 +808,17 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                     hideCurrentSheet();
                     usePlayerStore.getState().setSheetMode('hidden');
                     setTimeout(() => {
-                      router.push('/(tabs)/(a.home)/translations');
+                      router.push('/translations'); // @ai
                     }, 300);
                   }}
                   style={({pressed}) => [
                     styles.settingsButton,
                     pressed && {opacity: 0.6},
                   ]}
-                  hitSlop={8}>
+                  hitSlop={8}
+                  // @ai
+                  accessibilityRole="button"
+                  accessibilityLabel={t('sheets:verseActions.contentSettings')}>
                   <Feather
                     name="settings"
                     size={moderateScale(16)}
@@ -925,6 +940,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
             {/* LISTEN */}
             <View style={styles.card}>
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
@@ -945,6 +961,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
               </Pressable>
               <View style={styles.divider} />
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
@@ -969,6 +986,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
             {/* STUDY */}
             <View style={styles.card}>
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
@@ -1016,11 +1034,12 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
               )}
               <View style={styles.divider} />
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
                 ]}
-                onPress={qariahNotes.onPersonalNote}>
+                onPress={handlePersonalNote /* @ai */}>
                 <PageQuillIcon
                   size={moderateScale(18)}
                   color={theme.colors.text}
@@ -1039,6 +1058,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
             {/* EXPLORE */}
             <View style={styles.card}>
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
@@ -1057,6 +1077,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1076,6 +1097,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1095,6 +1117,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1118,6 +1141,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1138,6 +1162,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1157,6 +1182,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
                 <>
                   <View style={styles.divider} />
                   <Pressable
+                    accessibilityRole="button" // @ai
                     style={({pressed}) => [
                       styles.option,
                       pressed && styles.optionPressed,
@@ -1177,6 +1203,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
             {/* SHARE */}
             <View style={styles.card}>
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,
@@ -1204,6 +1231,7 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
               </Pressable>
               <View style={styles.divider} />
               <Pressable
+                accessibilityRole="button" // @ai
                 style={({pressed}) => [
                   styles.option,
                   pressed && styles.optionPressed,

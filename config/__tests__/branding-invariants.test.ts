@@ -75,4 +75,9 @@ describe('branding invariants (config/branding.js)', () => {
     const union = match?.[1] ?? '';
     expect(union).toContain("| 'newly-added-recitations'");
   });
+
+  it('the "Share as Image" file carries the Qariah name (GitHub #731: the iOS share sheet showed "bayaan-share" as its title)', () => {
+    expect(branding.shareImageFileName).toBe('qariah-share.png');
+    expect(branding.shareImageFileName).not.toMatch(/bayaan/i);
+  });
 });

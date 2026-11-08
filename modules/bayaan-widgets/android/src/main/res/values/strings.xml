@@ -38,4 +38,17 @@
   <string name="bayaan_widget_text_default_reciter">Default reciter</string>
   <string name="bayaan_widget_text_open_app">Open %1$s</string>
   <string name="bayaan_widget_text_open_app_to_set_up">Open %1$s to set up</string>
+  <!-- @ai Qariah (TECH_DEBT #357): text of the upstream widget redesign (Pass D). Arabic: from the review pack. -->
+  <string name="bayaan_widget_text_now_playing">Now playing</string>
+  <string name="bayaan_widget_text_paused">Paused</string>
+  <string name="bayaan_widget_text_minutes_left">%1$dm left</string>
+  <string name="bayaan_widget_text_page">Page %1$d</string>
+  <string name="bayaan_widget_text_page_juz">Page %1$d · Juz %2$d</string>
+  <string name="bayaan_widget_text_resume_reading">Resume reading</string>
+  <string name="bayaan_widget_text_start">Start</string>
+  <string name="bayaan_widget_text_last_read">Last read</string>
+  <string name="bayaan_widget_text_page_label">page</string>
+  <string name="bayaan_widget_text_page_label_juz">page · Juz %1$d</string>
+  <string name="bayaan_widget_text_with_reciter">with %1$s</string>
+  <string name="bayaan_widget_text_ayah_reference">Ayah of the Day · %1$s</string>
 </resources>

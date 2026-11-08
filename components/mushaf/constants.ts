@@ -1,5 +1,5 @@
 import {useMemo} from 'react';
-import {Dimensions, useWindowDimensions} from 'react-native';
+import {Dimensions, useWindowDimensions, type ScaledSize} from 'react-native';
 import type {EdgeInsets} from 'react-native-safe-area-context';
 import {getIsTablet} from '@/utils/responsive';
 
@@ -10,7 +10,7 @@ import {getIsTablet} from '@/utils/responsive';
 let _liveWidth = Dimensions.get('window').width;
 let _liveHeight = Dimensions.get('window').height;
 
-Dimensions.addEventListener('change', ({window}) => {
+Dimensions.addEventListener('change', ({window}: {window: ScaledSize}) => {
   _liveWidth = window.width;
   _liveHeight = window.height;
 });
@@ -151,6 +151,14 @@ export interface MushafLayoutOpts {
   /** Height of the native stack header, if one is shown (phone only). */
   headerHeight?: number;
   isTablet?: boolean;
+  // @ai-start
+  /**
+   * Tablet: the window is landscape, for a pane that a side panel narrows.
+   * Such a pane may be taller than wide and still show a spread. Leave it
+   * out to decide from the pane's own shape.
+   */
+  landscapeWindow?: boolean;
+  // @ai-end
 }
 
 /**
@@ -170,6 +178,17 @@ const IPAD_MAX_PAGE_WIDTH_SINGLE = 720;
  * physical mushaf feels when held landscape.
  */
 const IPAD_MAX_PAGE_WIDTH_LANDSCAPE = 640;
+// @ai-start
+/**
+ * The narrowest page of a two-page spread (ipad-standards §9.1: "a two-page
+ * spread in landscape … when each page can be at least 420pt wide"). A
+ * narrower pane (an iPad landscape window beside a side panel, a small
+ * landscape window) shows one page.
+ */
+export const MIN_SPREAD_PAGE_WIDTH = 420;
+/** Gap between the two facing pages of a spread (the spread branch's 12). */
+const FACING_GAP = 12;
+// @ai-end
 
 /**
  * Pure helper that returns mushaf metrics for a given window/container + insets.
@@ -182,8 +201,8 @@ const IPAD_MAX_PAGE_WIDTH_LANDSCAPE = 640;
  *   2. On tablet we cap `pageWidth` so `SkiaPage`'s font size (which scales
  *      linearly with `contentWidth`) never grows past ~38pt. Without the cap,
  *      iPad Pro 13" landscape renders 70pt+ text and lines overlap.
- *   3. (Deferred) A `facingPages` flag is exposed on the metrics type for
- *      future two-page spreads; currently always `false`.
+ *   3. iPad landscape lays out two facing pages (`facingPages`). Views that
+ *      show one page at a time there take `singlePageLayout(metrics)`.
  */
 export function getMushafLayout(
   opts: MushafLayoutOpts = {},
@@ -315,12 +334,45 @@ export function getMushafLayout(
   // labels breathe. Tuned to keep `fontSize ≈ 34pt` at 720pt page width.
   const paddingHorizontal = 24;
 
+  // @ai-start
+  // Beside a side panel the pane of a landscape window can be taller than it
+  // is wide (1006 x 1024 on a 13-inch iPad); the caller then says that the
+  // window is landscape, and the pane still shows a spread when each page
+  // fits. Without it the pane's own shape decides, as before.
+  const spreadShape = opts.landscapeWindow ?? landscape;
+  const spreadPageWidth = Math.floor(Math.max(width - FACING_GAP, 1) / 2);
+  if (spreadShape && spreadPageWidth < MIN_SPREAD_PAGE_WIDTH) {
+    // One centred page, as wide as each page of the window's own spread
+    // (capped to the pane): opening a side panel does not change the text
+    // size, and a small landscape window keeps the text size it had.
+    const windowSpreadPage = Math.min(
+      IPAD_MAX_PAGE_WIDTH_LANDSCAPE,
+      Math.floor(Math.max((opts.width ?? width) - FACING_GAP, 1) / 2),
+    );
+    const pageWidth = Math.max(Math.min(windowSpreadPage, width), 1);
+    return {
+      screenWidth: width,
+      screenHeight: height,
+      pageWidth,
+      pageOffsetX: Math.max((width - pageWidth) / 2, 0),
+      facingGap: 0,
+      contentWidth: pageWidth - paddingHorizontal * 2,
+      contentHeight,
+      baseLineHeight,
+      paddingHorizontal,
+      paddingTop,
+      paddingBottom,
+      facingPages: false,
+    };
+  }
+  // @ai-end
+
   // Landscape iPad: render two facing pages per spread. `pageWidth` is each
   // individual page's width, capped so the font size stays readable. The
   // FlatList items are spreads whose width is `screenWidth`; the consumer
   // centers `(2*pageWidth + facingGap)` within `screenWidth` via
   // `pageOffsetX`.
-  if (landscape) {
+  if (spreadShape /* @ai */) {
     const facingGap = 12;
     // Available width for the two pages combined.
     const availableForPages = Math.max(width - facingGap, 1);
@@ -369,6 +421,52 @@ export function getMushafLayout(
   };
 }
 
+// @ai-start
+/**
+ * The same layout with one page centred in the item. The vertical scroll
+ * shows one page per row even where the pager shows a spread (iPad
+ * landscape), so it can't use the spread's offset, which put its page in
+ * the left half of the screen. The page keeps the spread's width, so the
+ * text is the same size in both.
+ */
+export function singlePageLayout(
+  metrics: MushafLayoutMetrics,
+): MushafLayoutMetrics {
+  if (!metrics.facingPages) return metrics;
+  return {
+    ...metrics,
+    pageOffsetX: Math.max((metrics.screenWidth - metrics.pageWidth) / 2, 0),
+    facingGap: 0,
+    facingPages: false,
+  };
+}
+
+/**
+ * Key for a reader list. A list keeps its pixel offset when its items change
+ * size, which leaves a pager between two pages after a rotation, a Stage
+ * Manager resize or a switch between single pages and spreads. Keying the
+ * list on what it shows and how wide it is remounts it at the current page
+ * instead. Height is left out, so the keyboard never remounts the reader.
+ */
+export function readerListKey(kind: string, width: number): string {
+  return `${kind}-${Math.round(width)}`;
+}
+
+/** The widest a line of reading text gets on iPad (reading standards §2). */
+export const READING_COLUMN_MAX_WIDTH = 680;
+
+/**
+ * Side padding that keeps reading text in a centred column no wider than
+ * `READING_COLUMN_MAX_WIDTH`, and never less than `minPadding`.
+ */
+export function readingColumnPadding(
+  width: number,
+  minPadding: number,
+): number {
+  return Math.max(minPadding, (width - READING_COLUMN_MAX_WIDTH) / 2);
+}
+// @ai-end
+
 /**
  * React hook that returns live mushaf metrics. Re-renders on rotation /
  * split-view changes via `useWindowDimensions`.
@@ -396,6 +494,7 @@ export function useMushafLayout(
       opts.toolbarHeight,
       opts.headerHeight,
       opts.isTablet,
+      opts.landscapeWindow, // @ai
     ],
   );
 }

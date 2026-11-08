@@ -16,10 +16,32 @@
 
 import * as ExpoSplashScreen from 'expo-splash-screen';
 import {dismissBootOverlay} from '../modules/qariah-boot-splash';
+import {bootMark} from '../services/diagnostics/bootMarks';
 
 export const preventAutoHideAsync = ExpoSplashScreen.preventAutoHideAsync;
 
+// Qariah (A10s plan F1) — boot work that the first screen does not need waits
+// for the splash to go: whenSplashHidden() settles once the first hide has
+// finished, so that work cannot hold the splash (services/qariahBoot.ts).
+let markSplashHidden: () => void = () => undefined;
+const splashHidden = new Promise<void>(resolve => {
+  markSplashHidden = resolve;
+});
+
+export function whenSplashHidden(): Promise<void> {
+  return splashHidden;
+}
+
 export function hideAsync(): Promise<void> {
+  bootMark('splash-hide-call'); // Lite step 1c: lab timing marks.
   dismissBootOverlay();
-  return ExpoSplashScreen.hideAsync();
+  const hidden = ExpoSplashScreen.hideAsync();
+  hidden.then(
+    () => {
+      bootMark('splash-hidden');
+      markSplashHidden();
+    },
+    () => markSplashHidden(),
+  );
+  return hidden;
 }

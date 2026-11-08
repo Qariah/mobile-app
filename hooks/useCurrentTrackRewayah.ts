@@ -1,5 +1,6 @@
 import {useMemo} from 'react';
 import {usePlayerStore} from '@/services/player/store/playerStore';
+import {selectForegroundQueue} from '@/services/player/store/foregroundPlayerState'; // @ai Qariah: no new views in the background
 import {getReciterByIdSync} from '@/services/dataService';
 import {
   hasTextData,
@@ -28,8 +29,10 @@ export interface ResolvedTrackRewayah {
 //   4. When the track carried no explicit rewayah info at all, default to
 //      'hafs' silently (not a fallback — there was nothing to fall back from).
 export function useCurrentTrackResolvedRewayah(): ResolvedTrackRewayah | null {
-  const tracks = usePlayerStore(s => s.queue.tracks);
-  const currentIndex = usePlayerStore(s => s.queue.currentIndex);
+  const tracks = usePlayerStore(s => selectForegroundQueue(s).tracks);
+  const currentIndex = usePlayerStore(
+    s => selectForegroundQueue(s).currentIndex,
+  );
   return useMemo(() => {
     const track = tracks[currentIndex];
     if (!track) return null;

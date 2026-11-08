@@ -4,8 +4,9 @@ import {useRouter, useLocalSearchParams, useNavigation} from 'expo-router';
 import {useTranslation} from 'react-i18next';
 // @ai-end
 import {useTheme} from '@/hooks/useTheme';
-import {USE_GLASS} from '@/hooks/useGlassProps';
+import {USE_GLASS} from '@/hooks/useGlassProps'; // @ai
 import BrowseReciters from '@/components/browse/BrowseReciters';
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
 import {SURAHS} from '@/data/surahData';
 // @ai-start
 import {getSurahDisplayName} from '@/i18n/format';
@@ -14,9 +15,10 @@ import {getSurahDisplayName} from '@/i18n/format';
 // @ai-start
 export default function BrowseScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation(); // @ai
   const {theme} = useTheme();
   const {t} = useTranslation('home');
+  const {isTablet} = useResponsive(); // @ai
   // RFC-012 — composable Search-tab filter chips. Tiles can deeplink in
   // with chips pre-applied (e.g. `?hasPhoto=1`).
   const {surahId, hasPhoto} = useLocalSearchParams<{
@@ -28,14 +30,18 @@ export default function BrowseScreen() {
     router.back();
   };
 
-  // Get surah name if surahId is provided
+  // Get surah name if surahId is provided. On iPad a tap on a card plays
+  // the surah, so the title says so: "Choose a reciter · Ya-Sin". @ai
+  const surahTitleKey = isTablet
+    ? 'browse.chooseReciterForSurah'
+    : 'browse.browseRecitersForSurah';
   const title = surahId
-    ? t('browse.browseRecitersForSurah', {
+    ? t(surahTitleKey, {
         surah: getSurahDisplayName(SURAHS[parseInt(surahId, 10) - 1]),
       })
     : t('browse.browseAll');
 
-  // Set native header title on iOS
+  // Native header title on glass devices, as on the Home tab's copy. @ai
   useLayoutEffect(() => {
     if (USE_GLASS) {
       navigation.setOptions({headerTitle: title});

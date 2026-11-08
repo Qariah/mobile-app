@@ -22,6 +22,7 @@ import {
   ownerOf,
   parseOwnerReplies,
 } from './owner-replies.mjs';
+import {LABEL as QUEUE_LABEL, parseQueueIssue} from './owner-queue.mjs';
 import {shallowWatchBuilds} from './release-watch.mjs';
 import {
   DAILY_CARD_TITLE,
@@ -282,4 +283,22 @@ export function makeFacts(list) {
     if (!r) throw new Error(`unknown fact "${name}"`);
     return r(item);
   };
+}
+
+/**
+ * The open owner queue (scripts/lib/owner-queue.mjs): every open issue with
+ * the label `owner-queue`, parsed. REST only. A failed read returns
+ * {items: [], error}, so the caller can say `NOT CHECKED`.
+ */
+export function readOwnerQueue() {
+  try {
+    return {
+      items: listIssues({state: 'open', labels: QUEUE_LABEL, limit: 500}).map(
+        parseQueueIssue,
+      ),
+      error: null,
+    };
+  } catch (e) {
+    return {items: [], error: String(e.message || e).slice(0, 120)};
+  }
 }

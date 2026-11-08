@@ -22,7 +22,7 @@ jest.mock('@/services/player/store/playerStore', () => ({
 }));
 jest.mock('@/store/reciterStore', () => ({
   useReciterStore: {
-    getState: () => ({refreshDefaultReciter: jest.fn()}),
+    getState: () => ({catalogLoaded: jest.fn()}), // Pass D: upstream's pick model
     setState: jest.fn(),
   },
 }));

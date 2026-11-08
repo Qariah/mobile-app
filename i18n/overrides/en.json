@@ -11,6 +11,13 @@
     "terms": {
       "reciter": "Qariah",
       "reciters": "Qariahs"
+    },
+    "keyboard": {
+      "findSurahOrReciter": "Find a Surah or Qariah"
+    },
+    "language": {
+      "iosNote": "iOS keeps Qariah's language in Settings. When you change it there, the app reopens in the new language.",
+      "iosSettingsMessage": "Tap Language in Qariah's Settings and pick a language. The app reopens in it."
     }
   },
   "home": {
@@ -22,7 +29,10 @@
       "browseRecitersForSurah": "Browse Qariahs - {{surah}}",
       "recitersFound_one": "{{count}} qariah found with current filters",
       "recitersFound_other": "{{count}} qariahs found with current filters",
-      "searchReciters": "Search qariahs..."
+      "searchReciters": "Search qariahs...",
+      "chooseReciterForSurah": "Choose a qariah · {{surah}}",
+      "reciterCount_one": "{{count}} qariah",
+      "reciterCount_other": "{{count}} qariahs"
     },
     "browseAllHero": {
       "labels": {
@@ -36,9 +46,6 @@
     },
     "filters": {
       "title": "Filter Qariahs"
-    },
-    "randomHero": {
-      "finding": "Finding random recitations from different qariahs..."
     },
     "reciterBrowse": {
       "noneFound": "No qariahs found",
@@ -136,6 +143,12 @@
   "player": {
     "reciterProfile": {
       "thisReciter": "this qariah"
+    },
+    "a11y": {
+      "openReciter": "Opens the qariah's profile"
+    },
+    "panes": {
+      "reciters": "Qariahs"
     }
   },
   "reader": {

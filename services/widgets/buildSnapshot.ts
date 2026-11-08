@@ -13,6 +13,7 @@ import {
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
 import {
   WIDGET_SNAPSHOT_VERSION,
+  WidgetAdhkarPlayback,
   WidgetLastRead,
   WidgetReciter,
   WidgetSnapshot,
@@ -54,6 +55,7 @@ export interface SnapshotInput {
    * this session's language either way, as the app shows them.
    */
   language?: AppLanguage;
+  adhkar?: WidgetAdhkarPlayback | null; // @ai
 }
 
 export function artworkFileName(reciterId: string): string {
@@ -269,5 +271,6 @@ export function buildSnapshot(input: SnapshotInput): WidgetSnapshot {
     lastRead: buildLastRead(input),
     tasbeeh: input.tasbeeh,
     ...(input.language === undefined ? {} : {language: input.language}),
+    adhkar: input.adhkar ?? null, // @ai
   };
 }

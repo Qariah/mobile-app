@@ -188,11 +188,11 @@ export const qariahFeatureFlags = {
    * hard-off: the runtime activation is ALSO gated by the PostHog multivariate
    * flag `nonblocking_splash_v2` (only variant `treatment` arms; fails closed;
    * applies at the NEXT cold start because MainActivity reads it before JS
-   * runs; only enrolled `boot_risk` devices get a variant — see
+   * runs; since 2026-11-03 every Android device gets `treatment` — see
    * services/bootSplash). iOS is unaffected. Flip to false to
    * hard-disable in the next build. See modules/qariah-boot-splash.
    */
-  nonBlockingSplash: true, // v2 — experiment; gated further by `nonblocking_splash_v2`
+  nonBlockingSplash: true, // v2; gated further by `nonblocking_splash_v2`
 } as const;
 
 export type QariahFeatureFlag = keyof typeof qariahFeatureFlags;

@@ -71,7 +71,7 @@ BACKUP="$HOME/.claude/scheduled-tasks-backup-$(date +%Y%m%d-%H%M%S)"
 
 # Only tasks belonging to THIS project. Other tasks (backups, self-improvement)
 # are not this repo's business and are deliberately left alone.
-TASKS=(qariah-daily-triage-fix-loop qariah-daily-auto-sprint qariah-biweekly-hygiene-sweep)
+TASKS=(qariah-daily-triage-fix-loop qariah-daily-auto-sprint qariah-biweekly-hygiene-sweep qariah-release-auditor qariah-promoter)
 
 CHECK_ONLY=0
 [[ "${1:-}" == "--check" ]] && CHECK_ONLY=1

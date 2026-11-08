@@ -13,6 +13,11 @@ import {useApiHealthStore} from '../store/apiHealthStore';
 import catalogFallback from '../assets/data/catalog.json';
 import branding from '@/config/branding';
 import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
+import {
+  canonicalReciterId,
+  canonicalReciterSlug,
+  foldMergedReciters,
+} from '../utils/reciterMerges'; // @ai
 // @ai-start
 import {rankSurahs} from '@/utils/search/catalog';
 import {recitationAudioUrl} from '@/utils/recitationAudioUrl'; // Qariah (TECH_DEBT #70)
@@ -106,13 +111,16 @@ function applyAssetProxy(data: Reciter[]): Reciter[] {
   }));
 }
 
-function populateReciters(data: Reciter[]): void {
-  RECITERS.splice(0, RECITERS.length, ...applyAssetProxy(data));
-  markRecitersUpdated(); // @ai
-  // Refresh the store's default reciter now that RECITERS is populated
-  useReciterStore.getState().refreshDefaultReciter();
-  useReciterStore.setState({isInitialized: true});
+// @ai-start
+// Returns the list as the app shows it, with merged reciters folded in.
+function populateReciters(data: Reciter[]): Reciter[] {
+  const reciters = foldMergedReciters(applyAssetProxy(data));
+  RECITERS.splice(0, RECITERS.length, ...reciters);
+  markRecitersUpdated();
+  useReciterStore.getState().catalogLoaded();
+  return reciters;
 }
+// @ai-end
 
 // ── API client ────────────────────────────────────────────────────────────────
 
@@ -226,20 +234,18 @@ export async function getAllReciters(): Promise<Reciter[]> {
       console.log(
         '[dataService] Killswitch active — using bundled fallback data',
       );
-      const fallback = catalogFallback as Reciter[];
-      populateReciters(fallback);
-      return fallback;
+      return populateReciters(catalogFallback as Reciter[]); // @ai
     }
   }
 
   const cached = await getStoredData<Reciter[]>(RECITERS_KEY);
 
   if (cached && cached.data.length > 0) {
-    populateReciters(cached.data);
+    const reciters = populateReciters(cached.data); // @ai
     if (canFetch) {
       refreshRecitersInBackground().catch(() => {});
     }
-    return cached.data;
+    return reciters; // @ai
   }
 
   // Bundle-first: seed from the bundled catalog, then refresh live in the background (not on the splash).
@@ -247,10 +253,10 @@ export async function getAllReciters(): Promise<Reciter[]> {
   if (canFetch && isQariahFeatureEnabled('bundleFirstCatalog')) {
     const seed = catalogFallback as Reciter[];
     if (seed.length > 0) {
-      populateReciters(seed);
+      const reciters = populateReciters(seed); // @ai
       // refreshRecitersInBackground swallows its own errors (internal try/catch).
       void refreshRecitersInBackground();
-      return seed;
+      return reciters;
     }
   }
 
@@ -263,10 +269,10 @@ export async function getAllReciters(): Promise<Reciter[]> {
           : await fetchAllRecitersFromApi();
       if (liveReciters.length > 0) {
         await setStoredData(RECITERS_KEY, liveReciters);
-        populateReciters(liveReciters);
+        const reciters = populateReciters(liveReciters); // @ai
         markLiveCatalogLoaded(); // Qariah (Sprint 48)
         clearDisruption();
-        return liveReciters;
+        return reciters; // @ai
       }
     } catch (err) {
       console.warn('[dataService] Live fetch failed on first load:', err);
@@ -275,9 +281,9 @@ export async function getAllReciters(): Promise<Reciter[]> {
         allowStale: true,
       });
       if (stale && stale.data.length > 0) {
-        populateReciters(stale.data);
+        const reciters = populateReciters(stale.data); // @ai
         setDisrupted(true, {reason: 'unreachable', stale: true});
-        return stale.data;
+        return reciters; // @ai
       }
       setDisrupted(true, {reason: 'unreachable', stale: false});
     }
@@ -287,8 +293,7 @@ export async function getAllReciters(): Promise<Reciter[]> {
   const fallback = catalogFallback as Reciter[];
   if (fallback.length > 0) {
     console.log('[dataService] Using bundled fallback data');
-    populateReciters(fallback);
-    return fallback;
+    return populateReciters(fallback); // @ai
   }
 
   return [];
@@ -334,20 +339,23 @@ export async function refetchCatalogToVersion(
 
 export async function getReciterById(id: string): Promise<Reciter | undefined> {
   const reciters = await getAllReciters();
-  return reciters.find(reciter => reciter.id === id);
+  const canonicalId = canonicalReciterId(id); // @ai
+  return reciters.find(reciter => reciter.id === canonicalId);
 }
 
 // Sync version reads from the in-memory RECITERS array (populated after first load)
 export function getReciterByIdSync(id: string): Reciter | undefined {
-  return RECITERS.find(reciter => reciter.id === id);
+  const canonicalId = canonicalReciterId(id); // @ai
+  return RECITERS.find(reciter => reciter.id === canonicalId);
 }
 
 export function getReciterBySlug(slug: string): Reciter | undefined {
-  return RECITERS.find(r => r.slug === slug);
+  const canonicalSlug = canonicalReciterSlug(slug); // @ai
+  return RECITERS.find(r => r.slug === canonicalSlug);
 }
 
 export function getReciterName(reciterId: string): string | null {
-  const reciter = RECITERS.find(r => r.id === reciterId);
+  const reciter = getReciterByIdSync(reciterId); // @ai
   return reciter ? reciter.name : null;
 }
 

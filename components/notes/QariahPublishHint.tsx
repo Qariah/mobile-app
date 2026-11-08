@@ -1,7 +1,7 @@
 // @ai-generated
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import Color from 'color';
 import {useTranslation} from 'react-i18next';

@@ -12,7 +12,7 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useRouter} from 'expo-router';
 import {useFocusEffect} from 'expo-router';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {ListRenderItem} from 'react-native';
 import {getSurahById} from '@/services/dataService';
@@ -31,6 +31,14 @@ import {getSurahDisplayName} from '@/i18n/format';
 import {flipX} from '@/utils/rtl';
 import {describeSavedVerseNow} from '@/hooks/useSavedVerseDescription';
 import {savedVerseSubtitle} from '@/services/verse-annotations/unitAnnotations';
+import {useNativeOptionsMenu} from '@/components/sheets/options/OptionsMenu';
+import {
+  CollectionOptionsMenu,
+  type CollectionOptionsPayload,
+} from '@/components/sheets/options/collectionOptions';
+// Qariah (RFC-023 step 1): open at once, as Bookmarks does; the reader finds the page.
+import {savedVerseOpenParams} from '@/services/verse-annotations/savedVerseOpenParams';
+import {useLibraryListBottomPadding} from '@/hooks/useBottomInset'; // @ai
 // @ai-end
 import {useQariahNotesView} from '@/components/notes/useQariahNotesView';
 import {afterNoteDelete, beforeNoteDelete} from '@/components/notes/qfNoteSync';
@@ -43,11 +51,13 @@ interface NoteData {
 // @ai-start
 const NotesScreen = () => {
   const {theme} = useTheme();
+  const listBottomPadding = useLibraryListBottomPadding(); // @ai
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const {t} = useTranslation(['collection', 'common']);
   // Qariah: the Personal Notes or Reflections view (components/notes).
   const {notesView, filterNotes, backfillOnFocus} = useQariahNotesView();
+  const nativeMenus = useNativeOptionsMenu(); // @ai
 
   const [notes, setNotes] = useState<NoteData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,35 +130,64 @@ const NotesScreen = () => {
     });
   }, []);
 
+  // @ai-start
+  const openingRef = useRef(false);
+  const handleOpenVerse = useCallback(
+    async (note: VerseNote) => {
+      if (openingRef.current) return;
+      openingRef.current = true;
+      try {
+        router.push({
+          pathname: '/mushaf',
+          params: savedVerseOpenParams(note),
+        });
+      } finally {
+        openingRef.current = false;
+      }
+    },
+    [router],
+  );
+  // @ai-end
+
+  // @ai-start
+  const buildOptions = useCallback(
+    (item: NoteData): CollectionOptionsPayload => ({
+      title: item.surahName,
+      // @ai: the ayah in the numbering of the rewayah it was saved in
+      subtitle: savedVerseSubtitle(
+        describeSavedVerseNow(item.note),
+        item.note.ayahNumber,
+        number => t('common:labels.ayahNumber', {number}),
+      ),
+      options: [
+        {
+          label: t('notesScreen.openVerse'),
+          icon: 'book-open',
+          onPress: () => handleOpenVerse(item.note),
+        },
+        {
+          label: t('notesScreen.editNote'),
+          icon: 'edit-2',
+          onPress: () => handleNotePress(item),
+        },
+        {
+          label: t('notesScreen.deleteNote'),
+          icon: 'minus-circle',
+          destructive: true,
+          onPress: () => handleDeleteNote(item.note),
+        },
+      ],
+    }),
+    [handleDeleteNote, handleNotePress, handleOpenVerse, t],
+  );
+
   const handleOptionsPress = useCallback(
     (item: NoteData) => {
-      SheetManager.show('collection-options', {
-        payload: {
-          title: item.surahName,
-          // @ai: the ayah in the numbering of the rewayah it was saved in
-          subtitle: savedVerseSubtitle(
-            describeSavedVerseNow(item.note),
-            item.note.ayahNumber,
-            number => t('common:labels.ayahNumber', {number}),
-          ),
-          options: [
-            {
-              label: t('notesScreen.editNote'),
-              icon: 'edit-2',
-              onPress: () => handleNotePress(item),
-            },
-            {
-              label: t('notesScreen.deleteNote'),
-              icon: 'minus-circle',
-              destructive: true,
-              onPress: () => handleDeleteNote(item.note),
-            },
-          ],
-        },
-      });
+      SheetManager.show('collection-options', {payload: buildOptions(item)});
     },
-    [handleDeleteNote, handleNotePress, t],
+    [buildOptions],
   );
+  // @ai-end
 
   const heroOuterBg = Color(theme.colors.textSecondary).alpha(0.1).toString();
   const heroInnerBg = Color(theme.colors.textSecondary).alpha(0.08).toString();
@@ -195,6 +234,14 @@ const NotesScreen = () => {
       rewayahId={item.note.rewayahId}
       onPress={() => handleNotePress(item)}
       onOptionsPress={() => handleOptionsPress(item)}
+      optionsMenu={
+        nativeMenus ? (
+          <CollectionOptionsMenu
+            payload={buildOptions(item)}
+            layout="overlay"
+          />
+        ) : undefined
+      }
     />
   );
 
@@ -310,7 +357,10 @@ const NotesScreen = () => {
         renderItem={renderItem}
         keyExtractor={getItemKey}
         ListHeaderComponent={ListHeaderComponent}
-        contentContainerStyle={styles.listContentContainer}
+        contentContainerStyle={[
+          styles.listContentContainer,
+          {paddingBottom: listBottomPadding}, // @ai
+        ]}
         onScroll={RNAnimated.event(
           [{nativeEvent: {contentOffset: {y: scrollY}}}],
           {useNativeDriver: true},
@@ -366,7 +416,6 @@ const styles = StyleSheet.create({
   },
   listContentContainer: {
     flexGrow: 1,
-    paddingBottom: moderateScale(65),
   },
   fixedBackButton: {
     position: 'absolute',

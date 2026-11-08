@@ -28,7 +28,7 @@ import React, {useCallback, useMemo} from 'react';
 import {View, Text, StyleSheet, Pressable} from 'react-native';
 import {Feather} from '@expo/vector-icons';
 import {Link} from 'expo-router';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
@@ -36,6 +36,11 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import {useTheme} from '@/hooks/useTheme';
+import {useResponsive} from '@/hooks/useResponsive';
+import {pageSpacing} from '@/utils/gridLayout';
+import {RECITERS} from '@/data/reciterData';
+import {useRecitersVersion} from '@/hooks/useRecitersVersion';
+import {SURAHS} from '@/data/surahData';
 import {usePlayerActions} from '@/hooks/usePlayerActions';
 import {createTracksForReciter} from '@/utils/track';
 import {pickRandomRecitations} from '@/utils/randomRecitation';
@@ -45,6 +50,7 @@ import {
   SurahGradientMesh,
   MESH_PALETTES,
 } from '@/components/hero/SurahGradientMesh';
+import {withoutShadowInLite} from '@/services/lite/liteMode';
 import {SESSION_SEED, pickHeroTheme} from '@/components/hero/heroThemes';
 import {useTranslation} from 'react-i18next';
 import {getReciterDisplayName, getSurahDisplayName} from '@/i18n/format';
@@ -55,15 +61,23 @@ const RECITERS_ACCENT = '#2f5059'; // Sage/Teal — Qariah brand
 const SURAHS_ACCENT = '#5645a1'; // lightColors.accent (purple)
 const SHUFFLE_ACCENT = '#c97a3b'; // warm amber
 
+// @ai-start Sprint 52 Task 2: iPad. From this window width the title block and
+// the three tiles share one row (upstream's 900 pt window class; the mock).
+const WIDE_WINDOW_MIN_WIDTH = 900;
+const TITLE_BLOCK_SHARE = '20%';
+// @ai-end
+
 interface TileProps {
   iconName: React.ComponentProps<typeof Feather>['name'];
   iconColor: string;
   label: string;
+  /** One caption line under the label (iPad row layout). */
+  caption?: string;
   onPress?: () => void;
   href?: string;
 }
 
-function Tile({iconName, iconColor, label, onPress, href}: TileProps) {
+function Tile({iconName, iconColor, label, caption, onPress, href}: TileProps) {
   const {theme} = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
@@ -82,13 +96,30 @@ function Tile({iconName, iconColor, label, onPress, href}: TileProps) {
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={styles.pressable}
+      // An expo-router `Link asChild` (Slot) rejects an array style (SDK 58),
+      // so flatten it. @ai
+      style={
+        caption
+          ? StyleSheet.flatten([styles.pressable, styles.pressableWide])
+          : styles.pressable
+      }
       accessibilityRole="button"
-      accessibilityLabel={label}>
+      accessibilityLabel={caption ? `${label}, ${caption}` : label}>
       <View style={styles.iconWrap}>
         <Feather name={iconName} size={moderateScale(26)} color={iconColor} />
       </View>
-      <Text style={styles.label}>{label}</Text>
+      {/* @ai-start Sprint 52 Task 2: iPad caption, one line. */}
+      <View style={caption ? styles.textColumn : undefined}>
+        <Text style={styles.label} numberOfLines={caption ? 1 : undefined}>
+          {label}
+        </Text>
+        {caption ? (
+          <Text style={styles.caption} numberOfLines={1}>
+            {caption}
+          </Text>
+        ) : null}
+      </View>
+      {/* @ai-end */}
     </Pressable>
   );
 
@@ -111,6 +142,19 @@ export function ListenTabTopGrid() {
   const {updateQueue, play} = usePlayerActions();
   const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
   const styles = useMemo(() => createStyles(theme), [theme]);
+
+  // @ai-start Sprint 52 Task 2: the row layout follows upstream's 900 pt
+  // window class on iPad (no measure, so no first-frame jump). Phones: never.
+  const {isTablet, width: windowWidth} = useResponsive();
+  const wide = isTablet && windowWidth >= WIDE_WINDOW_MIN_WIDTH;
+  const tileGap = wide ? pageSpacing(windowWidth).gap : undefined;
+  const recitersVersion = useRecitersVersion();
+  const reciterCount = useMemo(
+    () => RECITERS.length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recitersVersion is the refill signal of RECITERS
+    [recitersVersion],
+  );
+  // @ai-end
 
   // Sprint 21 round-4 — apply the Continue-Reading mesh treatment to
   // the "Browse by" hero. Session-seeded so the palette cycles across
@@ -173,38 +217,67 @@ export function ListenTabTopGrid() {
   // @ai-end
 
   return (
-    <View style={styles.card}>
-      {/* Sprint 21 round-5.3 — colored base layer under the mesh, matching
+    <View accessible={false} testID="listen-top-pane">
+      <View
+        style={[styles.card, wide && styles.cardWide]}
+        accessible={false}
+        testID="listen-top-card">
+        {/* Sprint 21 round-5.3 — colored base layer under the mesh, matching
           the Mushaf-tab Continue-Reading hero. Without this the mesh
           radial-gradients sit on a neutral card and read too washed-out. */}
-      <View style={[StyleSheet.absoluteFill, {backgroundColor: baseBg}]} />
-      <SurahGradientMesh
-        palette={heroPalette}
-        isDark={theme.isDarkMode}
-        viewBoxWidth={400}
-        viewBoxHeight={180}
-      />
-      <Text style={styles.eyebrow}>{t('qariah:listenTop.eyebrow')}</Text>
-      <Text style={styles.title}>{t('qariah:listenTop.title')}</Text>
-      <View style={styles.tiles}>
-        <Tile
-          iconName="user"
-          iconColor={RECITERS_ACCENT}
-          label={t('qariah:listenTop.reciters')}
-          href="/(tabs)/(a.home)/browse-all"
+        <View style={[StyleSheet.absoluteFill, {backgroundColor: baseBg}]} />
+        <SurahGradientMesh
+          palette={heroPalette}
+          isDark={theme.isDarkMode}
+          viewBoxWidth={400}
+          viewBoxHeight={180}
         />
-        <Tile
-          iconName="book-open"
-          iconColor={SURAHS_ACCENT}
-          label={t('qariah:listenTop.surahs')}
-          href="/(tabs)/(a.home)/browse-all-surahs"
-        />
-        <Tile
-          iconName="shuffle"
-          iconColor={SHUFFLE_ACCENT}
-          label={t('qariah:listenTop.shuffle')}
-          onPress={handleShuffle}
-        />
+        <View
+          style={wide ? styles.titleBlockWide : undefined}
+          testID="listen-top-title-block">
+          <Text style={styles.eyebrow} numberOfLines={wide ? 1 : undefined}>
+            {t('qariah:listenTop.eyebrow')}
+          </Text>
+          <Text style={styles.title}>{t('qariah:listenTop.title')}</Text>
+        </View>
+        <View
+          style={[
+            styles.tiles,
+            tileGap !== undefined && {gap: tileGap},
+            wide && styles.tilesWide,
+          ]}
+          accessible={false}
+          testID="listen-top-tiles">
+          <Tile
+            iconName="user"
+            iconColor={RECITERS_ACCENT}
+            label={t('qariah:listenTop.reciters')}
+            caption={
+              wide
+                ? t('qariah:listenTop.reciterCount', {count: reciterCount})
+                : undefined
+            }
+            href="/(tabs)/(a.home)/browse-all"
+          />
+          <Tile
+            iconName="book-open"
+            iconColor={SURAHS_ACCENT}
+            label={t('qariah:listenTop.surahs')}
+            caption={
+              wide
+                ? t('qariah:listenTop.surahCount', {count: SURAHS.length})
+                : undefined
+            }
+            href="/(tabs)/(a.home)/browse-all-surahs"
+          />
+          <Tile
+            iconName="shuffle"
+            iconColor={SHUFFLE_ACCENT}
+            label={t('qariah:listenTop.shuffle')}
+            caption={wide ? t('qariah:listenTop.shuffleCaption') : undefined}
+            onPress={handleShuffle}
+          />
+        </View>
       </View>
     </View>
   );
@@ -213,6 +286,8 @@ export function ListenTabTopGrid() {
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
     card: {
+      // @ai Task 2: marginHorizontal stays at the row inset (16) on iPad too,
+      // so the card lines up with the shelf titles below it.
       marginHorizontal: moderateScale(16),
       paddingHorizontal: moderateScale(14),
       paddingTop: moderateScale(16),
@@ -245,11 +320,26 @@ const createStyles = (theme: Theme) =>
       flexDirection: 'row',
       gap: moderateScale(10),
     },
+    // @ai-start Sprint 52 Task 2: one row, title block on the leading 20%.
+    cardWide: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    titleBlockWide: {
+      marginEnd: moderateScale(12),
+      width: TITLE_BLOCK_SHARE,
+      justifyContent: 'center',
+    },
+    tilesWide: {
+      flex: 1,
+    },
+    // @ai-end
   });
 
 const createTileStyles = (theme: Theme) =>
   StyleSheet.create({
-    tile: {
+    // Lite mode: no shadow (planning/lite-mode-design.md).
+    tile: withoutShadowInLite({
       flex: 1,
       backgroundColor: theme.isDarkMode ? theme.colors.light : '#ffffff',
       borderRadius: moderateScale(16),
@@ -258,7 +348,7 @@ const createTileStyles = (theme: Theme) =>
       shadowOffset: {width: 0, height: 2},
       shadowRadius: 6,
       elevation: 2,
-    },
+    }),
     pressable: {
       paddingTop: moderateScale(18),
       paddingBottom: moderateScale(16),
@@ -267,6 +357,23 @@ const createTileStyles = (theme: Theme) =>
       justifyContent: 'center',
       gap: moderateScale(10),
     },
+    // @ai-start Sprint 52 Task 2: icon, then label and caption, in a row.
+    pressableWide: {
+      flexDirection: 'row',
+      justifyContent: 'flex-start',
+      paddingHorizontal: moderateScale(14),
+      paddingVertical: moderateScale(18),
+      minHeight: 44,
+    },
+    textColumn: {
+      flex: 1,
+    },
+    caption: {
+      fontFamily: theme.fonts.regular,
+      fontSize: moderateScale(12),
+      color: theme.colors.textSecondary,
+    },
+    // @ai-end
     iconWrap: {
       width: moderateScale(30),
       height: moderateScale(30),

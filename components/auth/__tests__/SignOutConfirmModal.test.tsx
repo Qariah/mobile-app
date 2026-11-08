@@ -12,6 +12,17 @@ import React from 'react';
 import {act, fireEvent, render, screen} from '@testing-library/react-native';
 import {SignOutConfirmModal} from '../SignOutConfirmModal';
 
+// @ai Sprint 52: these suites test the phone sheet.
+jest.mock('@/hooks/useResponsive', () => ({
+  useResponsive: () => ({isTablet: false}),
+}));
+// @ai Sprint 52: the card width constant lives in the action sheet module,
+// which pulls in reanimated; Jest needs only the numbers.
+jest.mock('@/components/sheets/AdaptiveActionSheet', () => ({
+  SHEET_MAX_WIDTH: 560,
+  SHEET_MAX_HEIGHT: 760,
+}));
+
 const mockSheet: {onClose: (() => void) | undefined} = {onClose: undefined};
 
 jest.mock('@gorhom/bottom-sheet', () => {

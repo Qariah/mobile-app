@@ -1,6 +1,7 @@
 import {loadAudioInBackground, pendingRestoreLoad} from '../restoreSession';
 
 let mockOpId = 0;
+let mockCarReplacedQueue = false; // @ai
 const mockLoadTrack = jest.fn<Promise<void>, [string]>();
 const mockSeekTo = jest.fn<Promise<void>, [number]>();
 // @ai Qariah: each loadTrack() moves the load generation once, as the real service does (TECH_DEBT #218).
@@ -30,12 +31,16 @@ jest.mock('@/utils/audioUtils', () => ({}));
 jest.mock('@/utils/artworkUtils', () => ({}));
 jest.mock('@/store/uploadsStore', () => ({useUploadsStore: {}}));
 jest.mock('@/utils/track', () => ({}));
+jest.mock('@/services/car/sessionGate', () => ({
+  hasCarReplacedQueue: () => mockCarReplacedQueue, // @ai
+}));
 
 describe('restoreSession background load', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockOpId = 0;
     mockLoadGeneration = 0;
+    mockCarReplacedQueue = false; // @ai
     mockLoadTrack.mockReset();
     mockLoadTrack.mockResolvedValue(undefined);
     mockSeekTo.mockReset();
@@ -92,4 +97,20 @@ describe('restoreSession background load', () => {
     await Promise.resolve();
     expect(settled).toBe(true);
   });
+
+  // @ai-start
+  it('settles pendingRestoreLoad when a car took the queue before the load ran', async () => {
+    loadAudioInBackground('u1', 30);
+    mockCarReplacedQueue = true;
+    let settled = false;
+    void pendingRestoreLoad().then(() => {
+      settled = true;
+    });
+    jest.advanceTimersByTime(100);
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(settled).toBe(true);
+    expect(mockLoadTrack).not.toHaveBeenCalled();
+    expect(mockSeekTo).not.toHaveBeenCalled();
+  });
+  // @ai-end
 });

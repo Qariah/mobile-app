@@ -20,7 +20,7 @@ import {useMushafFontMgr} from '@/hooks/useMushafFontMgr';
 import {Gesture, GestureDetector} from 'react-native-gesture-handler';
 import {runOnJS} from 'react-native-worklets';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {verticalScale} from 'react-native-size-matters';
+import {verticalScale} from '@/utils/scale';
 import Color from 'color';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
 import type {MushafArabicTextWeight} from '@/store/mushafSettingsStore';
@@ -62,8 +62,12 @@ import {
   isTajweedEnabled,
 } from './pageOverlays';
 // @ai-start
-import {computeUnitPageHighlightLayers} from './verseHighlightLayers';
+import {
+  basmalaPlaybackLines, // @ai
+  computeUnitPageHighlightLayers,
+} from './verseHighlightLayers';
 import {usePlaybackBand} from './playbackBand';
+import {usePlaybackBasmalaSurah} from '@/store/mushafPlayerStore'; // @ai
 import {useVerseUnitDragSelect, type LineCharHit} from './verseUnitDragSelect';
 // @ai-end
 import {type MushafLayoutMetrics, canvasBottomOverflow} from '../constants'; // @ai
@@ -129,34 +133,11 @@ function buildRenderConstants(metrics: MushafLayoutMetrics): RenderConstants {
 const TOTAL_PAGES = 604;
 const pages = Array.from({length: TOTAL_PAGES}, (_, i) => i + 1);
 
-// Reverse lookup: HAFS verseKey → page number (built lazily from the verse
-// map, rebuilt whenever the active rewayah or the DK words cache changes).
-// scrollToVerse callers (playback page turns, search) pass Hafs keys. @ai
-let verseToPageMap: Map<string, number> | null = null;
-let verseToPageMapRewayah: string | null = null;
-let verseToPageMapVersion = -1;
-
+// @ai Qariah: the page of the HAFS verse's first word, from the verse index
+// (scrollToVerse callers, playback page turns and search, pass Hafs keys). A
+// map built from the 604 pages here read all the words on the JS thread.
 function getPageForVerse(verseKey: string): number | null {
-  const rewayah = digitalKhattDataService.rewayah;
-  const version = digitalKhattDataService.getCacheVersion();
-  if (rewayah !== verseToPageMapRewayah || version !== verseToPageMapVersion) {
-    verseToPageMap = null;
-    verseToPageMapRewayah = rewayah;
-    verseToPageMapVersion = version;
-  }
-  if (!verseToPageMap) {
-    if (!digitalKhattDataService.initialized) return null;
-    verseToPageMap = new Map();
-    for (let page = 1; page <= 604; page++) {
-      const keys = mushafVerseMapService.getOrderedVerseKeysForPage(page);
-      for (const key of keys) {
-        if (!verseToPageMap.has(key)) {
-          verseToPageMap.set(key, page);
-        }
-      }
-    }
-  }
-  return verseToPageMap.get(verseKey) ?? null;
+  return digitalKhattDataService.getPageForVerse(verseKey) ?? null;
 }
 
 interface ParagraphInfo {
@@ -180,6 +161,8 @@ interface ContinuousMushafViewProps {
   /** Live layout metrics from `useMushafLayout()`. Threaded through so the
    *  continuous view responds to iPad width caps + rotation. */
   metrics: MushafLayoutMetrics;
+  /** Whether a tap on the status bar scrolls back to page 1. Default on. @ai */
+  scrollsToTop?: boolean; // @ai
 }
 
 // ── Per-page content with gestures + highlights ──────────
@@ -414,6 +397,9 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
     const highlightRows = useVerseAnnotationsStore(s => s.highlightRows);
     // @ai — what the reciter is reciting, painted as verse units.
     const playbackBand = usePlaybackBand();
+    // @ai — the surah whose basmala is being recited (the intro before its
+    // first verse): its basmallah line is painted as a recited verse is.
+    const basmalaSurah = usePlaybackBasmalaSurah();
 
     // ── Hit testing ────────────────────────────────────────
     // @ai — the line and character under a touch point (this renderer's
@@ -546,6 +532,13 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
           rewayahDiffPaintEnabled,
         ),
         themes: null,
+        playbackBasmalaLines: basmalaPlaybackLines(
+          pageLines,
+          basmalaSurah,
+          line => digitalKhattDataService.getBasmalaSurah(line),
+          lineIndex =>
+            quranTextService.getLineText(pageNumber, lineIndex).length,
+        ), // @ai
         sources: {
           bookmarkedVerseKeys,
           persistentHighlights,
@@ -574,6 +567,7 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
       bookmarkRows, // @ai
       highlightRows, // @ai
       playbackBand, // @ai
+      basmalaSurah, // @ai
       playbackBgColor,
       selectedVerseKeys,
       selectedRewayah, // @ai
@@ -681,7 +675,15 @@ const ContinuousMushafView = forwardRef<
   ContinuousMushafViewProps
 >(
   (
-    {textColor, dividerColor, onTap, initialPage, onCurrentPageChange, metrics},
+    {
+      textColor,
+      dividerColor,
+      onTap,
+      initialPage,
+      onCurrentPageChange,
+      metrics,
+      scrollsToTop = true, // @ai
+    },
     ref,
   ) => {
     const insets = useSafeAreaInsets();
@@ -852,6 +854,14 @@ const ContinuousMushafView = forwardRef<
 
     const keyExtractor = useCallback((item: number) => `page-${item}`, []);
 
+    // @ai-start
+    // An item with no fontMgr draws nothing and has no height, so a list mounted
+    // now would mount all 604 pages to fill the screen, then draw them all when
+    // the fonts arrive. The reader can open before them: they finish after the
+    // data.
+    if (!fontMgr) return null;
+    // @ai-end
+
     return (
       <FlashList
         ref={flashListRef}
@@ -865,6 +875,7 @@ const ContinuousMushafView = forwardRef<
           paddingBottom: insets.bottom + verticalScale(80),
         }}
         showsVerticalScrollIndicator={false}
+        scrollsToTop={scrollsToTop} // @ai
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{itemVisiblePercentThreshold: 50}}
       />

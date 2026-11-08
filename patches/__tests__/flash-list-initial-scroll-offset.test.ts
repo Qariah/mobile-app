@@ -1,5 +1,5 @@
 // @ai
-// DO NOT DROP — guards patches/@shopify+flash-list+2.0.2.patch (TECH_DEBT #376).
+// DO NOT DROP — guards patches/@shopify+flash-list+2.3.2.patch (TECH_DEBT #376).
 //
 // The defect (Android, the reader in List + Vertical with Community
 // Reflections on): the reader was on page 50, the app was stopped, and the
@@ -15,9 +15,13 @@
 // real place. The reflection rows are much taller than the estimate, so the
 // error was large only with Community Reflections on.
 //
-// FlashList 2.3.0 fixes the read (Shopify/flash-list#2133). The patch is a
-// backport. These tests drive FlashList's RecyclerViewManager without React,
-// as the list does during its first layout.
+// FlashList 2.3.0 fixes the read (Shopify/flash-list#2133). It still
+// recomputes only the rows up to the target, so the rows after it keep their
+// old places and the visible-row search can return rows far from the target.
+// The 2.3.2 patch recomputes all the rows (Pass D, 2026-11-07). These tests
+// drive FlashList's RecyclerViewManager without React, as the list does
+// during its first layout. FlashList 2.3 ships ES modules, so the Jest config
+// (package.json `transformIgnorePatterns`) transforms @shopify/flash-list.
 import {readFileSync} from 'fs';
 import {dirname, join} from 'path';
 
@@ -107,10 +111,10 @@ describe('FlashList initial scroll offset (TECH_DEBT #376)', () => {
   it('is the patched FlashList build', () => {
     // A clear message when `npx patch-package` did not run.
     const source = readFileSync(DIST, 'utf8');
-    if (source.includes('initialItemOffset : 0 + this.firstItemOffset')) {
+    if (source.includes('recomputeLayouts(0, initialScrollIndex)')) {
       throw new Error(
-        'FlashList reads the initial offset before the recompute. Run ' +
-          '`npx patch-package`: patches/@shopify+flash-list+2.0.2.patch is not applied.',
+        'FlashList recomputes only the rows up to the target. Run ' +
+          '`npx patch-package`: patches/@shopify+flash-list+2.3.2.patch is not applied.',
       );
     }
   });

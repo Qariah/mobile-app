@@ -250,6 +250,7 @@ jest.mock('@/store/mushafPlayerStore', () => {
   return {
     useMushafPlayerStore: store,
     usePlaybackVerseKeys: () => [],
+    usePlaybackBasmalaSurah: () => null, // Pass D: upstream's basmala intro
   };
 });
 jest.mock('@/store/verseAnnotationsStore', () => {

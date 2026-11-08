@@ -5,9 +5,10 @@ import {USE_GLASS, useGlassColorScheme} from '@/hooks/useGlassProps';
 import {FrostedView} from '@/components/FrostedView';
 import {SymbolView} from 'expo-symbols';
 import {Pressable} from 'react-native-gesture-handler';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {usePlayerStore} from '@/services/player/store/playerStore';
+import {selectForegroundQueue} from '@/services/player/store/foregroundPlayerState'; // @ai Qariah: no new views in the background
 import {useReciterNavigation} from '@/hooks/useReciterNavigation';
 import {ReciterImage} from '@/components/ReciterImage';
 import {getReciterById} from '@/services/dataService';
@@ -33,14 +34,16 @@ import {
   localizeDigits,
 } from '@/i18n/format';
 import {useTranslation} from 'react-i18next'; // Qariah: the love label
+import {usePlayerA11y} from '@/hooks/usePlayerA11y'; // @ai
 // @ai-end
 
 // @ai-start
 export const TrackInfo = () => {
   const {theme} = useTheme();
   const {t} = useTranslation(['sheets']); // @ai Qariah: the love label
+  const a11y = usePlayerA11y(); // @ai
   const glassColorScheme = useGlassColorScheme();
-  const queue = usePlayerStore(s => s.queue);
+  const queue = usePlayerStore(selectForegroundQueue);
   const {navigateToReciterProfile} = useReciterNavigation();
   const currentTrack = queue?.tracks?.[queue?.currentIndex ?? -1];
   const [, setReciter] = useState<Reciter | null>(null);
@@ -135,7 +138,11 @@ export const TrackInfo = () => {
       <View style={styles.trackContainer}>
         <Pressable
           style={styles.trackInfoTouchable}
-          onPress={handleReciterPress}>
+          onPress={handleReciterPress}
+          {...a11y.nowPlaying(
+            currentTrack ? getTrackDisplayTitle(currentTrack) : '',
+            currentTrack ? getTrackArtistDisplay(currentTrack) : '',
+          )}>
           <View style={styles.imageContainer}>
             {isUploadWithoutArtwork ? (
               <View
@@ -205,10 +212,11 @@ export const TrackInfo = () => {
                 styles.loveButtonInner,
                 {opacity: pressed ? 0.7 : 1},
               ]}
+              onPress={handleToggleLoved}
+              {...a11y.love(isLoved)}
               accessibilityRole="button" // @ai
               accessibilityLabel={loveLabel} // @ai
-              testID="player-love" // @ai
-              onPress={handleToggleLoved}>
+              testID="player-love">
               <SymbolView
                 name={isLoved ? 'heart.fill' : 'heart'}
                 size={moderateScale(22)}
@@ -224,10 +232,11 @@ export const TrackInfo = () => {
                 styles.loveButtonInner,
                 {opacity: pressed ? 0.7 : 1},
               ]}
+              onPress={handleToggleLoved}
+              {...a11y.love(isLoved)}
               accessibilityRole="button" // @ai
               accessibilityLabel={loveLabel} // @ai
-              testID="player-love" // @ai
-              onPress={handleToggleLoved}>
+              testID="player-love">
               <Animated.View style={loveAnimatedStyle}>
                 <HeartIcon
                   size={moderateScale(22)}

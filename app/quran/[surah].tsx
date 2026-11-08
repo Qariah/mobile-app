@@ -1,6 +1,7 @@
 // app/quran/[surah].tsx
-import React, {useSyncExternalStore} from 'react';
-import {ActivityIndicator, StyleSheet, View} from 'react-native';
+import React, {useEffect, useSyncExternalStore} from 'react';
+import {StyleSheet, View} from 'react-native';
+import {QariahMushafLoading} from '@/components/QariahMushafLoading'; // @ai Qariah
 import {useLocalSearchParams} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
 import {digitalKhattDataService} from '@/services/mushaf/DigitalKhattDataService';
@@ -30,6 +31,13 @@ export default function QuranSurahLink(): React.ReactElement {
   const {surah, ayah} = useLocalSearchParams<{surah: string; ayah?: string}>();
   const {theme} = useTheme();
   const preloadState = useSyncExternalStore(subscribePreload, getPreloadState);
+  // @ai Qariah (A10s plan F1): a cold-start link can arrive before the boot
+  // starts the Mushaf load (after the splash hides); start it here.
+  useEffect(() => {
+    if (mushafPreloadService.state === 'idle') {
+      mushafPreloadService.initialize().catch(() => undefined);
+    }
+  }, []);
   const resolution = resolveQuranLink(
     surah,
     ayah,
@@ -42,7 +50,7 @@ export default function QuranSurahLink(): React.ReactElement {
   }
   return (
     <View style={[styles.loading, {backgroundColor: theme.colors.background}]}>
-      <ActivityIndicator size="large" color={theme.colors.text} />
+      <QariahMushafLoading color={theme.colors.text} />
     </View>
   );
 }

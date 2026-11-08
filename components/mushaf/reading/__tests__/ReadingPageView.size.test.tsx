@@ -45,6 +45,10 @@ jest.mock('@/components/mushaf/PageEdgeDecoration', () => ({
 jest.mock('react-native-size-matters', () => ({
   moderateScale: (value: number) => value,
 }));
+// Pass D: ReadingPageView takes moderateScale from upstream's utils/scale.
+jest.mock('@/utils/scale', () => ({
+  moderateScale: (value: number) => value,
+}));
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({top: 0, bottom: 0, left: 0, right: 0}),
 }));
@@ -103,6 +107,7 @@ jest.mock('@/store/mushafPlayerStore', () => ({
   useMushafPlayerStore: (selector: (s: object) => unknown) =>
     selector({currentVerseKey: null, playbackState: 'idle'}),
   usePlaybackVerseKeys: () => [],
+  usePlaybackBasmalaSurah: () => null, // Pass D: upstream's basmala intro
 }));
 jest.mock('@/store/tajweedStore', () => ({
   useTajweedStore: (selector: (s: object) => unknown) =>

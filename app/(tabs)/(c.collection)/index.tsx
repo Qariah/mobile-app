@@ -4,7 +4,7 @@ import {useTheme} from '@/hooks/useTheme';
 import {isFeatureEnabled} from '@/config/featureFlags';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useRouter} from 'expo-router';
-import {moderateScale, ScaledSheet} from 'react-native-size-matters';
+import {moderateScale, ScaledSheet} from '@/utils/scale';
 import {Feather} from '@expo/vector-icons';
 import {useFavoriteReciters} from '@/hooks/useFavoriteReciters';
 import {useLoved} from '@/hooks/useLoved';
@@ -29,18 +29,15 @@ import {USE_GLASS} from '@/hooks/useGlassProps';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 import {flipX} from '@/utils/rtl';
+import {useResponsive} from '@/hooks/useResponsive';
+import {
+  TabletCollectionHome,
+  type CollectionCategory,
+} from '@/components/collection/TabletCollectionHome';
 // @ai-end
 import {useQariahNoteEntries} from '@/components/notes/useQariahNoteEntries';
 
-interface CategoryItem {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  count: number;
-  emptyText: string;
-  route: string;
-}
+type CategoryItem = CollectionCategory;
 
 // @ai-start
 export default function CollectionScreen() {
@@ -50,6 +47,7 @@ export default function CollectionScreen() {
   const bottomInset = useBottomInset();
   const router = useRouter();
   const {t} = useTranslation(['collection', 'common']);
+  const {isTablet} = useResponsive();
   const {lovedTracks} = useLoved();
   const {favoriteReciters} = useFavoriteReciters();
   const downloads = useDownloads();
@@ -144,6 +142,16 @@ export default function CollectionScreen() {
         ]
       : []),
   ];
+
+  if (isTablet) {
+    return (
+      <TabletCollectionHome
+        categories={categories}
+        playlists={playlists}
+        onAdd={handleAddPress}
+      />
+    );
+  }
 
   return (
     <View style={styles.container} collapsable={false}>

@@ -29,6 +29,10 @@ import Constants from 'expo-constants';
 import {appInitializer} from '@/services/AppInitializer';
 import {applyQariahInitConfig} from '@/services/qariahInitConfig';
 import {mushafPreloadService} from '@/services/mushaf/MushafPreloadService';
+import {mushafSessionStore} from '@/services/mushaf/MushafSessionStore'; // @ai
+import {whenSplashHidden} from '@/utils/bootSplash';
+import {bootMark} from '@/services/diagnostics/bootMarks';
+import {isLiteMode} from '@/services/lite/liteMode';
 import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {refetchCatalogToVersion} from '@/services/dataService';
 import {initCatalogVersionPolling} from '@/services/catalogVersionPoll';
@@ -123,6 +127,7 @@ let sentinelActive = false;
  * is named in the NEXT launch's boot-not-completed report (a cheap MMKV set).
  */
 export function qariahBootStep(step: string): void {
+  bootMark(`boot:${step}`); // Lite step 1c: lab timing marks.
   guardHook('qariahBootStep', () => {
     if (sentinelActive) markBootStep(step);
   });
@@ -174,12 +179,50 @@ export function qariahReportSlowColdStart(lastBootStep: string): void {
  * (no crash — null fontMgr is guarded; initialize() is idempotent). When the
  * flag is off, the preload stays a blocking AppInitializer step and the OTFs
  * load in its 'Arabic Fonts' service (services/qariahInitConfig.ts).
+ *
+ * The preload starts only after the splash has gone (whenSplashHidden()). Not
+ * awaited was not enough: on a Samsung A10s (Android 10, 32-bit, 2 GB) it held
+ * the JS thread for about 6.7 s in one piece (the 83,668 words turned into JS
+ * objects and maps; the SQLite read itself ran on an IO thread), so the splash
+ * gates waited for it, and the splash watchdog revealed the app at 12 s
+ * (`splash-hide-timeout`). Started after the hide, the same build was ready in
+ * 10.5-10.9 s instead of 16.7 s (planning/a10s-performance-review-2026-10-27.md).
+ * A reader that opens before the hide (a restored session, a link) starts the
+ * load itself (app/mushaf.tsx, app/quran/[surah].tsx); the other Mushaf
+ * screens show their loading state until it is done. A launch that never
+ * hides the splash (the headless Android Auto root) never needs it.
  */
+// @ai Qariah (Lite mode): Lite's first screen finishes its rows and photos in
+// about 2 s after the splash on a Samsung A10s, so its Mushaf load waits that
+// much longer.
+const LITE_MUSHAF_LOAD_DELAY_MS = 3000;
+
 export function qariahAfterAudioReady(): void {
   guardHook('qariahAfterAudioReady', () => {
     if (!isQariahFeatureEnabled('deferMushafPreload')) return;
+    // @ai-start
+    // Every phone loads the Mushaf data after the splash (since 2026-10-29 the
+    // load reads only a verse index: planning/lite-mode-design.md, sections
+    // 7f and 11). Lite mode waits LITE_MUSHAF_LOAD_DELAY_MS more; a Mushaf
+    // screen opened before that starts the load itself (useLiteOnDemandData).
+    const lite = isLiteMode();
+    // A launch that reopens the reader (its last screen was the reader) needs
+    // the data first: its load starts now, during the boot, not after the
+    // splash (the splash waits for the reader anyway).
+    const restoring = mushafSessionStore.getLastScreenWasMushaf();
+    // @ai-end
     void (async () => {
       try {
+        // @ai-start
+        if (!restoring) {
+          await whenSplashHidden();
+          if (lite) {
+            await new Promise(resolve =>
+              setTimeout(resolve, LITE_MUSHAF_LOAD_DELAY_MS),
+            );
+          }
+        }
+        // @ai-end
         await Promise.all([
           mushafPreloadService.initialize(),
           Font.loadAsync({

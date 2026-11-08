@@ -231,7 +231,7 @@ import ContinuousListView from '../ContinuousListView';
 import ReadingPageView from '../ReadingPageView';
 import {useMushafPlayerStore} from '@/store/mushafPlayerStore';
 import {useMushafSettingsStore} from '@/store/mushafSettingsStore';
-import {moderateScale} from 'react-native-size-matters'; // @ai
+import {moderateScale} from '@/utils/scale'; // @ai (Pass D: the component's scale)
 
 declare const global: {IS_REACT_ACT_ENVIRONMENT?: boolean};
 global.IS_REACT_ACT_ENVIRONMENT = true;

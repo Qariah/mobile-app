@@ -53,7 +53,10 @@ describe('main.tsx wires the rotation stage', () => {
   it("keeps the reader's page when a spread shows it", () => {
     // Without this, an iPad turn to landscape and back moved an even page to
     // the odd page beside it (#258 keeps the page across a turn).
-    expect(SOURCE).toMatch(/pageForSpread\(\s*currentPageRef\.current,/);
+    // Pass D: upstream's spreadPageToKeep (#466) does what pageForSpread did.
+    expect(SOURCE).toMatch(
+      /spreadPageToKeep\(first as Spread, currentPageRef\.current\)/,
+    );
     expect(SOURCE).toMatch(/currentPageRef\.current = currentPage;/);
   });
 

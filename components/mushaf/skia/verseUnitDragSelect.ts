@@ -23,7 +23,7 @@
 import {useCallback, useMemo, useRef} from 'react';
 import {Platform} from 'react-native';
 import * as Haptics from 'expo-haptics';
-import {SheetManager} from 'react-native-actions-sheet';
+import {showVerseActions} from '@/components/mushaf/ayah-panel/showVerseActions'; // @ai
 import {
   mushafVerseMapService,
   selectionForUnitKeys,
@@ -153,7 +153,7 @@ export function useVerseUnitDragSelect(
       : null;
     if (!payload) return;
 
-    SheetManager.show('verse-actions', {payload});
+    showVerseActions(payload); // @ai Sprint 52 Task 8: or moves the ayah panel
     startKeyRef.current = null;
     currentKeyRef.current = null;
   }, []);

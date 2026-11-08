@@ -44,7 +44,7 @@ import {
 
 /** Values a regression must never put in the block. */
 const PII_FIXTURES = {
-  email: 'omarzarka@gmail.com',
+  email: 'reader@example.org',
   // A sha256(email) digest — the lookup key into a PUBLIC R2 bucket.
   sha256: 'a'.repeat(64),
   // A QF OAuth subject (Hydra `sub`).

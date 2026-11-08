@@ -22,7 +22,12 @@ import {lightHaptics} from '@/utils/haptics';
 import {afterNoteDelete, beforeNoteDelete} from './qfNoteSync';
 
 export interface QariahVerseNotesOptions {
-  sheetId: string;
+  /**
+   * The verse-actions sheet that shows the rows; it closes before a saved
+   * note opens and after a delete. Left out by the iPad ayah panel (Sprint
+   * 52 Task 8), which stays open and reads the notes again instead.
+   */
+  sheetId?: string;
   /** The payload's Hafs verse key. */
   verseKey: string;
   isRange: boolean;
@@ -48,6 +53,16 @@ export interface QariahVerseNotes {
   editorPublish: boolean;
   /** The back-row title of the note editor, or undefined for upstream's. */
   screenTitle: (screen: string | null) => string | undefined;
+  // @ai-start Sprint 52 Task 8 (the iPad ayah panel)
+  /** The verse's Personal Notes, oldest first. */
+  personalNotes: VerseNote[];
+  /** Opens a saved note in the note sheet. */
+  openNote: (note: VerseNote) => Promise<void>;
+  /** Opens the note editor for a new Personal Note. */
+  addPersonalNote: () => void;
+  /** Reads the verse's notes again (after a save). */
+  refresh: () => void;
+  // @ai-end
 }
 
 export function useQariahVerseNotes({
@@ -78,13 +93,17 @@ export function useQariahVerseNotes({
   }, [noteKeys]);
 
   // One-shot fetch at sheet open; the sheet dismisses on save and the next
-  // open re-fetches.
+  // open re-fetches. The iPad ayah panel stays open: it calls `refresh`.
   const [personalNoteId, setPersonalNoteId] = useState<string | null>(null);
   const [reflectionNoteId, setReflectionNoteId] = useState<string | null>(null);
+  const [personalNotes, setPersonalNotes] = useState<VerseNote[]>([]); // @ai
+  const [revision, setRevision] = useState(0); // @ai
+  const refresh = useCallback(() => setRevision(r => r + 1), []); // @ai
   useEffect(() => {
     if (noteKeys.length === 0) {
       setPersonalNoteId(null);
       setReflectionNoteId(null);
+      setPersonalNotes([]); // @ai
       return;
     }
     let cancelled = false;
@@ -95,6 +114,12 @@ export function useQariahVerseNotes({
         const personal = list.find(n => !n.qfPostId) ?? null;
         setReflectionNoteId(reflection?.id ?? null);
         setPersonalNoteId(personal?.id ?? null);
+        // @ai Sprint 52 Task 8: the panel lists them.
+        setPersonalNotes(
+          list
+            .filter(n => !n.qfPostId)
+            .sort((a, b) => a.createdAt - b.createdAt),
+        );
       })
       .catch(() => {
         // A failed read leaves the Add rows; the handlers read again on tap.
@@ -102,7 +127,7 @@ export function useQariahVerseNotes({
     return () => {
       cancelled = true;
     };
-  }, [noteKeys, getVerseNotes]);
+  }, [noteKeys, getVerseNotes, revision]); // @ai revision
   const hasPersonalNote = !!personalNoteId;
   const hasReflection = !!reflectionNoteId;
 
@@ -120,8 +145,8 @@ export function useQariahVerseNotes({
   // rewayah (as the Notes collection opens it).
   const openSavedNote = useCallback(
     async (note: VerseNote) => {
-      await SheetManager.hide(sheetId);
-      SheetManager.show('verse-note', {
+      if (sheetId) await SheetManager.hide(sheetId); // @ai: no sheet in the panel
+      const closed = SheetManager.show('verse-note', {
         payload: {
           verseKey: note.verseKey,
           surahNumber: note.surahNumber,
@@ -131,8 +156,10 @@ export function useQariahVerseNotes({
           rewayah: note.rewayahId ?? 'hafs',
         },
       });
+      // @ai The panel stays open: read the notes again when the sheet closes.
+      if (!sheetId) Promise.resolve(closed).then(refresh, refresh);
     },
-    [sheetId],
+    [sheetId, refresh], // @ai refresh
   );
 
   /**
@@ -158,7 +185,7 @@ export function useQariahVerseNotes({
       return;
     }
     if (!signedIn) {
-      await SheetManager.hide(sheetId);
+      if (sheetId) await SheetManager.hide(sheetId); // @ai
       Alert.alert(
         t('qariah:verseActions.signInToPublishTitle'),
         t('qariah:verseActions.signInToPublishBody'),
@@ -212,9 +239,11 @@ export function useQariahVerseNotes({
           store.removeNote(key);
         }
       }
-      await SheetManager.hide(sheetId);
+      // @ai The panel stays open and shows the notes left.
+      if (sheetId) await SheetManager.hide(sheetId);
+      else refresh();
     },
-    [noteKeys, getVerseNotes, sheetId],
+    [noteKeys, getVerseNotes, sheetId, refresh], // @ai refresh
   );
   const onRemovePersonalNote = useCallback(
     () => removeVerseNotes(false),
@@ -224,6 +253,12 @@ export function useQariahVerseNotes({
     () => removeVerseNotes(true),
     [removeVerseNotes],
   );
+
+  // @ai Sprint 52 Task 8: the panel's "Add Personal Note" adds one more note.
+  const addPersonalNote = useCallback(() => {
+    setEditorPublish(false);
+    openEditor();
+  }, [openEditor]);
 
   const personalNoteLabel =
     hasPersonalNote && !isRange
@@ -251,5 +286,11 @@ export function useQariahVerseNotes({
     onRemoveReflection,
     editorPublish,
     screenTitle,
+    // @ai-start
+    personalNotes,
+    openNote: openSavedNote,
+    addPersonalNote,
+    refresh,
+    // @ai-end
   };
 }

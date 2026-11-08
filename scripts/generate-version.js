@@ -17,24 +17,14 @@ const {execFileSync} = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-/** The repository of THIS script. Every git call runs `git -C REPO_ROOT`: a cwd in another checkout gave a wrong version. */
-const SCRIPT_DIR = __dirname; // == path.dirname(__filename)
-const REPO_ROOT = (() => {
-  try {
-    return execFileSync(
-      'git',
-      ['-C', SCRIPT_DIR, 'rev-parse', '--show-toplevel'],
-      {stdio: ['pipe', 'pipe', 'ignore']},
-    )
-      .toString()
-      .trim();
-  } catch (error) {
-    return path.join(SCRIPT_DIR, '..');
-  }
-})();
+// @ai-start
+// The repository that holds this script. Git runs with `-C REPO_ROOT`, so the
+// result does not depend on process.cwd(): a build started from a shell in
+// another checkout still reads this checkout's tags and commit count.
+const REPO_ROOT = path.join(__dirname, '..');
 
 /**
- * Safely executes a Git command and returns the result
+ * Safely executes a Git command in REPO_ROOT and returns the result
  * Returns fallback value if command fails
  */
 function safeGit(args, fallback = '') {
@@ -48,6 +38,7 @@ function safeGit(args, fallback = '') {
     return fallback;
   }
 }
+// @ai-end
 
 /**
  * Extract the current semantic version from Git tags
@@ -55,6 +46,7 @@ function safeGit(args, fallback = '') {
  */
 function getSemanticVersion() {
   // Try to get the latest tag that looks like a version
+  // @ai-start
   let tag = safeGit([
     'describe',
     '--tags',
@@ -63,10 +55,12 @@ function getSemanticVersion() {
     'v[0-9]*.[0-9]*.[0-9]*',
     '--match',
     '[0-9]*.[0-9]*.[0-9]*',
-    // Qariah: never count a prerelease or test tag (upstream's `v2.3.0-1809-test` gave 2.3.0).
+    // The globs also match a prerelease or test tag such as
+    // `v2.3.0-1809-test`; never take the marketing version from one.
     '--exclude',
     '*-*',
   ]);
+  // @ai-end
 
   // If no version tags found, check existing version as fallback
   if (!tag) {
@@ -102,7 +96,7 @@ function getBuildNumber() {
   }
 
   // Try to get total commit count
-  const commitCount = safeGit(['rev-list', '--count', 'HEAD'], '1');
+  const commitCount = safeGit(['rev-list', '--count', 'HEAD'], '1'); // @ai
 
   // Ensure it's a positive integer
   const count = parseInt(commitCount, 10);
@@ -123,14 +117,14 @@ function getVersionCode() {
  * Get the current Git branch name
  */
 function getCurrentBranch() {
-  return safeGit(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown');
+  return safeGit(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'); // @ai
 }
 
 /**
  * Get the current commit hash (short version)
  */
 function getGitHash() {
-  return safeGit(['rev-parse', '--short', 'HEAD'], 'unknown');
+  return safeGit(['rev-parse', '--short', 'HEAD'], 'unknown'); // @ai
 }
 
 /**

@@ -7,7 +7,7 @@
 // window width.
 import React from 'react';
 import {Dimensions, FlatList, StyleSheet, View} from 'react-native';
-import {act, render} from '@testing-library/react-native';
+import {act, fireEvent, render} from '@testing-library/react-native';
 
 jest.mock('expo-router', () => ({
   useFocusEffect: () => undefined,
@@ -50,6 +50,16 @@ function cardWidths(root: ReturnType<typeof render>): number[] {
     .map(card => StyleSheet.flatten(card.props.style).width as number);
 }
 
+// An iPad window is a tablet: the cards wait for the measured pane (Sprint 52
+// Task 6). The pane here is as wide as the window.
+function layoutPane(root: ReturnType<typeof render>, width: number) {
+  act(() => {
+    fireEvent(root.getByTestId('recent-reading-carousel'), 'layout', {
+      nativeEvent: {layout: {width}},
+    });
+  });
+}
+
 type CarouselType = React.ComponentType<{historySize: number}>;
 let Carousel: CarouselType;
 
@@ -81,6 +91,7 @@ describe('RecentReadingCarousel card width', () => {
     const root = render(<Carousel historySize={5} />);
     const first = root.UNSAFE_getByType(FlatList);
     setWindow(820, 1180);
+    layoutPane(root, 820);
     expect(root.UNSAFE_getByType(FlatList)).not.toBe(first);
     const second = root.UNSAFE_getByType(FlatList);
     setWindow(820, 1000); // the height only: the cards keep their width
@@ -92,6 +103,7 @@ describe('RecentReadingCarousel card width', () => {
     const root = render(<Carousel historySize={5} />);
     expect(cardWidths(root)).toEqual([314, 314]);
     setWindow(820, 1180); // iPad 11-inch, portrait
+    layoutPane(root, 820);
     expect(cardWidths(root)).toEqual([640, 640]);
   });
 });

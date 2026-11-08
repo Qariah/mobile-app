@@ -46,24 +46,37 @@ struct ContinueReadingWidget: Widget {
 
 struct ContinueReadingView: View {
   @Environment(\.widgetFamily) private var family
+  @Environment(\.colorScheme) private var colorScheme // @ai
   let entry: ContinueReadingEntry
 
+  // @ai-start
+  private static let mushafPages = 604
+
+  // @ai-end
   private var page: Int { entry.lastRead?.page ?? 1 }
   private var surah: StaticSurah? { StaticData.surah(entry.lastRead?.surahId ?? 1) }
   private var surahName: String {
     entry.lastRead?.surahName ?? surah.map { WidgetLanguage.surahName($0, entry.language) } ?? "Al-Fatihah"
   }
-  // @ai Qariah (TECH_DEBT #357): String Catalog keys ("Juz %lld", "Start reading"), not plain Strings.
+  // @ai-start
+  // Qariah (TECH_DEBT #357): String Catalog keys ("%@ · Juz %lld", "Start reading"), not plain Strings.
   private var detail: LocalizedStringKey {
     guard let lastRead = entry.lastRead else { return "Start reading" }
-    return "Juz \(lastRead.juz)"
+    return "\(surahName) · Juz \(lastRead.juz)"
   }
+  // Qariah (TECH_DEBT #357): "Page %lld · Juz %lld" and "Page %lld" are String Catalog keys.
+  private var pageDetail: LocalizedStringKey {
+    guard let lastRead = entry.lastRead else { return "Page \(page)" }
+    return "Page \(page) · Juz \(lastRead.juz)"
+  }
+  private var style: ReadingStyle { .forScheme(colorScheme) }
+  // @ai-end
 
   var body: some View {
     content
-      .foregroundStyle(.white)
+      .foregroundStyle(family == .accessoryRectangular ? Color.primary : style.primary) // @ai
       .containerBackground(for: .widget) {
-        if family == .accessoryRectangular { Color.clear } else { WidgetPalette.background }
+        if family == .accessoryRectangular { Color.clear } else { style.background } // @ai
       }
       .widgetURL(AppLinks.url("mushaf/\(page)"))
       .widgetLanguage(entry.language)
@@ -73,49 +86,99 @@ struct ContinueReadingView: View {
     if family == .accessoryRectangular {
       VStack(alignment: .leading, spacing: 1) {
         Text("Page \(page)").font(.headline).widgetAccentable()
-        Text(entry.lastRead.map { "\(surahName) · Juz \($0.juz)" } ?? "Start reading").font(.caption).lineLimit(1)
+        // @ai-start
+        Text(detail).font(.caption).lineLimit(1)
+        ProgressView(value: Double(page), total: Double(Self.mushafPages)).tint(.white)
+        // @ai-end
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     } else if family == .systemMedium {
-      HStack(spacing: 14) {
-        pageColumn(showLogo: false)
-        VStack(alignment: .trailing, spacing: 6) {
-          BayaanLogo(size: 14)
+      // @ai-start
+      HStack(spacing: 16) {
+        pageGlimpse
+        VStack(alignment: .leading, spacing: 0) {
+          Eyebrow(text: entry.lastRead == nil ? "Start reading" : "Continue reading", color: style.label)
+          Text(surahName).font(.system(size: 20, weight: .heavy)).lineLimit(1).padding(.top, 4)
+          Text(pageDetail)
+            .font(.footnote.weight(.semibold)).foregroundStyle(style.secondary).lineLimit(1)
+      // @ai-end
           Spacer(minLength: 0)
-          if let opening = entry.lastRead?.openingText, !opening.isEmpty {
-            Text(opening)
-              .font(WidgetFonts.quran(22))
-              .multilineTextAlignment(.trailing)
-              .lineLimit(2)
-              .minimumScaleFactor(0.5)
-              .environment(\.layoutDirection, .rightToLeft)
-              .frame(maxWidth: .infinity, alignment: .trailing)
-          }
-          Text(entry.lastRead == nil ? "Start reading" : "Continue reading")
-            .font(.caption.weight(.semibold)).opacity(0.75)
+          // @ai-start
+          progress
+          Text(entry.lastRead == nil ? "Open the mushaf" : "Resume reading")
+            .font(.footnote.weight(.heavy))
+            .foregroundStyle(style.buttonGlyph)
+            .frame(maxWidth: .infinity)
+            .frame(height: 34)
+            .background(style.buttonFill, in: Capsule())
+            .padding(.top, 10)
+          // @ai-end
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
       }
-      .padding(14)
+      .padding(16) // @ai
     } else {
-      pageColumn(showLogo: true).padding(14)
+      // @ai-start
+      VStack(alignment: .leading, spacing: 0) {
+        Eyebrow(text: entry.lastRead == nil ? "Start reading" : "Continue reading", color: style.label)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text("\(page)").font(.system(size: 44, weight: .heavy, design: .rounded)).minimumScaleFactor(0.7)
+          Text("page").font(.caption.weight(.bold)).foregroundStyle(style.secondary)
+        }
+        .padding(.top, 8)
+        Text(detail).font(.footnote.weight(.bold)).lineLimit(1).padding(.top, 4)
+        Spacer(minLength: 0)
+        progress
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(14)
+      // @ai-end
     }
   }
 
-  private func pageColumn(showLogo: Bool) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      HStack(alignment: .top) {
-        SurahCard(surah: surah, size: 44, language: entry.language)
-        if showLogo {
-          Spacer(minLength: 0)
-          BayaanLogo(size: 14)
-        }
+  // @ai-start
+  /// How far through the mushaf this page is.
+  private var progress: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      ProgressView(value: Double(page), total: Double(Self.mushafPages))
+        .progressViewStyle(.linear)
+        .tint(style.primary)
+        .frame(height: 5)
+        .background(Capsule().fill(style.rule))
+        .clipShape(Capsule())
+      Text("Page \(page) of \(Self.mushafPages)").font(.caption2.weight(.semibold)).foregroundStyle(style.secondary)
+    }
+  }
+
+  /// A small page with the surah header and the opening text.
+  private var pageGlimpse: some View {
+    VStack(spacing: 5) {
+      Text(surahName)
+        .font(.system(size: 9, weight: .bold))
+        .foregroundStyle(style.label)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(style.label.opacity(0.6), lineWidth: 1))
+      if let opening = entry.lastRead?.openingText, !opening.isEmpty {
+        Text(opening)
+          .font(WidgetFonts.quran(13))
+          .foregroundStyle(style.secondary)
+          .multilineTextAlignment(.center)
+          .lineLimit(5)
+          .minimumScaleFactor(0.6)
+          .environment(\.layoutDirection, .rightToLeft)
+      } else {
+  // @ai-end
+        SurahCard(surah: surah, size: 44, language: entry.language) // @ai Qariah (TECH_DEBT #357)
       }
       Spacer(minLength: 0)
-      Text("\(page)").font(.system(size: 34, weight: .bold, design: .rounded)).minimumScaleFactor(0.7)
-      Text(surahName).font(.caption.weight(.semibold)).lineLimit(1)
-      Text(detail).font(.caption2).opacity(0.7).lineLimit(1)
     }
+    // @ai-start
+    .padding(8)
+    .frame(width: 98, height: 138)
+    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(style.primary.opacity(0.04)))
+    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(style.rule, lineWidth: 1))
+    // @ai-end
   }
 }
 

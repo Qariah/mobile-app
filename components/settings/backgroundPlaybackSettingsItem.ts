@@ -9,11 +9,15 @@
 import {Platform} from 'react-native';
 import type {TFunction} from 'i18next';
 import {showBackgroundPlaybackGuide} from '@/hooks/useBackgroundPlaybackPrompt';
+import {
+  LITE_MODE_SETTINGS_TYPE,
+  showLiteModeChooser,
+} from '@/components/settings/liteModeSettingsItem';
 
 /** The `type` of the row. */
 export const BACKGROUND_PLAYBACK_SETTINGS_TYPE = 'backgroundPlayback';
 
-/** The shape of the other rows of `getSettingsSections` in the upstream file. */
+/** The shape of the other rows of `getSettingsSections` (settingsItems.ts). */
 export interface BackgroundPlaybackSettingsItem {
   title: string;
   type: typeof BACKGROUND_PLAYBACK_SETTINGS_TYPE;
@@ -39,10 +43,12 @@ export function getBackgroundPlaybackSettingsItems(
 }
 
 /**
- * The press of a Qariah row that the upstream `handleSettingPress` switch
- * does not know (its `default` branch calls this). Does nothing for any other
- * `type`, as the upstream `default` branch did.
+ * The press of the Android Qariah rows (Background playback, Lite mode);
+ * `openQariahSettingsItem` (qariahSettingsSections.ts) calls it. Does nothing
+ * for any other `type`.
  */
 export function handleQariahSettingPress(type: string): void {
   if (type === BACKGROUND_PLAYBACK_SETTINGS_TYPE) showBackgroundPlaybackGuide();
+  // Lite mode (step 1): Automatic / On / Off.
+  if (type === LITE_MODE_SETTINGS_TYPE) showLiteModeChooser();
 }

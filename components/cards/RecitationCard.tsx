@@ -5,7 +5,7 @@
 // reciter name and, for a partial recording, the ayah range.
 import React, {useCallback, useMemo} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import Color from 'color';
 import {GlassView} from 'expo-glass-effect';
 import {useTranslation} from 'react-i18next';
@@ -25,6 +25,8 @@ export const RECITATION_CARD_HEIGHT = moderateScale(164);
 interface RecitationCardProps {
   recitation: NewlyAddedRecitation;
   onPress: (recitation: NewlyAddedRecitation) => void;
+  /** iPad shelf width; the height keeps the 120:164 ratio. Phones omit it. */
+  cardWidth?: number;
 }
 
 /** The surah name in the app language (Arabic in Arabic mode). */
@@ -49,11 +51,14 @@ export function getRecitationRangeText(
   });
 }
 
-function createStyles(theme: Theme) {
+function createStyles(theme: Theme, cardWidth?: number) {
   return StyleSheet.create({
     container: {
-      width: RECITATION_CARD_WIDTH,
-      height: RECITATION_CARD_HEIGHT,
+      width: cardWidth ?? RECITATION_CARD_WIDTH,
+      height:
+        cardWidth === undefined
+          ? RECITATION_CARD_HEIGHT
+          : (cardWidth * RECITATION_CARD_HEIGHT) / RECITATION_CARD_WIDTH,
       borderRadius: moderateScale(14),
       overflow: 'hidden',
       borderWidth: 1,
@@ -111,11 +116,14 @@ function createStyles(theme: Theme) {
 }
 
 export const RecitationCard = React.memo(
-  ({recitation, onPress}: RecitationCardProps) => {
+  ({recitation, onPress, cardWidth}: RecitationCardProps) => {
     const {theme} = useTheme();
     const {t} = useTranslation('qariah');
     const glassColorScheme = useGlassColorScheme();
-    const styles = useMemo(() => createStyles(theme), [theme]);
+    const styles = useMemo(
+      () => createStyles(theme, cardWidth),
+      [theme, cardWidth],
+    );
 
     const surahName = getRecitationSurahName(recitation.surah);
     const reciterName = getReciterDisplayName(recitation.reciter);

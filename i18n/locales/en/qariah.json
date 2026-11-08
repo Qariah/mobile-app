@@ -56,7 +56,12 @@
     "reciters": "Qariahs",
     "surahs": "Surahs",
     "shuffle": "Shuffle",
-    "finding": "Finding random recitations from different qariahs..."
+    "finding": "Finding random recitations from different qariahs...",
+    "reciterCount_one": "{{count}} qariah",
+    "reciterCount_other": "{{count}} qariahs",
+    "surahCount_one": "{{count}} surah",
+    "surahCount_other": "{{count}} surahs",
+    "shuffleCaption": "Random recitation"
   },
   "recent": {
     "justNow": "just now",
@@ -343,6 +348,12 @@
       "recitationsBody": "The Newly Added Recitations row on the Listen tab now shows the newest recitations: the surah, the qariah and the range of a partial recitation.",
       "feedbackTitle": "Tell Us What You Think",
       "feedbackBody": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support."
+    },
+    "release_3_2_5": {
+      "ipadTitle": "Qariah on iPad",
+      "ipadBody": "A layout made for the larger screen: your Collection in a sidebar, Settings in two columns and the player in two panes. Read Tafsir, Reflections and your notes beside the Mushaf page.",
+      "fixesTitle": "Fixes on iPhone",
+      "fixesBody": "This update fixes a freeze when a recitation starts, and a crash in the Quran reader."
     }
   },
   "counts": {
@@ -380,9 +391,33 @@
       "body": "Arabic, Home Screen widgets and new recitations. Tap to see what's new."
     }
   },
+  "lite": {
+    "settingsTitle": "Lite mode",
+    "current": "Now: {{value}}",
+    "autoOnForPhone": "Automatic (on for this phone)",
+    "autoOffForPhone": "Automatic (off for this phone)",
+    "auto": "Automatic",
+    "on": "On",
+    "off": "Off",
+    "chooserBody": "Lite mode keeps listening, downloads and the Mushaf. It makes the screens simpler and faster on phones with less memory. Your choice applies the next time you open the app.",
+    "showText": "Show text",
+    "textHidden": "Lite mode hides the verse text to keep playback smooth."
+  },
+  "mushafLoading": {
+    "text": "Preparing the Mushaf. This may take a few seconds."
+  },
   "mushafSettings": {
     "arabicOnly": "Arabic text only",
     "arabicOnlyPageView": "The Mushaf view shows the Arabic text only. Choose List to see the translation."
+  },
+  "deepLink": {
+    "recitationUnavailableTitle": "Recitation not available",
+    "recitationUnavailableBody": "This surah is not available from this qariah."
+  },
+  "ayahPanel": {
+    "title": "Ayah {{key}}",
+    "close": "Close panel",
+    "moreOptions": "More options for ayah {{key}}"
   },
   "countries": {
     "DZ": "Algeria",

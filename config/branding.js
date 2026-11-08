@@ -24,6 +24,9 @@ const branding = {
   privacyUrl: 'https://qariah.org/privacy',
   // qariah.org serves the share paths /reciter, /quran, /mushaf and /adhkar (TECH_DEBT #95).
   shareBaseUrl: 'https://qariah.org',
+  // Upstream seam (thebayaan/Bayaan#499): the Settings "Contribute on GitHub" row
+  // (components/settings/settingsItems.ts). Same target as urls.github below.
+  githubUrl: 'https://github.com/Qariah',
   emailProductName: 'Qariah',
   catalog: {
     source: 'remote',
@@ -94,6 +97,9 @@ const branding = {
 
   /** TECH_DEBT #390: show the update pages after a patch update too (utils/versionUtils.ts `hasVersionChanged`). */
   whatsNewOnPatchUpdate: true,
+
+  /** GitHub #731: the file name of the "Share as Image" PNG (components/share/captureShareCard.ts). The share sheet shows it as the title. */
+  shareImageFileName: 'qariah-share.png',
 
   /** Listen-tab home-row order and visibility (upstream PR #260). The array order is the visual order. */
   homeRowConfig: [
@@ -170,6 +176,37 @@ const branding = {
     return qariahCommunityReflectionsProvider(surahNumber, ayahNumber, locale);
   },
 
+  /**
+   * Settings seam (Sprint 52 Task 5): the Qariah pages in app/(tabs)/(d.settings)/, by the `type` of
+   * the row that opens each (components/settings/settingsItems.ts `SETTINGS_ROUTE_NAMES`). Plain data:
+   * settingsItems.ts reads it when it loads.
+   */
+  settingsRouteNames: {
+    signIn: 'sign-in',
+    yourData: 'data',
+    notifications: 'notifications',
+  },
+
+  /**
+   * Settings seam: the Qariah rows (Account, Notifications, Background playback, Lite mode) for the
+   * phone list and the iPad list. A hook. Lazy `require`: the auth chain must not load in the
+   * app.config.js eval.
+   */
+  useSettingsSections: sections => {
+    const {
+      useQariahSettingsSections,
+    } = require('../components/settings/qariahSettingsSections');
+    return useQariahSettingsSections(sections);
+  },
+
+  /** Settings seam: Support and Feature request open a mail; Sign out opens its sheet. Lazy `require`. */
+  openSettingsItem: type => {
+    const {
+      openQariahSettingsItem,
+    } = require('../components/settings/qariahSettingsSections');
+    return openQariahSettingsItem(type);
+  },
+
   // Keep ONE `homeRowConfig`: a duplicate key from a merge silently wins (CI no-dupe-keys guards it).
 };
 
@@ -178,7 +215,8 @@ const branding = {
  * `require()` must run on access, never in the app.config.js eval (React Native imports).
  */
 Object.defineProperty(branding, 'listenTabTopComponent', {
-  enumerable: true,
+  // Not enumerable: a spread or Object.keys() of branding must not run the require().
+  enumerable: false,
   configurable: true,
   get() {
     return require('../components/hero/ListenTabTopGrid').ListenTabTopGrid;
@@ -187,11 +225,22 @@ Object.defineProperty(branding, 'listenTabTopComponent', {
 
 /** RFC-018: the inline reflections card. A getter for the same reason as listenTabTopComponent. */
 Object.defineProperty(branding, 'ayahCommunityReflectionsComponent', {
-  enumerable: true,
+  // Not enumerable: a spread or Object.keys() of branding must not run the require().
+  enumerable: false,
   configurable: true,
   get() {
     return require('../components/mushaf/QuranReflectAyahReflections')
       .QuranReflectAyahReflections;
+  },
+});
+
+/** Settings seam: the sign-out sheet that the "Sign out" row opens. A getter for the same reason as listenTabTopComponent. */
+Object.defineProperty(branding, 'settingsOverlayComponent', {
+  // Not enumerable: a spread or Object.keys() of branding must not run the require().
+  enumerable: false,
+  configurable: true,
+  get() {
+    return require('../components/auth/SignOutPrompt').SignOutPrompt;
   },
 });
 
@@ -200,7 +249,8 @@ Object.defineProperty(branding, 'ayahCommunityReflectionsComponent', {
  * sage on the dark theme. A getter, because the app.config.js Node eval cannot `require()` a PNG.
  */
 Object.defineProperty(branding, 'sidebarLogo', {
-  enumerable: true,
+  // Not enumerable: a spread or Object.keys() of branding must not run the require().
+  enumerable: false,
   configurable: true,
   get() {
     return {

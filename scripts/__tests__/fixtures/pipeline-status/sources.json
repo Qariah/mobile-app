@@ -1,0 +1,240 @@
+{
+ "repo": "acme/app",
+ "trunk": "main",
+ "cardIssue": 1,
+ "now": 1794340800000,
+ "comments": [
+  {
+   "id": 1,
+   "body": "run-health task=triage date=2026-11-08 status=DONE build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-08T21:15:00Z",
+   "updated_at": "2026-11-08T21:15:00Z",
+   "html_url": "https://example.test/c/1"
+  },
+  {
+   "id": 2,
+   "body": "run-health task=drafts date=2026-11-08 status=DONE build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-08T21:30:00Z",
+   "updated_at": "2026-11-08T21:30:00Z",
+   "html_url": "https://example.test/c/2"
+  },
+  {
+   "id": 3,
+   "body": "run-health task=autoSprint date=2026-11-08 status=SKIPPED build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-08T23:40:00Z",
+   "updated_at": "2026-11-08T23:40:00Z",
+   "html_url": "https://example.test/c/3"
+  },
+  {
+   "id": 4,
+   "body": "run-health task=triage date=2026-11-09 status=DONE build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-09T21:15:00Z",
+   "updated_at": "2026-11-09T21:15:00Z",
+   "html_url": "https://example.test/c/4"
+  },
+  {
+   "id": 5,
+   "body": "run-health task=drafts date=2026-11-09 status=DONE build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-09T21:30:00Z",
+   "updated_at": "2026-11-09T21:30:00Z",
+   "html_url": "https://example.test/c/5"
+  },
+  {
+   "id": 6,
+   "body": "run-health task=autoSprint date=2026-11-09 status=DONE build=3901 toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-09T23:40:00Z",
+   "updated_at": "2026-11-09T23:40:00Z",
+   "html_url": "https://example.test/c/6"
+  },
+  {
+   "id": 7,
+   "body": "release-audit: READY public-beta 3895 commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-07T05:45:00Z",
+   "updated_at": "2026-11-07T05:45:00Z",
+   "html_url": "https://example.test/c/7"
+  },
+  {
+   "id": 8,
+   "body": "run-health task=auditor date=2026-11-06 status=DONE build=3895 toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-07T05:46:00Z",
+   "updated_at": "2026-11-07T05:46:00Z",
+   "html_url": "https://example.test/c/8"
+  },
+  {
+   "id": 9,
+   "body": "run-health task=steward date=2026-11-10 status=DONE build=none toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-10T17:03:00Z",
+   "updated_at": "2026-11-10T17:03:00Z",
+   "html_url": "https://example.test/c/9"
+  },
+  {
+   "id": 10,
+   "body": "<!-- daily-card date=2026-11-10 sections=triage host=cloud -->\n```text\nRollout\n  iOS 3.2.3 (3772) phased day 6 ≈50%,\n    ADVANCING\n  Android vc3763 50% inProgress (mirror of\n    iOS rung)\n\nBUILDS\n```",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-10T19:10:00Z",
+   "updated_at": "2026-11-10T19:10:00Z",
+   "html_url": "https://example.test/c/10"
+  }
+ ],
+ "issues": [
+  {
+   "number": 11,
+   "title": "Choose the icon for the new screen",
+   "body": "<!-- owner-queue:icon -->\nkind: decision\nrun: autoSprint\n\nTwo icons fit.\n\n## Reply\n\nicon A | icon B",
+   "labels": [
+    "owner-queue",
+    "decision",
+    "priority:P1"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-09T18:00:00Z",
+   "updated_at": "2026-11-09T18:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/11"
+  },
+  {
+   "number": 12,
+   "title": "A crash on start",
+   "body": "",
+   "labels": [
+    "investigate"
+   ],
+   "assignees": [],
+   "created_at": "2026-10-01T00:00:00Z",
+   "updated_at": "2026-10-02T00:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/12"
+  },
+  {
+   "number": 13,
+   "title": "Fixed in 3901",
+   "body": "",
+   "labels": [
+    "bug",
+    "fixed-in:3901"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-05T00:00:00Z",
+   "updated_at": "2026-11-09T00:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/13"
+  }
+ ],
+ "closedQueue": [],
+ "pulls": [
+  {
+   "number": 21,
+   "title": "feat: a new agent",
+   "draft": true,
+   "head": {
+    "ref": "claude/new-agent"
+   },
+   "labels": [],
+   "created_at": "2026-11-06T00:00:00Z",
+   "html_url": "https://example.test/p/21"
+  },
+  {
+   "number": 22,
+   "title": "fix: a loop draft",
+   "draft": true,
+   "head": {
+    "ref": "qariah/fix-22"
+   },
+   "labels": [],
+   "created_at": "2026-11-09T00:00:00Z",
+   "html_url": "https://example.test/p/22"
+  }
+ ],
+ "rollout": {
+  "active": true,
+  "release": "3.2.3",
+  "startedAt": "2026-11-01"
+ },
+ "policy": {
+  "runLimits": {
+   "triage": {
+    "maxWallMinutes": 90
+   },
+   "drafts": {
+    "maxWallMinutes": 180
+   },
+   "autoSprint": {
+    "maxWallMinutes": 360
+   },
+   "auditor": {
+    "maxWallMinutes": 480
+   }
+  },
+  "adopt": {
+   "label": "remediation-drafted",
+   "branchPatterns": [
+    "^qariah/fix-"
+   ],
+   "excludeBranchPatterns": [
+    "^qariah/repro-"
+   ]
+  },
+  "promotion": {
+   "publicBetaEveryDays": 2
+  }
+ },
+ "workflows": {
+  "diagnostics-watch.yml": [
+   {
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-10T16:13:00Z",
+    "html_url": "https://example.test/run"
+   },
+   {
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-09T16:13:00Z",
+    "html_url": "https://example.test/run"
+   }
+  ],
+  "signals-snapshot.yml": [
+   {
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-10T19:31:00Z",
+    "html_url": "https://example.test/run"
+   },
+   {
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-11-09T19:30:00Z",
+    "html_url": "https://example.test/run"
+   }
+  ]
+ }
+}

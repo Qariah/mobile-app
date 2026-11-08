@@ -2,15 +2,15 @@
 // Qariah (Sprint 48, S48.7, Task 17): the "Notifications" row of the Settings
 // index, its holdout rule, and the hook that reads the holdout on each focus.
 //
-// `getSettingsSections` in app/(tabs)/(d.settings)/index.tsx (upstream) is not
-// exported, so the row comes from `getNotificationsSettingsItems`, and a
-// source check makes sure that the upstream file still uses it (an upstream
-// sync that takes the file whole would drop the row without an error).
+// The row comes from `getNotificationsSettingsItems`; since Sprint 52 Task 5
+// `components/settings/qariahSettingsSections.ts` adds it to the shared
+// Settings list (the phone list and the iPad list).
 import {readFileSync} from 'fs';
 import {join} from 'path';
 import i18n from 'i18next';
 import type {TFunction} from 'i18next';
 import {act, renderHook} from '@testing-library/react-native';
+import branding from '@/config/branding';
 import {
   getNotificationsSettingsItems,
   NOTIFICATIONS_SETTINGS_ROUTE,
@@ -51,7 +51,6 @@ const SETTINGS_DIR = join(
   '(tabs)',
   '(d.settings)',
 );
-const INDEX_SOURCE = readFileSync(join(SETTINGS_DIR, 'index.tsx'), 'utf8');
 const PAGE_SOURCE = readFileSync(
   join(SETTINGS_DIR, 'notifications.tsx'),
   'utf8',
@@ -107,41 +106,31 @@ describe('useNotificationsHoldout', () => {
     act(() => mockFocus?.());
     expect(result.current).toBe(true);
   });
+
+  it('reads the holdout again when the re-read key changes (Sprint 52 Task 5, the iPad split)', () => {
+    mockIsHoldout.mockReturnValue(false);
+    const {result, rerender} = renderHook(
+      ({page}: {page: string}) => useNotificationsHoldout(page),
+      {initialProps: {page: 'storage'}},
+    );
+    expect(result.current).toBe(false);
+
+    // The flag arrives; a page beside the list changes, with no new focus.
+    mockIsHoldout.mockReturnValue(true);
+    rerender({page: 'storage'});
+    expect(result.current).toBe(false);
+    rerender({page: 'language'});
+    expect(result.current).toBe(true);
+  });
 });
 
 describe('the Settings files use the row', () => {
-  it('index.tsx puts the row in the APP & DATA section, after Language', () => {
-    const appData = INDEX_SOURCE.indexOf(
-      "t('settings:index.sections.appData')",
-    );
-    const language = INDEX_SOURCE.indexOf("type: 'language'", appData);
-    const row = INDEX_SOURCE.indexOf(
-      '...getNotificationsSettingsItems(t, notificationsHoldout),',
-      language,
-    );
-    const storage = INDEX_SOURCE.indexOf("type: 'storage'", appData);
-    const feedback = INDEX_SOURCE.indexOf(
-      "t('settings:index.sections.feedback')",
-    );
-    expect(appData).toBeGreaterThan(-1);
-    expect(language).toBeGreaterThan(appData);
-    expect(row).toBeGreaterThan(language);
-    expect(row).toBeLessThan(storage);
-    expect(storage).toBeLessThan(feedback);
-  });
-
-  it('index.tsx reads the holdout on each focus and rebuilds the sections', () => {
-    expect(INDEX_SOURCE).toContain(
-      'const notificationsHoldout = useNotificationsHoldout();',
-    );
-    expect(INDEX_SOURCE).toMatch(
-      /useMemo\(\s*\(\) => getSettingsSections\(t, notificationsHoldout\),\s*\[t, notificationsHoldout\],?\s*\)/,
-    );
-  });
-
-  it('index.tsx opens the page for the row', () => {
-    expect(INDEX_SOURCE).toMatch(
-      /case NOTIFICATIONS_SETTINGS_TYPE:[^\n]*\n\s*router\.push\(NOTIFICATIONS_SETTINGS_ROUTE\);/,
+  // Sprint 52 Task 5: the row reaches the phone list and the iPad list from
+  // components/settings/qariahSettingsSections.ts; its place (after Language)
+  // and its route are tested in qariahSettingsSections.test.tsx.
+  it('opens the Notifications page of the Settings stack', () => {
+    expect(branding.settingsRouteNames?.[NOTIFICATIONS_SETTINGS_TYPE]).toBe(
+      'notifications',
     );
     expect(NOTIFICATIONS_SETTINGS_ROUTE).toBe('/(d.settings)/notifications');
   });

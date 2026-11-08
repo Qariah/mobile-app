@@ -22,7 +22,8 @@
 // (main.tsx measures it one render later). A window key would remount the
 // list in that render, with the old item width, and the next render would
 // then change the item width under the mounted list.
-import type {MushafLayoutMetrics} from './constants';
+import {moderateScale} from '@/utils/scale';
+import {readingColumnPadding, type MushafLayoutMetrics} from './constants';
 
 export function readerListKey(
   metrics: Pick<MushafLayoutMetrics, 'screenWidth' | 'facingPages'>,
@@ -30,3 +31,27 @@ export function readerListKey(
   const shape = metrics.facingPages ? 'spreads' : 'pages';
   return `${shape}-${metrics.screenWidth}`;
 }
+
+// @ai-start Sprint 52 Task 8
+/**
+ * Side padding of the vertical list view (List + Vertical) in a pane of
+ * `paneWidth` on a tablet: the text sits in a centred column of at most
+ * READING_COLUMN_MAX_WIDTH, at least 8 (scaled) from each side.
+ * ContinuousListView lays out with it, and `readingListKey` keys on the same
+ * column, so the two cannot drift.
+ */
+export function readingListSidePadding(paneWidth: number): number {
+  return readingColumnPadding(paneWidth, moderateScale(8));
+}
+
+/**
+ * The key of the vertical list view on a tablet. Its rows reflow to its text
+ * column, so its pixel offset keeps its verse while the column keeps its
+ * width. The pane around a 680 pt column can change (the ayah panel opens
+ * beside it, an iPad turns) and the list stays on its verse. It remounts at
+ * its page only when the column itself changes width.
+ */
+export function readingListKey(paneWidth: number): string {
+  return `list-${paneWidth - 2 * readingListSidePadding(paneWidth)}`;
+}
+// @ai-end

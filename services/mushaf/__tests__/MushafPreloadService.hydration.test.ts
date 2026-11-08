@@ -9,9 +9,15 @@
  * Runs against the real settings store and its real guarded storage, with
  * AsyncStorage replaced by a mock whose read rejects.
  */
+import * as ReactNative from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Sentry from '@sentry/react-native';
 
+// Pass D: expo-localization 58 loads `expo`, whose asset effect needs the
+// Image.resolveAssetSource that the font tests replace with a spy.
+jest.mock('expo-localization', () => ({
+  getLocales: () => [{languageCode: 'en', languageTag: 'en-US'}],
+}));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(() => Promise.reject(new Error('NSCocoaErrorDomain 640'))),
   setItem: jest.fn(() => Promise.resolve()),
@@ -65,6 +71,16 @@ async function flush(): Promise<void> {
 
 beforeEach(() => {
   jest.useFakeTimers();
+  // Pass D: React Native 0.88 resolves no font asset in Jest, and a font that
+  // does not resolve now fails the preload (MushafPreloadService assetUri).
+  jest
+    .spyOn(ReactNative.Image, 'resolveAssetSource')
+    .mockImplementation(() => ({
+      uri: 'file:///font',
+      width: 0,
+      height: 0,
+      scale: 1,
+    }));
   jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   jest.spyOn(console, 'log').mockImplementation(() => undefined);
 });

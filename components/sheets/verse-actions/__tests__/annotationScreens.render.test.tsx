@@ -294,4 +294,23 @@ describe('Add Note screen', () => {
       ['2:255', 2, 255, 'my note', undefined, 'hafs'],
     ]);
   });
+
+  // @ai Sprint 52 Task 8: the iPad ayah panel keeps a draft outside the editor.
+  it('starts from a kept draft and reports each change', async () => {
+    const onTextChange = jest.fn();
+    await render(
+      <NoteContent
+        selection={hafsSelection('2:255')}
+        onDone={onDone}
+        initialText="kept draft"
+        onTextChange={onTextChange}
+      />,
+    );
+    const input = renderer!.root.find(n => (n.type as unknown) === TextInput);
+    expect(input.props.value).toBe('kept draft');
+    act(() => input.props.onChangeText('kept draft, more'));
+    expect(onTextChange).toHaveBeenCalledWith('kept draft, more');
+    await pressText('Save Note');
+    expect(service.addNote.mock.calls[0][3]).toBe('kept draft, more');
+  });
 });

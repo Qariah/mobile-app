@@ -6,32 +6,19 @@ import {
   StyleSheet,
   useWindowDimensions,
 } from 'react-native';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
 import {CheckIcon, ProfileIcon, HeartIcon} from '@/components/Icons';
+import {SheetProps, SheetManager, ScrollView} from 'react-native-actions-sheet';
 import ActionSheet, {
-  SheetProps,
-  SheetManager,
-  ScrollView,
-} from 'react-native-actions-sheet';
+  useSheetWidth,
+} from '@/components/sheets/AdaptiveActionSheet';
 import {Feather, FontAwesome5, Ionicons} from '@expo/vector-icons';
-import {useLoved} from '@/hooks/useLoved';
-import {
-  useDownloadActions,
-  useDownloadProgress,
-  useIsDownloaded,
-  useIsDownloadedWithRewayat,
-  useIsDownloading,
-} from '@/services/player/store/downloadSelectors';
-import {downloadSurah} from '@/services/downloadService';
 import {getReciterName} from '@/services/dataService';
 import Color from 'color';
 import {CircularProgress} from '@/components/CircularProgress';
-import {usePlayerStore} from '@/services/player/store/playerStore';
 import {getReciterByIdSync} from '@/services/dataService';
-import {recitationShareUrl, shareUrl} from '@/utils/shareUtils';
-import branding from '@/config/branding';
 import RenderHtml, {
   MixedStyleDeclaration,
   RenderHTMLProps,
@@ -40,6 +27,7 @@ import RenderHtml, {
 import {useUploadsStore} from '@/store/uploadsStore';
 // @ai-start
 import {useTranslation} from 'react-i18next';
+import {usePlayerOptions} from './options/playerOptions'; // @ai
 import {
   getReciterDisplayName,
   getSurahDisplayName,
@@ -72,10 +60,12 @@ const renderHtmlDefaultProps: Partial<RenderHTMLProps> = {
 // @ai-start
 export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
   const {theme} = useTheme();
-  const {width, height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
+  const {height: screenHeight} = useWindowDimensions(); // TECH_DEBT #278
   const styles = createStyles(theme, screenHeight);
   const {t} = useTranslation(['sheets', 'common']);
-  const [showSurahInfo, setShowSurahInfo] = useState(false);
+  // Size HTML from the sheet, which stops at 560pt on iPad. @ai
+  const width = useSheetWidth(); // @ai
+  const [showSurahInfo, setShowSurahInfo] = useState(!!props.payload?.showInfo); // @ai
 
   // Extract payload
   const payload = props.payload;
@@ -86,7 +76,6 @@ export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
   const isUserUpload = payload?.isUserUpload ?? false;
   const userRecitationId = payload?.userRecitationId;
 
-  const surahId = surah?.id?.toString() ?? '';
   const currentSurahInfo = surah ? surahInfo[surah.id] : null;
 
   // Get recitation data for upload header
@@ -107,38 +96,6 @@ export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
     if (surah) return getSurahMeaning(surah) ?? '';
     return t('uploads.upload');
   }, [isUserUpload, surah, t]);
-
-  const downloadId = React.useMemo(
-    () =>
-      rewayatId
-        ? `${reciterId}-${surahId}-${rewayatId}`
-        : `${reciterId}-${surahId}`,
-    [reciterId, surahId, rewayatId],
-  );
-
-  // Hooks for download and loved state
-  const {isLoved, isLovedWithRewayat, toggleLoved} = useLoved();
-  const downloadProgress = useDownloadProgress(downloadId);
-  const isTrackDownloadedBase = useIsDownloaded(reciterId, surahId);
-  const isTrackDownloadedRewayat = useIsDownloadedWithRewayat(
-    reciterId,
-    surahId,
-    rewayatId || '',
-  );
-  const isTrackDownloaded = rewayatId
-    ? isTrackDownloadedRewayat
-    : isTrackDownloadedBase;
-  const isCurrentlyDownloading = useIsDownloading(downloadId);
-  const {setDownloading, addDownload, clearDownloading, setDownloadProgress} =
-    useDownloadActions();
-
-  // Calculate loved state — only meaningful when reciterId + surahId exist
-  const canLove = !!reciterId && !!surahId;
-  const isLovedState = canLove
-    ? rewayatId
-      ? isLovedWithRewayat(reciterId, surahId, rewayatId)
-      : isLoved(reciterId, surahId)
-    : false;
 
   const tagsStyles = useMemo(
     () => ({
@@ -178,115 +135,22 @@ export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
     setShowSurahInfo(true);
   }, []);
 
-  const handleToggleLove = useCallback(() => {
-    if (!reciterId) return;
-    toggleLoved(reciterId, surahId, rewayatId || '');
-  }, [reciterId, surahId, toggleLoved, rewayatId]);
-
-  const handleDownload = useCallback(async () => {
-    if (!reciterId || !surah) return;
-
-    if (isTrackDownloaded) {
-      console.log('Track already downloaded');
-      return;
-    }
-
-    if (isCurrentlyDownloading) {
-      console.log('Track is already downloading');
-      return;
-    }
-
-    try {
-      setDownloading(downloadId);
-
-      const downloadResult = await downloadSurah(
-        surah.id,
-        reciterId,
-        rewayatId,
-        progress => {
-          setDownloadProgress(downloadId, progress);
-        },
-      );
-
-      addDownload({
-        reciterId,
-        surahId: surahId,
-        rewayatId: rewayatId || '',
-        filePath: downloadResult.filePath,
-        fileSize: downloadResult.fileSize,
-        downloadDate: Date.now(),
-        status: 'completed',
-      });
-
-      clearDownloading(downloadId);
-    } catch (error) {
-      console.error('Download failed:', error);
-      clearDownloading(downloadId);
-    }
-  }, [
-    reciterId,
-    surah,
-    surahId,
-    rewayatId,
+  // @ai-start
+  // Shared with the tablet menu (options/playerOptions.tsx).
+  const {
+    canLove,
+    isLovedState,
     isTrackDownloaded,
     isCurrentlyDownloading,
-    setDownloading,
-    addDownload,
-    clearDownloading,
-    setDownloadProgress,
-    downloadId,
-  ]);
-
-  const handleAddToPlaylist = useCallback(() => {
-    if (!reciterId || !surah) return;
-    SheetManager.show('select-playlist', {
-      payload: {
-        surah,
-        reciterId,
-        rewayatId,
-      },
-    });
-  }, [reciterId, surah, rewayatId]);
-
-  const handleGoToReciter = useCallback(() => {
-    handleClose();
-    if (onGoToReciter) {
-      onGoToReciter();
-    }
-  }, [handleClose, onGoToReciter]);
-
-  const handleEditDetails = useCallback(() => {
-    if (!userRecitationId) return;
-    const rec = useUploadsStore.getState().getRecitationById(userRecitationId);
-    if (!rec) return;
-    handleClose();
-    setTimeout(() => {
-      SheetManager.show('organize-recitation', {
-        payload: {recitation: rec},
-      });
-    }, 300);
-  }, [userRecitationId, handleClose]);
-
-  const handleShare = useCallback(() => {
-    if (!reciterId || !rewayatId || !surah) return;
-    const reciter = getReciterByIdSync(reciterId);
-    if (!reciter?.slug) return;
-    const rewayat = reciter.rewayat.find(rw => rw.id === rewayatId);
-    if (!rewayat) return;
-    const surahNum = surah.id;
-    const position = usePlayerStore.getState().playback.position;
-    const timestampSec = position > 0 ? Math.floor(position) : undefined;
-    const url = recitationShareUrl(
-      reciter.slug,
-      surahNum,
-      rewayat.id,
-      timestampSec,
-    );
-    shareUrl(
-      url,
-      t('options.shareListen', {surah: surahNum, appName: branding.appName}),
-    );
-  }, [reciterId, rewayatId, surah, t]);
+    downloadProgress,
+    handleToggleLove,
+    handleDownload,
+    handleAddToPlaylist,
+    handleGoToReciter,
+    handleEditDetails,
+    handleShare,
+  } = usePlayerOptions(payload, handleClose);
+  // @ai-end
 
   const handleSheetChange = useCallback((index: number) => {
     if (index === -1) {
@@ -488,6 +352,7 @@ export const PlayerOptionsSheet = (props: SheetProps<'player-options'>) => {
   return (
     <ActionSheet
       id={props.sheetId}
+      tabletPresentation={showSurahInfo ? 'card' : 'menu'}
       containerStyle={[
         styles.sheetContainer,
         showSurahInfo && styles.sheetContainerExpanded,

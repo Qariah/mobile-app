@@ -47,6 +47,8 @@ jest.mock('@/components/mushaf/main', () => ({
 
 const mockDk = {
   initialized: false,
+  loadState: 'loading',
+  ensureRewayahLoaded: jest.fn(() => Promise.resolve()),
   version: 0,
   listeners: new Set<() => void>(),
 };
@@ -57,6 +59,9 @@ jest.mock('@/services/mushaf/DigitalKhattDataService', () => ({
       return mockDk.initialized;
     },
     rewayah: 'hafs',
+    getRewayahLoadState: () => mockDk.loadState,
+    ensureRewayahLoaded: (...args: unknown[]) =>
+      mockDk.ensureRewayahLoaded(...(args as [])),
     getSurahStartPages: () => ({}),
     switchRewayah: jest.fn(() => Promise.resolve()),
     subscribeCacheChanges: (listener: () => void) => {
@@ -144,6 +149,8 @@ beforeEach(() => {
   mockPreload.listeners.clear();
   mockPreload.initialize.mockClear();
   mockDk.initialized = false;
+  mockDk.loadState = 'loading';
+  mockDk.ensureRewayahLoaded.mockClear();
   mockDk.version = 0;
   mockDk.listeners.clear();
   // react-test-renderer prints a deprecation notice under React 19.
@@ -172,6 +179,35 @@ it('says the mushaf could not be loaded and retries the preload', async () => {
     retry.props.onPress();
   });
   expect(mockPreload.initialize).toHaveBeenCalledTimes(1);
+});
+
+// One data state, with one retry that knows which load to redo (Osman, RFC-023
+// review). The preload stays 'ready' after the rewayah fails: a words read that
+// fails after the load does that, on PR #704. Its initialize() would do nothing.
+it('the rewayah failed after the preload: the retry goes to the data', async () => {
+  mockPreload.state = 'ready';
+  mockDk.initialized = true;
+  render();
+  expect(texts()).not.toContain("Couldn't load the mushaf");
+
+  act(() => {
+    mockDk.initialized = false;
+    mockDk.loadState = 'error';
+    mockDk.version += 1;
+    mockDk.listeners.forEach(listener => listener());
+  });
+  expect(texts()[0]).toBe("Couldn't load the mushaf");
+
+  const retry = root().find(
+    node => node.props.accessibilityRole === 'button' && !!node.props.onPress,
+  );
+  await act(async () => {
+    retry.props.onPress();
+  });
+  expect(mockDk.ensureRewayahLoaded).toHaveBeenCalledWith('hafs', {
+    retry: true,
+  });
+  expect(mockPreload.initialize).not.toHaveBeenCalled();
 });
 
 it('keeps the spinner while the mushaf is still loading', () => {

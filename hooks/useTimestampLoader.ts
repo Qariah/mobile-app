@@ -1,9 +1,10 @@
 import {useEffect} from 'react';
 import {usePlayerStore} from '@/services/player/store/playerStore';
+import {selectForegroundQueue} from '@/services/player/store/foregroundPlayerState'; // @ai Qariah: no new views in the background
 import {useTimestampStore} from '@/store/timestampStore';
 
 export function useTimestampLoader() {
-  const queue = usePlayerStore(s => s.queue);
+  const queue = usePlayerStore(selectForegroundQueue);
   const currentTrack = queue?.tracks?.[queue?.currentIndex ?? -1];
   const rewayatId = currentTrack?.rewayatId;
   const surahId = currentTrack?.surahId;

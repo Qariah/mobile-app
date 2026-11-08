@@ -50,6 +50,38 @@ describe('utils/bootSplash with the native module present (Android)', () => {
     expect(calls).toEqual(['expoHide']);
   });
 
+  // Qariah (A10s plan F1): the deferred Mushaf preload waits for this.
+  it('settles whenSplashHidden() only after the first hide has finished', async () => {
+    let finishHide: () => void = () => undefined;
+    mockHideAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>(resolve => {
+          finishHide = resolve;
+        }),
+    );
+    const SplashScreen = require('../bootSplash');
+    let hidden = false;
+    SplashScreen.whenSplashHidden().then(() => {
+      hidden = true;
+    });
+    const hide = SplashScreen.hideAsync();
+    await Promise.resolve();
+    expect(hidden).toBe(false);
+    finishHide();
+    await hide;
+    await SplashScreen.whenSplashHidden();
+    expect(hidden).toBe(true);
+  });
+
+  it('settles whenSplashHidden() when the expo hide fails', async () => {
+    mockHideAsync.mockImplementationOnce(() =>
+      Promise.reject(new Error('no splash')),
+    );
+    const SplashScreen = require('../bootSplash');
+    await expect(SplashScreen.hideAsync()).rejects.toThrow('no splash');
+    await expect(SplashScreen.whenSplashHidden()).resolves.toBeUndefined();
+  });
+
   it('reports the native mode and forwards the next-launch flag', () => {
     const mod = require('../../modules/qariah-boot-splash');
     expect(mod.getBootSplashMode()).toBe('treatment');

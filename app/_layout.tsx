@@ -13,34 +13,40 @@ import * as SplashScreen from '@/utils/bootSplash';
 import * as SystemUI from 'expo-system-ui';
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import ErrorBoundary from '@/components/ErrorBoundary';
+// @ai-start
+import AppErrorScreen from '@/components/AppErrorScreen';
+import {ROOT_COLORS} from '@/constants/rootColors';
+// @ai-end
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {
   AppState,
-  View,
-  Text,
   Platform,
-  StatusBar as RNStatusBar,
   Appearance,
-  InteractionManager,
   type AppStateStatus,
 } from 'react-native';
+import {runAfterInteractions} from '@/utils/afterInteractions';
 import {useTheme} from '@/hooks/useTheme';
 // @ai-start
 import {LocaleDirContext, ThemeProvider} from 'expo-router/react-navigation';
 // @ai-end
-import {PlayerSheet} from '@/components/player/v2/PlayerSheet';
+import {PlayerHost} from '@/components/player/v2/PlayerHost';
 import {
   WhatsNewModal,
   WhatsNewModalRef,
 } from '@/components/modals/WhatsNewOnboarding';
 import {DevMenu} from '@/components/DevMenu';
 import {SheetProvider} from 'react-native-actions-sheet';
+import {recordTouch} from '@/utils/lastTouch'; // @ai
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
+// @ai-start
+import {AppKeyCommands} from '@/components/keyboard/AppKeyCommands';
+import {keyCommandsSupported} from '@/services/keyboard/keyCommands';
+// @ai-end
 import '@/components/sheets/sheets'; // Register action sheets
 import {
   configureReanimatedLogger,
   ReanimatedLogLevel,
 } from 'react-native-reanimated';
-import {preloadTajweedData} from '@/utils/tajweedLoader';
 import {bootApp} from '@/services/appBoot';
 import {NetworkStatusMonitor} from '@/components/NetworkStatusMonitor';
 import {useNetworkMonitor} from '@/hooks/useNetworkMonitor';
@@ -59,7 +65,6 @@ import {mushafSessionStore} from '@/services/mushaf/MushafSessionStore';
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import Constants from 'expo-constants';
 import * as Sentry from '@sentry/react-native';
-import * as ScreenOrientation from 'expo-screen-orientation';
 // Qariah: the Qariah-only imports sit in this one block (TECH_DEBT #243).
 import {AuthTelemetry} from '@/services/analytics/AuthTelemetry';
 import {createQariahPostHogClient} from '@/services/analytics/qariahPostHogClient';
@@ -68,12 +73,19 @@ import {
   initQariahSentryScope,
 } from '@/services/diagnostics/qariahSentryOptions';
 import {whenColdStartDeepLinkKnown} from '@/services/diagnostics/deepLinkColdStartReplay';
+import {
+  endReaderRestore,
+  whenReaderPageDrawn,
+} from '@/services/mushaf/readerRestoreGate'; // @ai
 import {markMushafRestoreHandled} from '@/services/mushafRestoreSignal';
 import {QariahRootEffects} from '@/components/QariahRootEffects';
+import {bootMark} from '@/services/diagnostics/bootMarks'; // @ai Qariah
 import {useSplashRevealWatchdog} from '@/hooks/useSplashRevealWatchdog';
 import {AuthProvider} from '@/services/auth';
 import {UserStateProvider} from '@/services/userState';
 import {isOnboarded} from '@/services/onboarding/onboardingState';
+import {usePhoneOrientation} from '@/hooks/usePhoneOrientation'; // @ai
+import {ConfirmationDialogHost} from '@/components/native/ConfirmationDialogHost'; // @ai
 
 // Configure Reanimated logger
 configureReanimatedLogger({
@@ -82,7 +94,12 @@ configureReanimatedLogger({
 });
 
 // Cache for expo-navigation-bar module (Android only)
-let NavigationBarModule: any = null;
+let NavigationBarModule:
+  | typeof import('expo-navigation-bar').NavigationBar
+  | null = null;
+
+// @ai Qariah (Lite step 1c): lab timing mark; the root module has loaded.
+bootMark('root-module');
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -92,11 +109,15 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 // Set native root view background immediately (before any component renders)
 // This prevents the white flash between splash screen and first frame
 // QARIAHV2-C: the call rejects when the OS killed the Activity; that is benign.
+// @ai-start
 void SystemUI.setBackgroundColorAsync(
-  Appearance.getColorScheme() === 'dark' ? '#07121a' : '#f4f3ec',
+  Appearance.getColorScheme() === 'dark'
+    ? ROOT_COLORS.dark.background
+    : ROOT_COLORS.light.background,
 ).catch(() => {
   /* Activity may be gone (OEM-killed); benign cleanup, swallow it. */
 });
+// @ai-end
 
 const analyticsEnabled = process.env.EXPO_PUBLIC_ANALYTICS_ENABLED !== 'false';
 
@@ -185,6 +206,7 @@ function AnalyticsConnector(): null {
 
 // @ai-start
 function RootLayout() {
+  bootMark('root-render'); // @ai Qariah (Lite step 1c): lab timing mark.
   // Start reloads after the root has mounted, when native reload listeners are
   // ready, rather than as a side effect of importing translation resources.
   useEffect(bootstrapDirection, []);
@@ -194,8 +216,11 @@ function RootLayout() {
   const [setupError, setSetupError] = useState<Error | null>(null);
   const router = useRouter();
   const initializationRef = useRef(false);
+  // @ai Qariah: the onboarding flag, read during the boot (see prepare()).
+  const onboardedReadRef = useRef<Promise<boolean> | null>(null);
   const whatsNewModalRef = useRef<WhatsNewModalRef>(null);
   const {theme, isDarkMode} = useTheme();
+  const {isTablet} = useResponsive(); // @ai
   useNetworkMonitor();
 
   // Build React Navigation theme so card/background colors match during transitions
@@ -233,15 +258,9 @@ function RootLayout() {
     resetOnBackground: true,
   });
 
-  // Lock to portrait by default; mushaf.tsx unlocks when that screen is active.
-  // QARIAHV2-C (#54): the call rejects when the OS killed the Activity; that is benign.
-  useEffect(() => {
-    ScreenOrientation.lockAsync(
-      ScreenOrientation.OrientationLock.PORTRAIT_UP,
-    ).catch(() => {
-      /* Activity may be gone (OEM-killed); benign, swallow it. */
-    });
-  }, []);
+  // Phones are portrait (mushaf.tsx allows landscape there); iPads turn
+  // freely. @ai
+  usePhoneOrientation('portrait'); // @ai
 
   // Start after init so the first snapshot sees the restored session and
   // stores instead of overwriting the widgets with an empty state.
@@ -259,13 +278,10 @@ function RootLayout() {
     };
   }, [appIsReady]);
 
-  // Tajweed data — defer until after first frame + interactions complete
-  useEffect(() => {
-    InteractionManager.runAfterInteractions(() => {
-      if (__DEV__) console.log('[App] Preloading tajweed data...');
-      preloadTajweedData();
-    });
-  }, []);
+  // @ai Qariah: no tajweed load at boot. It held the JS thread for 3.4 s on a
+  // Samsung A10s, for a setting that is off by default (and React Native 0.86
+  // runs runAfterInteractions at once). hooks/useTajweedOnDemand.ts loads it
+  // after the splash when the reader has tajweed on.
 
   // Qariah: splash TTI watchdog + the #53 force-reveal (useSplashRevealWatchdog).
   const {forceReveal, recordSplashHidden} = useSplashRevealWatchdog({
@@ -286,6 +302,7 @@ function RootLayout() {
           mushafRestoreHandled) ||
         forceReveal
       ) {
+        bootMark('layout-root-ready'); // @ai Qariah (Lite step 1c): lab mark.
         await SplashScreen.hideAsync();
         // @ai REPORT-ONLY — splash actually hidden; record TTI success (§3).
         recordSplashHidden();
@@ -312,9 +329,23 @@ function RootLayout() {
     async function prepare() {
       // @ai Qariah (Pass B): bootApp() runs the Qariah boot steps through services/qariahBoot.ts.
       try {
+        // @ai Qariah (singlePassReveal; every phone since 2026-10-29, see
+        // planning/lite-mode-design.md section 11): read the onboarding flag
+        // during the boot, so the first render of the tree can already hide
+        // the splash when there is nothing to restore. The restore effect
+        // below then sets the same value and does not render again. A launch
+        // whose last screen was the reader keeps the old path: the splash
+        // waits until the reader is pushed. The restore effect takes the same
+        // read, so its push does not wait for storage after the first render.
+        const onboardedRead = isOnboarded();
+        onboardedReadRef.current = onboardedRead;
         await bootApp();
+        const revealOnFirstRender =
+          !mushafSessionStore.getLastScreenWasMushaf() &&
+          (await onboardedRead) === true;
 
         // Mark app as ready
+        if (revealOnFirstRender) setMushafRestoreHandled(true);
         setIsPlayerReady(true);
         setAppIsReady(true);
         initializationRef.current = true;
@@ -348,24 +379,16 @@ function RootLayout() {
       /* Activity may be gone (OEM-killed); benign cleanup, swallow it. */
     });
 
+    // Edge-to-edge: the app draws behind the navigation bar, so only the
+    // button style follows the theme.
     async function setupNavigationBar() {
       if (Platform.OS === 'android') {
         try {
           if (!NavigationBarModule) {
-            NavigationBarModule = await import('expo-navigation-bar').then(
-              module => module.default,
-            );
-            RNStatusBar.setTranslucent(true);
+            NavigationBarModule = (await import('expo-navigation-bar'))
+              .NavigationBar;
           }
-
-          if (NavigationBarModule) {
-            await NavigationBarModule.setBackgroundColorAsync(
-              theme.colors.background,
-            );
-            await NavigationBarModule.setButtonStyleAsync(
-              isDarkMode ? 'light' : 'dark',
-            );
-          }
+          NavigationBarModule?.setStyle(isDarkMode ? 'dark' : 'light');
         } catch (error) {
           if (__DEV__)
             console.warn(
@@ -444,19 +467,33 @@ function RootLayout() {
   // Restore mushaf screen if it was open when the app was killed.
   // Qariah: the first-launch onboarding redirect wins over the restore.
   useEffect(() => {
-    if (!appIsReady || !isPlayerReady || hasShareIntent) return;
+    if (!appIsReady || !isPlayerReady) return;
+    // @ai Qariah: a share launch never pushes the reader; Listen renders.
+    if (hasShareIntent) {
+      endReaderRestore();
+      return;
+    }
 
     let cancelled = false;
     // Qariah (#53/#71): the flag gates the splash; the deadline flips it if a step below stalls.
     const gateDeadline = setTimeout(() => {
       if (!cancelled) setMushafRestoreHandled(true);
     }, 4000);
+    // @ai Qariah: Listen waits only for a reader that this effect pushes
+    // (services/mushaf/readerRestoreGate.ts); every other path ends the wait.
     (async () => {
-      const onboarded = await isOnboarded();
+      // @ai-start
+      // Only the first run reuses the boot's read. The effect runs again when
+      // a share intent ends, and the user can have finished onboarding by then.
+      const bootRead = onboardedReadRef.current;
+      onboardedReadRef.current = null;
+      const onboarded = await (bootRead ?? isOnboarded());
+      // @ai-end
       if (cancelled) return;
       if (!onboarded) {
+        endReaderRestore(); // @ai
         router.replace('/onboarding');
-        InteractionManager.runAfterInteractions(() => {
+        runAfterInteractions(() => {
           if (!cancelled) setMushafRestoreHandled(true);
         });
         return;
@@ -477,11 +514,22 @@ function RootLayout() {
             ? {page: String(lastReadPage), restored: '1'}
             : {restored: '1'},
         });
-        // Let the navigation animation finish behind the splash before revealing
-        InteractionManager.runAfterInteractions(() => {
-          if (!cancelled) setMushafRestoreHandled(true);
+        // @ai-start
+        // Qariah: the splash stays until the reader has drawn its first page
+        // (services/mushaf/readerRestoreGate.ts), so the reader appears with
+        // its text, and the root re-render and the splash fade do not
+        // compete with the page. gateDeadline above still reveals a reader
+        // that never draws.
+        // The hide runs here, at the draw: the root re-render below waits
+        // behind the next pages' paragraph builds (1-2 s on a Samsung A10s).
+        whenReaderPageDrawn().then(() => {
+          if (cancelled) return;
+          SplashScreen.hideAsync().catch(() => undefined);
+          setMushafRestoreHandled(true);
         });
+        // @ai-end
       } else {
+        endReaderRestore(); // @ai
         setMushafRestoreHandled(true);
       }
     })();
@@ -525,26 +573,25 @@ function RootLayout() {
 
   if (fontError) {
     SplashScreen.hideAsync();
-    return (
-      <View style={{flex: 1, alignItems: 'center', justifyContent: 'center'}}>
-        <Text>{i18n.t('app.fontError')}</Text>
-      </View>
-    );
+    return <AppErrorScreen message={i18n.t('app.fontError')} />; // @ai
   }
 
   if (setupError) {
     SplashScreen.hideAsync();
+    // @ai-start
     return (
-      <View style={{flex: 1, alignItems: 'center', justifyContent: 'center'}}>
-        <Text>{i18n.t('app.initError', {message: setupError.message})}</Text>
-      </View>
+      <AppErrorScreen
+        message={i18n.t('app.initError', {message: setupError.message})}
+      />
     );
+    // @ai-end
   }
 
   // Qariah (#53): forceReveal bypasses this guard too, or the splash hides onto a blank window.
   if (!forceReveal && (!fontsLoaded || !isPlayerReady || !appIsReady)) {
     return null;
   }
+  bootMark('tree-render'); // @ai Qariah (Lite step 1c): lab timing mark.
 
   return (
     <ErrorBoundary>
@@ -570,10 +617,12 @@ function RootLayout() {
                     ]}
                     // @ts-ignore - RN supports this on iOS to override system theme for native UI (keyboard, menus, alerts)
                     overrideUserInterfaceStyle={isDarkMode ? 'dark' : 'light'}
+                    onTouchStart={recordTouch} // @ai
                     onLayout={onLayoutRootView}>
                     {/* Keep UserStateProvider inside GestureHandlerRootView: V1RestoreModal uses gorhom. */}
                     <UserStateProvider>
                       <NetworkStatusMonitor />
+                      <ConfirmationDialogHost /* @ai: iPad confirmations */ />
                       <SheetProvider>
                         <Stack
                           screenOptions={{
@@ -609,8 +658,48 @@ function RootLayout() {
                               fullScreenGestureEnabled: false,
                             }}
                           />
+                          {/* @ai-start */}
+                          <Stack.Screen
+                            name="translations"
+                            options={
+                              isTablet
+                                ? {
+                                    // iPad: a centered card over the reader
+                                    // (TabletDialog), not a full page.
+                                    presentation: 'transparentModal',
+                                    animation: 'fade',
+                                    headerShown: false,
+                                    contentStyle: {
+                                      direction: appDirection,
+                                      backgroundColor: 'transparent',
+                                    },
+                                  }
+                                : {
+                                    title: i18n.t('home:translations.title'),
+                                    headerShown: true,
+                                    headerTintColor: theme.colors.text,
+                                    ...(USE_GLASS
+                                      ? {
+                                          headerTransparent: true,
+                                          headerStyle: {
+                                            backgroundColor: 'transparent',
+                                          },
+                                        }
+                                      : {
+                                          headerStyle: {
+                                            backgroundColor:
+                                              theme.colors.background,
+                                          },
+                                        }),
+                                    headerShadowVisible: false,
+                                    headerBackButtonDisplayMode: 'minimal',
+                                  }
+                            }
+                          />
+                          {/* @ai-end */}
                         </Stack>
-                        <PlayerSheet />
+                        <PlayerHost />
+                        {keyCommandsSupported() && <AppKeyCommands />}
                         <WhatsNewModal ref={whatsNewModalRef} />
                         <DevMenu whatsNewModalRef={whatsNewModalRef} />
                       </SheetProvider>

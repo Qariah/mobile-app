@@ -33,6 +33,12 @@ function mockPlain(props: Props): Props {
   return out;
 }
 
+// Sprint 52 Task 8: the golden is a phone row (the Jest window is 750 pt
+// wide, a tablet by its short side); VerseItem.a11y.test.tsx covers tablets.
+jest.mock('@/hooks/useResponsive', () => ({
+  useResponsive: () => ({isTablet: false}),
+}));
+
 jest.mock('../SkiaVerseText', () => ({
   __esModule: true,
   default: (props: Props) => {

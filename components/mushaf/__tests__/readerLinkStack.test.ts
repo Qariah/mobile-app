@@ -8,8 +8,8 @@
 import {
   StackRouter,
   type StackNavigationState,
-} from 'expo-router/build/react-navigation/routers';
-import type {ParamListBase} from 'expo-router/build/react-navigation/routers';
+} from 'expo-router/build/react-navigation/routers/index';
+import type {ParamListBase} from 'expo-router/build/react-navigation/routers/index';
 
 const options = {
   routeNames: ['(tabs)', 'mushaf', 'mushaf/[page]'],
@@ -29,7 +29,7 @@ function stack(routes: Route[]): StackNavigationState<ParamListBase> {
     routeNames: options.routeNames,
     routes,
     preloadedRoutes: [],
-  } as StackNavigationState<ParamListBase>;
+  } as unknown as StackNavigationState<ParamListBase>;
 }
 
 type StackAction = Parameters<typeof router.getStateForAction>[1];
@@ -40,11 +40,16 @@ function apply(
 ): StackNavigationState<ParamListBase> {
   const next = router.getStateForAction(
     state,
-    {...action, target: 'root'},
+    {...action, target: 'root'} as StackAction,
     options,
   );
-  if (next === null) throw new Error('action not handled');
-  return next as StackNavigationState<ParamListBase>;
+  // Expo Router 58 returns {state, affectedRouteKey, ...}, or Unhandled. @ai
+  if (next === null || typeof next !== 'object') {
+    throw new Error('action not handled');
+  }
+  return (
+    'state' in next ? next.state : next
+  ) as StackNavigationState<ParamListBase>;
 }
 
 const popToReader = (params: object): StackAction => ({

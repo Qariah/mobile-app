@@ -86,6 +86,35 @@ describe('check-branding.sh', () => {
     assert.equal(r.status, 0, r.out);
   });
 
+  describe('a lowercase brand file name (GitHub #731)', () => {
+    const LOWER = NAME.toLowerCase();
+
+    it('fails on a user-visible file name in a template literal', () => {
+      const r = check(
+        [
+          'export const uri = (dir: string) =>',
+          `  \`\${dir}${LOWER}-share.png\`;`,
+          '',
+        ].join('\n'),
+      );
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.out, /components\/Fixture\.tsx:2:/);
+      assert.match(r.out, /GitHub #731/);
+    });
+
+    it('passes a resource name, an identifier and a comment', () => {
+      const r = check(
+        [
+          `const FILE_NAME = '${LOWER}_widgets.xml';`,
+          `const key = '${LOWER}_reciters';`,
+          `// The upstream file was ${LOWER}-share.png.`,
+          '',
+        ].join('\n'),
+      );
+      assert.equal(r.status, 0, r.out);
+    });
+  });
+
   it('passes a block comment with no * at the start of each line', () => {
     const r = check(
       [

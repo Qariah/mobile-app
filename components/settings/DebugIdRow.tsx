@@ -6,7 +6,7 @@
 import React, {useMemo} from 'react';
 import {Alert, Pressable, Text, View} from 'react-native';
 import {Feather} from '@expo/vector-icons';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import * as Clipboard from 'expo-clipboard';
 import {useTranslation} from 'react-i18next';
 import {getDebugId, getDebugIdBlock} from '@/services/diagnostics/debugId';

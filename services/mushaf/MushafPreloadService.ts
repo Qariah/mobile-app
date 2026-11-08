@@ -26,7 +26,40 @@ const FONT_ASSETS: Record<string, number> = {
   ManropeRegular: require('@/assets/fonts/Manrope-Regular.ttf'),
   PlexSansArabicSemiBold: require('@/assets/fonts/IBMPlexSansArabic-SemiBold.ttf'),
 };
+// Mushaf-critical families: at least one DK variant + QuranCommon must
+// register or the Mushaf renders blank. Every other family is optional: the
+// surah names are ornamental (surah header glyphs), and the others are UI text
+// on share cards. Their absence is cosmetic, not catastrophic.
+const CRITICAL_FAMILIES = new Set([
+  'DigitalKhattV1',
+  'DigitalKhattV2',
+  'DigitalKhattIndoPak',
+  'QuranCommon',
+]);
+
+// After a failed load the service tries again by itself, not at each mount: a
+// reader can wait with nothing that would mount again, and in a lasting failure
+// each page turn would read the font files again.
+export const FONT_RETRY_MS = 3000;
+export const FONT_MAX_RETRIES = 3;
+
+/** One complete load: published together, or not at all. */
+interface LoadedFonts {
+  fontMgr: SkTypefaceFontProvider;
+  quranCommonTypeface: SkTypeface | null;
+  surahNameTypeface: SkTypeface | null;
+  /** False when an optional family failed. */
+  complete: boolean;
+}
 // @ai-end
+
+function assetUri(asset: number): string {
+  const source = Image.resolveAssetSource(asset);
+  if (!source) {
+    throw new Error(`Unresolvable font asset ${asset}`);
+  }
+  return source.uri;
+}
 
 /**
  * Preloads everything the Mushaf screen needs at app startup (AppInitializer
@@ -52,6 +85,10 @@ class MushafPreloadService {
   // Registered once (a retried init must not stack listeners).
   private _rewayahSubscription: (() => void) | null = null;
   private _diffRewayah: RewayahId | null = null;
+  // @ai-start
+  private _fontRetries = 0;
+  private _fontRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  // @ai-end
   // `useSyncExternalStore` subscribers so mushaf components can read
   // fontMgr synchronously without needing a useFonts fallback that races
   // at first-mount.
@@ -75,9 +112,8 @@ class MushafPreloadService {
   }
 
   /**
-   * `true` if any step of `_doInit` rejected or `loadSkiaFonts` swallowed an
-   * error. Consumers (see `useMushafFontMgr`) can switch to a fallback render
-   * path to avoid a permanently-blank Mushaf when the preload fails.
+   * `true` if any step of `_doInit` rejected or the fonts did not load. A
+   * font retry clears it when the data loaded.
    */
   get loadError(): boolean {
     return this._state === 'failed';
@@ -103,17 +139,15 @@ class MushafPreloadService {
     if (this._state === 'ready') return;
     // Allow a retry after a prior failure (Osman review LOW): the previous
     // implementation cached the rejected promise forever, so a later call
-    // got the same rejection with no way to recover. Also explicitly
-    // reset typeface/fontMgr fields so the invariant "retry starts from
-    // a clean slate" is in the code, not implicit on the second run's
-    // overwrites. Otherwise a fallback-then-retry sequence could observe
-    // a stale `_quranCommonTypeface` mid-init.
+    // got the same rejection with no way to recover.
+    // @ai Fonts publish only as a complete set, so a provider from the failed
+    // run is good: readers keep drawing with it, and this run does not load it.
     if (this._state === 'failed') {
       this._initPromise = null;
       this._state = 'idle';
-      this._fontMgr = null;
-      this._quranCommonTypeface = null;
-      this._surahNameTypeface = null;
+      this._fontRetries = 0;
+      if (this._fontRetryTimer) clearTimeout(this._fontRetryTimer);
+      this._fontRetryTimer = null;
     }
     if (this._initPromise) return this._initPromise;
 
@@ -124,6 +158,7 @@ class MushafPreloadService {
 
   private async _doInit(): Promise<void> {
     let failed = false;
+    let fonts: Promise<LoadedFonts | null> | null = null; // @ai
     try {
       // Wait for Zustand persist hydration so DK service reads the user's
       // saved rewayah rather than the default (otherwise a reloaded app with
@@ -158,34 +193,35 @@ class MushafPreloadService {
         );
       }
 
+      // @ai-start
+      // Qariah (Lite mode plan, step 3): the fonts need no DK data, so they
+      // load while the data loads (loadSkiaFonts handles its own errors).
+      if (!this._fontMgr) fonts = this.loadSkiaFonts();
+      // @ai-end
       // DK data must be ready first; page lines are needed for layout computation
       await digitalKhattDataService.initialize();
 
       // Hafs (the service's starting rewayah) commits without a change event.
       this._loadDiffsFor(digitalKhattDataService.rewayah);
-
-      await this.loadSkiaFonts();
-
-      // `loadSkiaFonts` swallows its own errors and leaves `_fontMgr` null on
-      // failure. Treat a null fontMgr after the load completes as a failure
-      // so subscribers can flip to the fallback path.
-      if (!this._fontMgr) {
-        failed = true;
-      }
     } catch (error) {
       // Any pre-font init step rejected (hydration, DK init, diff load). The
       // outer init must NOT swallow the rejection silently — surface it as
       // `failed` so subscribers render the fallback rather than a blank UI.
       failed = true;
       console.warn('[MushafPreload] Initialization failed:', error);
-    } finally {
-      // Always transition to a terminal state and always notify. Without the
-      // `finally` block a mid-pipeline rejection would leave `_state` at
-      // 'loading' forever and never wake subscribed components.
-      this._state = failed ? 'failed' : 'ready';
-      this._notify();
-      console.log(`[MushafPreload] Initialization ${this._state}`);
     }
+    // @ai-start
+    // This run's fonts publish before its final state, also after a failure:
+    // a late font load cannot overwrite the provider of a retry. It never
+    // rejects, so a mid-pipeline rejection cannot leave `_state` at 'loading'.
+    if (fonts) this.publishFonts(await fonts);
+    if (!this._fontMgr) failed = true;
+    // @ai-end
+    // Always transition to a terminal state and always notify.
+    this._state = failed ? 'failed' : 'ready';
+    this._notify();
+    console.log(`[MushafPreload] Initialization ${this._state}`);
+    if (!this._fontMgr) this.scheduleFontRetry(); // @ai
   }
 
   private _loadDiffsFor(rewayah: RewayahId): void {
@@ -194,113 +230,87 @@ class MushafPreloadService {
     this._diffRewayah = rewayah;
   }
 
-  private async loadSkiaFonts(): Promise<void> {
-    try {
-      const fontMgr = Skia.TypefaceFontProvider.Make();
-      let anyFailed = false;
-
-      for (const [family, asset] of Object.entries(FONT_ASSETS)) {
-        const uri = Image.resolveAssetSource(asset).uri;
-        const data = await Skia.Data.fromURI(uri);
-        const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
-        if (!typeface) {
-          anyFailed = true;
-          console.warn(
-            `[MushafPreload] Failed to create typeface for ${family}`,
-          );
-          continue;
-        }
-        if (family === 'QuranCommon') this._quranCommonTypeface = typeface;
-        if (family === 'SurahNameV4') this._surahNameTypeface = typeface;
-        fontMgr.registerFont(typeface, family);
-      }
-
-      // Only publish the fontMgr if every critical family registered. A
-      // partial register would render some surahs with missing glyphs; the
-      // fallback retry below produces a fully-populated provider or none.
-      if (!anyFailed) {
-        this._fontMgr = fontMgr;
-        return;
-      }
-      console.warn(
-        '[MushafPreload] Partial typeface failure on primary load; retrying sequentially',
-      );
-    } catch (error) {
-      console.warn('[MushafPreload] Failed to load Skia fonts:', error);
-    }
-
-    // Fallback retry path: serialize the load with `await` between each
-    // typeface registration. The original symptom Osman reviewed was
-    // "Couldn't create typeface for SurahNameV4" — parallel typeface
-    // registration is the root cause, so the retry forces strict serial
-    // ordering. If the retry also fails, `_fontMgr` stays null and
-    // `_doInit` flips state to 'failed' so consumers know not to wait
-    // forever.
-    await this.loadSkiaFontsSequentialFallback();
+  // @ai-start
+  private publishFonts(fonts: LoadedFonts | null): void {
+    if (!fonts) return;
+    this._fontMgr = fonts.fontMgr;
+    this._quranCommonTypeface = fonts.quranCommonTypeface;
+    this._surahNameTypeface = fonts.surahNameTypeface;
   }
 
-  private async loadSkiaFontsSequentialFallback(): Promise<void> {
-    // Mushaf-critical families: at least one DK variant + QuranCommon must
-    // register or the Mushaf renders blank. SurahName fonts are ornamental
-    // (surah header glyphs); their absence is cosmetic, not catastrophic.
-    // Tracked separately so a fallback that drops only ornamental fonts
-    // still publishes a usable provider.
-    const CRITICAL_FAMILIES = new Set([
-      'DigitalKhattV1',
-      'DigitalKhattV2',
-      'DigitalKhattIndoPak',
-      'QuranCommon',
-    ]);
+  /** A pass with a failed font runs once more, at once. Never rejects. */
+  private async loadSkiaFonts(): Promise<LoadedFonts | null> {
+    const first = await this.readFonts();
+    if (first?.complete) return first;
+    console.warn(
+      '[MushafPreload] Partial typeface failure on primary load; retrying',
+    );
+    return (await this.readFonts()) ?? first;
+  }
+
+  /**
+   * One load of every font, one file at a time: "Couldn't create typeface for
+   * SurahNameV4" came from parallel registration. Null when a critical family
+   * failed: a zero-typeface provider is a non-null empty object that would pass
+   * `_doInit`'s null-guard, and every Mushaf surface would render blank with no
+   * recovery. Never rejects.
+   */
+  private async readFonts(): Promise<LoadedFonts | null> {
     try {
       const fontMgr = Skia.TypefaceFontProvider.Make();
-      const registered = new Set<string>();
-      let anyCriticalFailed = false;
-
+      let quranCommonTypeface: SkTypeface | null = null;
+      let surahNameTypeface: SkTypeface | null = null;
+      let complete = true;
+      let criticalFailed = false;
       for (const [family, asset] of Object.entries(FONT_ASSETS)) {
         try {
-          const uri = Image.resolveAssetSource(asset).uri;
+          const uri = assetUri(asset);
           const data = await Skia.Data.fromURI(uri);
           const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
-          if (!typeface) {
-            console.warn(
-              `[MushafPreload] Fallback failed for ${family}, skipping`,
-            );
-            if (CRITICAL_FAMILIES.has(family)) anyCriticalFailed = true;
-            continue;
-          }
-          if (family === 'QuranCommon') this._quranCommonTypeface = typeface;
-          if (family === 'SurahNameV4') this._surahNameTypeface = typeface;
+          if (!typeface) throw new Error('no typeface');
+          if (family === 'QuranCommon') quranCommonTypeface = typeface;
+          if (family === 'SurahNameV4') surahNameTypeface = typeface;
           fontMgr.registerFont(typeface, family);
-          registered.add(family);
-        } catch (err) {
-          console.warn(
-            `[MushafPreload] Fallback exception for ${family}:`,
-            err,
-          );
-          if (CRITICAL_FAMILIES.has(family)) anyCriticalFailed = true;
+        } catch (error) {
+          console.warn(`[MushafPreload] Failed to load ${family}:`, error);
+          complete = false;
+          if (CRITICAL_FAMILIES.has(family)) criticalFailed = true;
         }
       }
-
-      // Only publish if every critical family registered AND at least one
-      // typeface landed. A zero-typeface provider is a non-null empty
-      // object — assigning it would pass `_doInit`'s null-guard, flip
-      // `_state` to 'ready' with `loadError === false`, and the hook's
-      // fallback (`useFonts`) would never fire. Result: every consumer
-      // gets the empty provider, every Mushaf surface renders blank, no
-      // recovery. Leaving `_fontMgr` null on critical-typeface failure
-      // makes the null-guard fire so the hook's `useFonts` fallback
-      // activates per Osman review HIGH.
-      if (anyCriticalFailed || registered.size === 0) {
-        console.warn(
-          '[MushafPreload] Sequential fallback dropped critical typefaces; leaving _fontMgr null so useFonts fallback activates',
-        );
-        return;
-      }
-      this._fontMgr = fontMgr;
+      if (criticalFailed) return null;
+      return {fontMgr, quranCommonTypeface, surahNameTypeface, complete};
     } catch (error) {
-      console.warn('[MushafPreload] Sequential fallback rejected:', error);
+      console.warn('[MushafPreload] Failed to load Skia fonts:', error);
+      return null;
     }
   }
+
+  private scheduleFontRetry(): void {
+    if (this._fontRetryTimer || this._fontRetries >= FONT_MAX_RETRIES) return;
+    this._fontRetries += 1;
+    this._fontRetryTimer = setTimeout(() => {
+      this._fontRetryTimer = null;
+      this.retryFonts();
+    }, FONT_RETRY_MS);
+  }
+
+  // A later try for the fonts alone. It publishes here, so every reader of the
+  // service gets it (SkiaPage's typeface, QCF, the share cards), not only the
+  // callers of useMushafFontMgr.
+  private async retryFonts(): Promise<void> {
+    if (this._state !== 'failed' || this._fontMgr) return;
+    const fonts = await this.readFonts();
+    // A retry of the whole load started meanwhile: its run publishes.
+    if (this._state !== 'failed') return;
+    if (!fonts) {
+      this.scheduleFontRetry();
+      return;
+    }
+    this.publishFonts(fonts);
+    if (digitalKhattDataService.initialized) this._state = 'ready';
+    this._notify();
+  }
+  // @ai-end
 }
 
 export const mushafPreloadService = new MushafPreloadService();

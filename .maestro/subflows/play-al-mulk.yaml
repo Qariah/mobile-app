@@ -1,0 +1,67 @@
+# Reusable: play Al-Mulk by Zaynab Talha from the Listen tab, then wait until the mini player
+# offers Pause (the audio plays). This is the path of player/play-pause.yaml (QP-05).
+#
+# CALLER CONTRACT: call it when the tab bar is on screen, and the Listen tab shows its root
+# (the "Surahs" tile) or the "All Surahs" screen that the tile opens. After a play, the
+# Listen tab stays on the Al-Mulk page: on Android, send `pressKey: back` (it goes back to
+# "All Surahs") before you call it again.
+#
+# You can call it two times in one app session. On the second call the Listen tab shows
+# "All Surahs", not its root, so the "Surahs" tap is conditional. The search keeps its text
+# ("Mulk") after the first play, so the subflow finds the field by its placeholder OR by that
+# text, and erases it before it types. A second `inputText` with no erase gives "MulkMulk" (#781).
+appId: com.qariah.app
+---
+# The S33 background-playback prompt can come up over any screen (README gotcha #2).
+- runFlow:
+    when:
+      visible: 'NOT NOW'
+    commands:
+      - tapOn: 'NOT NOW'
+- tapOn: '.*Listen'
+# A `when` check does not wait, so first wait for either screen to render.
+- extendedWaitUntil:
+    visible: '(Surahs|Search surahs.*|Mulk)'
+    timeout: 10000
+# Full match: "Surahs" is the tile on the Listen root; the "All Surahs" title does not match.
+- runFlow:
+    when:
+      visible: 'Surahs'
+    commands:
+      - tapOn: 'Surahs'
+- tapOn: '(Search surahs.*|Mulk)'
+- eraseText: 30
+- inputText: 'Mulk'
+- hideKeyboard
+- tapOn: '.*Al-Mulk.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+# The reciters are in alphabetical order, so Zaynab Talha is at the end of the list.
+- scrollUntilVisible:
+    element: '.*Zaynab Talha.*'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+# This tap starts the audio. A screen that plays audio never settles, so keep the settle
+# wait short (README, "Slow emulator").
+- tapOn:
+    text: '.*Zaynab Talha.*'
+    waitToSettleTimeoutMs: 1000
+- waitForAnimationToEnd:
+    timeout: 3000
+# On iOS a tap on a recitation opens the full player. Close it to reach the mini player.
+- runFlow:
+    when:
+      visible:
+        id: 'player-close'
+    commands:
+      - tapOn:
+          id: 'player-close'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+      text: 'Pause'
+    timeout: 10000
+- assertVisible:
+    id: 'mini-player-expand'
+    text: '.*Al-Mulk.*Zaynab Talha.*'

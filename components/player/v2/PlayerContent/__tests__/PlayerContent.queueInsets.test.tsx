@@ -23,7 +23,7 @@
 import React from 'react';
 import {fireEvent, render, screen} from '@testing-library/react-native';
 import type {ReactTestInstance} from 'react-test-renderer';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 
 const mockInsets = {top: 47, bottom: 34, left: 0, right: 0};
 
@@ -45,7 +45,8 @@ const mockPlayerState = {
     currentIndex: 0,
   },
   isImmersive: false,
-  sheetMode: 'expanded',
+  // Pass D: the verse text mounts only while the player is open (#184).
+  sheetMode: 'full',
 };
 
 const mockActions = {
@@ -124,6 +125,11 @@ jest.mock('@gorhom/bottom-sheet', () => ({
     animatedPosition: {value: 0},
     animatedLayoutState: {get: () => ({containerHeight: 0})},
   }),
+}));
+
+// Pass D: the player drag comes from upstream's PlayerSurface context.
+jest.mock('@/components/player/v2/PlayerDismissContext', () => ({
+  usePlayerDismissGesture: () => ({}),
 }));
 
 jest.mock('@/hooks/usePlayerActions', () => ({
@@ -364,10 +370,17 @@ describe('PlayerContent — the queue insets (TECH_DEBT #295, #307)', () => {
 
 // @ai Qariah (TECH_DEBT #380): the sheet pan of the top bar and the controls card starts only on a
 // vertical move, so a side-to-side drag on the progress bar seeks on Android.
+// Pass D: upstream's PlayerSurface owns the drag now (createDismissGesture);
+// PlayerContent only attaches it, so the test reads that gesture's source.
 describe('PlayerContent — the sheet pan offsets (TECH_DEBT #380)', () => {
   it('moves the sheet only on a vertical drag', () => {
-    renderPlayerContent();
-    expect(mockPanCalls.activeOffsetY).toContainEqual([[-10, 10]]);
-    expect(mockPanCalls.failOffsetX).toContainEqual([[-10, 10]]);
+    const source = require('fs').readFileSync(
+      require('path').join(__dirname, '../../PlayerSurface/index.tsx'),
+      'utf8',
+    ) as string;
+    const dismiss = source.slice(source.indexOf('createDismissGesture = '));
+    expect(dismiss).toMatch(
+      /\.activeOffsetY\(\[-10, 10\]\)[\s\S]*?\.failOffsetX\(\[-10, 10\]\)/,
+    );
   });
 });

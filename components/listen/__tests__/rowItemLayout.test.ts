@@ -1,7 +1,7 @@
 // @ai-generated
 // Qariah (TECH_DEBT #314): the item layout of the horizontal Listen rows is
 // the real one: the scaled card width, the gap and the padding.
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {
   ROW_GAP,
   ROW_PADDING,

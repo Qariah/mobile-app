@@ -1,18 +1,17 @@
 import React, {useCallback, useMemo} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
-import {ScaledSheet, moderateScale} from 'react-native-size-matters';
+import {ScaledSheet, moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {Theme} from '@/utils/themeUtils';
-import ActionSheet, {
-  SheetProps,
-  SheetManager,
-} from 'react-native-actions-sheet';
+import {SheetProps, SheetManager} from 'react-native-actions-sheet';
+import ActionSheet from '@/components/sheets/AdaptiveActionSheet';
 import {Feather} from '@expo/vector-icons';
 import {PlaylistIcon} from '@/components/Icons';
 import Color from 'color';
 import {useUploadsStore} from '@/store/uploadsStore';
 import {usePlaylists} from '@/hooks/usePlaylists';
 import {pickAndImportAudioFiles} from '@/utils/importAudio';
+import {isFeatureEnabled} from '@/config/featureFlags'; // @ai
 // @ai-start
 import {useTranslation} from 'react-i18next';
 // @ai-end
@@ -26,6 +25,8 @@ export const AddToCollectionSheet = (
   const {t} = useTranslation('sheets');
   const {importFile, importFiles} = useUploadsStore();
   const {playlists, createPlaylist} = usePlaylists();
+  // Sprint 52: the Upload row follows upstream's own `userUploads` flag.
+  const uploadsEnabled = isFeatureEnabled('userUploads');
 
   const existingPlaylistColors = useMemo(
     () => playlists.map(p => p.color).filter(Boolean) as string[],
@@ -79,6 +80,7 @@ export const AddToCollectionSheet = (
   return (
     <ActionSheet
       id={props.sheetId}
+      tabletPresentation="menu" // @ai
       containerStyle={styles.sheetContainer}
       indicatorStyle={styles.indicator}
       gestureEnabled={true}>
@@ -88,23 +90,27 @@ export const AddToCollectionSheet = (
         </View>
 
         <View style={styles.card}>
-          <Pressable
-            style={({pressed}) => [
-              styles.option,
-              pressed && styles.optionPressed,
-            ]}
-            onPress={handleNewUpload}>
-            <Feather
-              name="mic"
-              size={moderateScale(18)}
-              color={theme.colors.text}
-            />
-            <Text style={styles.optionText}>
-              {t('addToCollection.uploadRecitation')}
-            </Text>
-          </Pressable>
+          {uploadsEnabled && (
+            <>
+              <Pressable
+                style={({pressed}) => [
+                  styles.option,
+                  pressed && styles.optionPressed,
+                ]}
+                onPress={handleNewUpload}>
+                <Feather
+                  name="mic"
+                  size={moderateScale(18)}
+                  color={theme.colors.text}
+                />
+                <Text style={styles.optionText}>
+                  {t('addToCollection.uploadRecitation')}
+                </Text>
+              </Pressable>
 
-          <View style={styles.divider} />
+              <View style={styles.divider} />
+            </>
+          )}
 
           <Pressable
             style={({pressed}) => [

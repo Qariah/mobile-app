@@ -5,7 +5,7 @@
 import {readFileSync} from 'fs';
 import {join} from 'path';
 import {getMushafLayout} from '../constants';
-import {readerListKey} from '../readerListKey';
+import {readerListKey, readingListKey} from '../readerListKey';
 
 const SOURCE = readFileSync(join(__dirname, '..', 'main.tsx'), 'utf8');
 
@@ -81,12 +81,42 @@ describe('main.tsx keys every reader list on readerListKey', () => {
     expect(SOURCE).toMatch(/const listKey = readerListKey\(metrics\);/);
   });
 
-  it('gives all four list branches the key', () => {
+  it('gives the three page list branches the key', () => {
     const open = SOURCE.indexOf('<MushafRotationStage');
     const close = SOURCE.indexOf('</MushafRotationStage>');
     const inside = SOURCE.slice(open, close);
-    // ContinuousMushafView, ContinuousListView, the spread list, the page list.
-    expect(inside.match(/key=\{listKey\}/g)).toHaveLength(4);
+    // ContinuousMushafView.
+    expect(inside.match(/key=\{listKey\}/g)).toHaveLength(1);
+    // The spread list and the page list (Sprint 52 Task 8): listKey and what
+    // the list shows.
+    expect(inside.match(/key=\{pagerKey\}/g)).toHaveLength(2);
+    expect(SOURCE).toMatch(/const pagerKey = `\$\{listKey\}\|\$\{viewMode\}\|/);
     expect(inside).not.toMatch(/key=\{orientationKey\}/);
+  });
+
+  // Sprint 52 Task 8: the vertical list reflows to its text column.
+  it('gives the vertical list view the key of its text column', () => {
+    const start = SOURCE.indexOf('<ContinuousListView\n');
+    expect(start).toBeGreaterThan(-1);
+    expect(SOURCE.slice(start, start + 120)).toMatch(/key=\{verticalListKey\}/);
+    expect(SOURCE).toMatch(
+      /const verticalListKey = readingPageSize\s*\?\s*readingListKey\(readingPageSize\.width\)\s*:\s*listKey;/,
+    );
+  });
+});
+
+describe('readingListKey (Sprint 52 Task 8)', () => {
+  it('stays the same while the 680 pt column keeps its width', () => {
+    // An 11-inch iPad in landscape, then the same window beside the 360 pt
+    // ayah panel; a 13-inch iPad in landscape and portrait.
+    expect(readingListKey(1194)).toBe(readingListKey(834));
+    expect(readingListKey(1376)).toBe(readingListKey(1032));
+    expect(readingListKey(1376)).toBe(readingListKey(1016));
+  });
+
+  it('changes when the column itself gets narrower', () => {
+    // A 13-inch iPad in portrait beside the panel: a 672 pt pane.
+    expect(readingListKey(672)).not.toBe(readingListKey(1032));
+    expect(readingListKey(600)).not.toBe(readingListKey(620));
   });
 });

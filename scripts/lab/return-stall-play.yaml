@@ -1,0 +1,33 @@
+# @ai Qariah: PERF-09 / PLY-14 set-up. Plays Al-Mulk (Zaynab Talha) and leaves the mini player.
+appId: com.qariah.app
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../.maestro/subflows/skip-onboarding.yaml
+- tapOn: '.*Listen'
+- tapOn: 'Surahs'
+- tapOn: 'Search surahs.*'
+- inputText: 'Mulk'
+- hideKeyboard
+- tapOn: '.*Al-Mulk.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- scrollUntilVisible:
+    element: '.*Zaynab Talha.*'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: '.*Zaynab Talha.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      visible:
+        id: 'player-close'
+    commands:
+      - tapOn:
+          id: 'player-close'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+    timeout: 10000

@@ -11,9 +11,17 @@ import Animated, {
   Easing,
   Extrapolation,
 } from 'react-native-reanimated';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {LinearGradient} from 'expo-linear-gradient';
 import {getRandomColors} from '@/utils/gradientColors';
+// @ai-start Qariah
+import {
+  NowPlayingBarsNative,
+  NowPlayingBarsStill,
+} from '@/components/QariahNowPlayingBars';
+import {isLiteMode} from '@/services/lite/liteMode';
+import {Platform} from 'react-native';
+// @ai-end
 
 // Create an animatable version of LinearGradient
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -31,7 +39,11 @@ interface NowPlayingIndicatorProps {
 const MAX_BAR_HEIGHT = moderateScale(16);
 const MIN_BAR_HEIGHT = moderateScale(3);
 
-export const NowPlayingIndicator: React.FC<NowPlayingIndicatorProps> = ({
+// @ai Qariah: the upstream bars, kept as they are; Qariah shows the bars of
+// components/QariahNowPlayingBars.tsx (the wrapper at the end of this file).
+export const ReanimatedNowPlayingIndicator: React.FC<
+  NowPlayingIndicatorProps
+> = ({
   isPlaying,
   barCount = 3,
   gap = moderateScale(2),
@@ -283,3 +295,17 @@ const createStyles = () =>
       borderRadius: moderateScale(2),
     },
   });
+
+// @ai-start
+// Qariah: still bars in Lite mode; on other Android phones the bars on React
+// Native's native animation driver. The Reanimated bars above kept the Android
+// UI thread about 55% busy while audio played (planning/lite-mode-design.md,
+// section 5b). iOS keeps the upstream bars.
+export const NowPlayingIndicator: React.FC<
+  NowPlayingIndicatorProps
+> = props => {
+  if (isLiteMode()) return <NowPlayingBarsStill {...props} />;
+  if (Platform.OS === 'android') return <NowPlayingBarsNative {...props} />;
+  return <ReanimatedNowPlayingIndicator {...props} />;
+};
+// @ai-end

@@ -1,5 +1,5 @@
 // @ai
-// DO NOT DROP — guards patches/react-native-screens+4.29.0.patch (QP-08).
+// DO NOT DROP — guards the QP-08 fix in react-native-screens 4.30.0 and later.
 //
 // The defect (iOS 26.1 and later, test iPhone on iOS 27): after Settings ->
 // Storage -> "Clear cache", a tap on the Listen tab content did nothing until
@@ -16,9 +16,10 @@
 // focused `pointerEvents: 'none'`. So the visible tab takes no touches.
 //
 // react-native-screens 4.30.0 fixes this (software-mansion/react-native-
-// screens#4862). The patch backports that fix. These tests read the native
-// source that the iOS build compiles: the native tabs cannot mount in Jest.
-// They pass for 4.29.0 with the patch, and for 4.30.0 or later.
+// screens#4862). Qariah backported it to 4.29.0 with a patch; Pass D
+// (2026-11-07) moved to 4.30.1 and removed the patch. These tests read the
+// native source that the iOS build compiles: the native tabs cannot mount in
+// Jest. They fail if an upgrade or a downgrade loses the fix.
 import {readFileSync} from 'fs';
 import {dirname, join} from 'path';
 
@@ -34,8 +35,8 @@ const CONTROLLER = join(
 function expectPatched(ok: boolean, what: string): void {
   if (!ok) {
     throw new Error(
-      `${what}. Run \`npx patch-package\`: ` +
-        'patches/react-native-screens+4.29.0.patch is not applied.',
+      `${what}. react-native-screens must keep the fix of ` +
+        'software-mansion/react-native-screens#4862 (4.30.0 or later).',
     );
   }
 }
@@ -81,7 +82,7 @@ describe('react-native-screens keeps a user tab selection (QP-08)', () => {
   it('the controller marks its own write of the selected tab', () => {
     const body = methodBody(source, '- (void)applySelectedScreenController:');
     expectPatched(
-      /_isApplyingProgrammaticTabSelection = YES;\s*self\.selectedTab = screenController\.tab;\s*_isApplyingProgrammaticTabSelection = NO;/.test(
+      /_isApplyingProgrammaticTabSelection = YES;[\s\S]*?self\.selectedTab = screenController\.tab;[\s\S]*?_isApplyingProgrammaticTabSelection = NO;/.test(
         body,
       ),
       'applySelectedScreenController: does not mark its own selection',

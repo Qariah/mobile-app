@@ -1,6 +1,6 @@
 import React, {useCallback, useMemo, useState} from 'react';
-import {View, ViewStyle} from 'react-native';
-import {moderateScale} from 'react-native-size-matters';
+import {StyleSheet, View, ViewStyle} from 'react-native';
+import {moderateScale} from '@/utils/scale';
 import {useFocusEffect} from 'expo-router';
 import {Surah} from '@/data/surahData';
 import {useTranslation} from 'react-i18next';
@@ -10,6 +10,14 @@ import {resolveContinueReadingHistorySize} from './continueReadingHistorySize';
 import {HeroSection} from './HeroSection';
 import {SurahHeroSection} from './SurahsHero';
 import {RecentReadingCarousel} from './RecentReadingCarousel';
+// @ai-start
+import {useResponsive} from '@/hooks/useResponsive';
+import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
+import {
+  ContinueListeningHero,
+  findResumableIndex,
+} from './ContinueListeningHero';
+// @ai-end
 
 interface ContinueReadingHeroProps {
   onSurahLongPress?: (surah: Surah) => void;
@@ -27,6 +35,11 @@ export function ContinueReadingHero({
   onSurahLongPress,
 }: ContinueReadingHeroProps) {
   const {t} = useTranslation('home');
+  const {isTablet} = useResponsive();
+  // iPad shows Continue listening beside it once something has been played.
+  const showListening = useRecentlyPlayedStore(
+    state => isTablet && findResumableIndex(state.recentTracks) >= 0,
+  );
   // MMKV reads aren't reactive, and this component is typically cached
   // inside a memoized FlashList header — so re-read the session value
   // every time the Surahs tab regains focus (e.g. after backing out of
@@ -59,6 +72,31 @@ export function ContinueReadingHero({
   // RFC-011: a history size above 1 with reading history shows the carousel; else the single hero below.
   const historySize = resolveContinueReadingHistorySize();
   if (historySize > 1 && lastReadPage !== null) {
+    // @ai-start
+    // Sprint 52 Task 6: an iPad keeps upstream's row, with the carousel in
+    // the reading card's place. A phone keeps the early return.
+    if (showListening) {
+      return (
+        <HeroSection
+          mainHero={
+            <View style={styles.tabletRow}>
+              <View style={styles.tabletCell}>
+                <RecentReadingCarousel
+                  onSurahLongPress={onSurahLongPress}
+                  historySize={historySize}
+                  bare
+                />
+              </View>
+              <View style={styles.tabletCell}>
+                <ContinueListeningHero style={styles.fill} />
+              </View>
+            </View>
+          }
+          randomHero={false}
+        />
+      );
+    }
+    // @ai-end
     return (
       <RecentReadingCarousel
         onSurahLongPress={onSurahLongPress}
@@ -66,25 +104,52 @@ export function ContinueReadingHero({
       />
     );
   }
+  const readingHero = (
+    <SurahHeroSection
+      surah={displaySurah}
+      onLongPress={onSurahLongPress}
+      title={title}
+      style={cardStyle}
+      // Only wire the resume page when the user actually has
+      // reading history; otherwise the hero falls back to
+      // Surah of the Day and should open at page 1.
+      resumePage={lastReadPage ?? undefined}
+    />
+  );
 
   return (
     <HeroSection
       mainHero={
-        <View style={{paddingHorizontal: moderateScale(16)}}>
-          <SurahHeroSection
-            surah={displaySurah}
-            onLongPress={onSurahLongPress}
-            title={title}
-            style={cardStyle}
-            // Only wire the resume page when the user actually has
-            // reading history; otherwise the hero falls back to
-            // Surah of the Day and should open at page 1.
-            resumePage={lastReadPage ?? undefined}
-          />
-        </View>
+        showListening ? (
+          <View style={styles.tabletRow}>
+            <View style={styles.tabletCell}>{readingHero}</View>
+            <View style={styles.tabletCell}>
+              <ContinueListeningHero style={styles.fill} />
+            </View>
+          </View>
+        ) : (
+          <View style={{paddingHorizontal: moderateScale(16)}}>
+            {readingHero}
+          </View>
+        )
       }
       randomHero={false}
     />
   );
 }
+
+const styles = StyleSheet.create({
+  tabletRow: {
+    flexDirection: 'row',
+    gap: moderateScale(16),
+    paddingHorizontal: moderateScale(16),
+  },
+  tabletCell: {
+    flex: 1,
+    height: SECTION_HEIGHT,
+  },
+  fill: {
+    flex: 1,
+  },
+});
 // @ai-end

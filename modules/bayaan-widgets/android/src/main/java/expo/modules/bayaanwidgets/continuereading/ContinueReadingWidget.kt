@@ -40,7 +40,12 @@ import expo.modules.bayaanwidgets.StaticData
 import expo.modules.bayaanwidgets.WidgetLanguage
 import expo.modules.bayaanwidgets.WidgetLastRead
 import expo.modules.bayaanwidgets.ui.ArabicText
-import expo.modules.bayaanwidgets.ui.Logo
+import expo.modules.bayaanwidgets.ui.Eyebrow
+import expo.modules.bayaanwidgets.ui.ReadingColors
+import expo.modules.bayaanwidgets.ui.isNightMode
+import androidx.glance.appwidget.LinearProgressIndicator
+import androidx.glance.layout.Box
+import androidx.glance.layout.fillMaxSize
 import expo.modules.bayaanwidgets.ui.SurahCard
 import expo.modules.bayaanwidgets.ui.WidgetColors
 import expo.modules.bayaanwidgets.ui.WidgetSizes
@@ -67,54 +72,101 @@ class ContinueReadingWidget : GlanceAppWidget() {
     }
   }
 
+  // @ai-start
   @Composable
   private fun Content(context: Context, strings: Context, language: String?, lastRead: WidgetLastRead?) {
     val size = LocalSize.current
     val page = lastRead?.page ?: 1
-    val root = GlanceModifier.fillMaxSize().background(WidgetColors.BACKGROUND).cornerRadius(20.dp)
-      .padding(14.dp).clickable(appLink(context, "mushaf/$page"))
+    val surah = StaticData.surah(context, lastRead?.surahId ?: 1)
+    // @ai Qariah (TECH_DEBT #357): the surah name in the app language.
+    val surahName = lastRead?.surahName ?: surah?.let { WidgetLanguage.surahName(it, language) } ?: "Al-Fatihah"
+    val progress = (page.toFloat() / MUSHAF_PAGES).coerceIn(0f, 1f)
+    val root = GlanceModifier.fillMaxSize().background(ReadingColors.BACKGROUND).cornerRadius(20.dp)
+      .clickable(appLink(context, "mushaf/$page"))
+    // @ai Qariah (TECH_DEBT #357): the text in the app language.
+    val eyebrow = strings.getString(if (lastRead == null) R.string.bayaan_widget_text_start_reading else R.string.bayaan_widget_text_continue_reading)
+    val short = WidgetSizes.isShort(size)
     if (size.width >= WidgetSizes.MEDIUM.width) {
-      Row(root) {
-        PageColumn(context, strings, language, lastRead, showLogo = false, GlanceModifier.width(110.dp).fillMaxHeight())
+      Row(root.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        PageGlimpse(context, lastRead, surahName, GlanceModifier.width(if (short) 80.dp else 92.dp).fillMaxHeight())
         Spacer(GlanceModifier.width(14.dp))
-        Column(GlanceModifier.defaultWeight().fillMaxHeight(), horizontalAlignment = Alignment.End) {
-          Logo(14)
+        Column(GlanceModifier.defaultWeight().fillMaxHeight()) {
+          Eyebrow(eyebrow, ReadingColors.LABEL)
+          Text(surahName, maxLines = 1, style = TextStyle(color = ReadingColors.PRIMARY, fontSize = 18.sp, fontWeight = FontWeight.Bold))
+          Text(
+            lastRead?.let { strings.getString(R.string.bayaan_widget_text_page_juz, it.page, it.juz) }
+              ?: strings.getString(R.string.bayaan_widget_text_page, 1),
+            maxLines = 1,
+            style = TextStyle(color = ReadingColors.SECONDARY, fontSize = 12.sp))
           Spacer(GlanceModifier.defaultWeight())
-          val opening = lastRead?.openingText.orEmpty()
-          if (opening.isNotEmpty()) {
-            ArabicText(context, opening, ArabicBitmap.QURAN_FONT, size.width.value - 28 - 14 - 110, 50f, 22f, 12f, 2, center = false)
-            Spacer(GlanceModifier.height(4.dp))
+          PageProgress(progress)
+          // A 110 dp tall cell has no room for the button; the whole widget opens the page.
+          if (!short) {
+            Spacer(GlanceModifier.height(8.dp))
+            Box(
+              GlanceModifier.fillMaxWidth().height(30.dp).background(ReadingColors.BUTTON).cornerRadius(15.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(strings.getString(if (lastRead == null) R.string.bayaan_widget_text_start_reading else R.string.bayaan_widget_text_resume_reading),
+                maxLines = 1,
+                style = TextStyle(color = ReadingColors.BUTTON_GLYPH, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+            }
           }
-          Text(strings.getString(if (lastRead == null) R.string.bayaan_widget_text_start_reading else R.string.bayaan_widget_text_continue_reading), maxLines = 1,
-            style = TextStyle(color = WidgetColors.SECONDARY, fontSize = 12.sp, fontWeight = FontWeight.Bold))
         }
       }
     } else {
-      PageColumn(context, strings, language, lastRead, showLogo = true, root)
+      // Words, not letters: a short label, the page number on its own line, then "page · Juz".
+      Column(root.padding(12.dp)) {
+        // @ai Qariah (TECH_DEBT #357): the text and the digits in the app language.
+        Eyebrow(strings.getString(if (lastRead == null) R.string.bayaan_widget_text_start else R.string.bayaan_widget_text_last_read),
+          ReadingColors.LABEL)
+        Spacer(GlanceModifier.defaultWeight())
+        Text(WidgetLanguage.number(strings, page), maxLines = 1,
+          style = TextStyle(color = ReadingColors.PRIMARY, fontSize = 28.sp, fontWeight = FontWeight.Bold))
+        Text(
+          lastRead?.let { strings.getString(R.string.bayaan_widget_text_page_label_juz, it.juz) }
+            ?: strings.getString(R.string.bayaan_widget_text_page_label),
+          maxLines = 1,
+          style = TextStyle(color = ReadingColors.SECONDARY, fontSize = 11.sp, fontWeight = FontWeight.Medium))
+        Text(surahName, maxLines = 1,
+          style = TextStyle(color = ReadingColors.PRIMARY, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+        Spacer(GlanceModifier.height(6.dp))
+        PageProgress(progress)
+      }
     }
   }
 
   @Composable
-  private fun PageColumn(
-    context: Context, strings: Context, language: String?, lastRead: WidgetLastRead?, showLogo: Boolean, modifier: GlanceModifier,
-  ) {
-    val surah = StaticData.surah(context, lastRead?.surahId ?: 1)
-    Column(modifier) {
-      Row(GlanceModifier.fillMaxWidth()) {
-        SurahCard(context, surah, 44, language)
-        if (showLogo) {
-          Spacer(GlanceModifier.defaultWeight())
-          Logo(14)
+  private fun PageProgress(progress: Float) {
+    LinearProgressIndicator(
+      progress = progress, modifier = GlanceModifier.fillMaxWidth().height(4.dp),
+      color = ReadingColors.LABEL, backgroundColor = ReadingColors.RULE,
+    )
+  }
+
+  /** A framed glimpse of the page: the surah name and its opening words. */
+  @Composable
+  private fun PageGlimpse(context: Context, lastRead: WidgetLastRead?, surahName: String, modifier: GlanceModifier) {
+    val ink = if (isNightMode(context)) 0xFFF4F3EC.toInt() else 0xFF06151C.toInt()
+    Column(
+      modifier.background(ReadingColors.RULE).cornerRadius(10.dp).padding(1.dp),
+    ) {
+      Column(
+        GlanceModifier.fillMaxSize().background(ReadingColors.BACKGROUND).cornerRadius(9.dp).padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        Text(surahName, maxLines = 1, style = TextStyle(color = ReadingColors.LABEL, fontSize = 9.sp, fontWeight = FontWeight.Bold))
+        Spacer(GlanceModifier.height(4.dp))
+        val opening = lastRead?.openingText.orEmpty()
+        if (opening.isNotEmpty()) {
+          ArabicText(context, opening, ArabicBitmap.QURAN_FONT, 74f, 64f, 14f, 9f, 4, center = true, color = ink)
         }
       }
-      Spacer(GlanceModifier.defaultWeight())
-      Text(WidgetLanguage.number(strings, lastRead?.page ?: 1), style = TextStyle(color = WidgetColors.WHITE, fontSize = 30.sp, fontWeight = FontWeight.Bold))
-      Text(lastRead?.surahName ?: surah?.let { WidgetLanguage.surahName(it, language) } ?: "Al-Fatihah", maxLines = 1,
-        style = TextStyle(color = WidgetColors.WHITE, fontSize = 12.sp, fontWeight = FontWeight.Bold))
-      Text(
-        lastRead?.let { strings.getString(R.string.bayaan_widget_text_juz, it.juz) } ?: strings.getString(R.string.bayaan_widget_text_start_reading),
-        maxLines = 1,
-        style = TextStyle(color = WidgetColors.TERTIARY, fontSize = 11.sp))
     }
   }
+
+  private companion object {
+    const val MUSHAF_PAGES = 604
+  }
+  // @ai-end
 }

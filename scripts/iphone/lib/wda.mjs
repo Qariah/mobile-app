@@ -298,10 +298,11 @@ export class Wda {
 
   /**
    * Types text into the element that has the keyboard focus. It waits for the keyboard first,
-   * and it types at 15 keys a second: keys typed while the keyboard moves in are lost (on the
-   * test iPhone "Walrus" became "Wrus" and "Pelican" became "Plican").
+   * and it types at 6 keys a second: keys typed while the keyboard moves in are lost (on the
+   * test iPhone "Walrus" became "Wrus" and "Pelican" became "Plican"). At 15 keys a second,
+   * "QTest" still became "Qest" in about half of the runs, on 3.2.3 too.
    */
-  async type(text, {frequency = 15} = {}) {
+  async type(text, {frequency = 6} = {}) {
     await this.waitKeyboard();
     return this.s('POST', '/wda/keys', {value: [...String(text)], frequency});
   }

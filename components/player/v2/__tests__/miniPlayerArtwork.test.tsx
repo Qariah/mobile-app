@@ -29,6 +29,19 @@ jest.mock('@/hooks/usePlayerActions', () => ({
   usePlayerActions: () => ({play: jest.fn(), pause: jest.fn()}),
 }));
 
+// Pass D: the mini players are the anchor of upstream's morphing player
+// surface. The test reads the controls, so the anchor and its swipe-up
+// gesture are stubs.
+jest.mock('@/components/player/v2/useMiniPlayerAnchor', () => ({
+  useMiniPlayerAnchor: () => ({anchorRef: {current: null}, openGesture: {}}),
+}));
+jest.mock('react-native-gesture-handler', () => ({
+  ...jest.requireActual('react-native-gesture-handler'),
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  GestureDetector: ({children}) => children,
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  GestureHandlerRootView: ({children}) => children,
+}));
 jest.mock('@/services/player/sheetRef', () => ({
   expandPlayerSheet: jest.fn(),
 }));

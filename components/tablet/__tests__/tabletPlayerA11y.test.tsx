@@ -63,7 +63,7 @@ jest.mock('@/hooks/usePlayerActions', () => ({
   }),
 }));
 
-let mockLoved = false;
+const mockLoved = false;
 jest.mock('@/hooks/useLoved', () => ({
   useLoved: () => ({
     isTrackLoved: () => mockLoved,
@@ -114,10 +114,14 @@ jest.mock('@/hooks/useCurrentTrackRewayah', () => ({
 
 jest.mock('@/services/rewayah/RewayahIdentity', () => ({
   getShortLabel: () => '',
+  // Pass D: the reciter column labels a chip "<rewayah> · <style>".
+  // @ts-expect-error jest.mock() factory: TS annotations are banned by babel-jest
+  getDisplayLabelFromName: name => name,
 }));
 
 jest.mock('@/components/player/v2/recitationStyle', () => ({
   getRecitationStyleLabel: () => 'Murattal',
+  getRecitationStyleTitle: () => 'Murattal',
 }));
 
 let mockImageUrl: string | null = null;
@@ -153,7 +157,7 @@ jest.mock('@/hooks/useReadingThemeColors', () => ({
   useReadingThemeColors: () => ({background: '#ffffff'}),
 }));
 
-let mockOrientation: 'portrait' | 'landscape' = 'landscape';
+const mockOrientation: 'portrait' | 'landscape' = 'landscape';
 jest.mock('@/hooks/useResponsive', () => ({
   useResponsive: () => ({isTablet: true, orientation: mockOrientation}),
 }));
@@ -299,129 +303,12 @@ jest.mock('@/i18n/qariahIosLanguage', () => ({
   invertLtrNativeSlider: false,
 }));
 
-import TabletPlayer from '@/components/player/v2/TabletPlayer';
-import {TabletPlayerControlsColumn} from '../TabletPlayerControlsColumn';
 import {TabletPlayerReciterColumn} from '../TabletPlayerReciterColumn';
 
-const handlers = {
-  onSpeedPress: jest.fn(),
-  onSleepTimerPress: jest.fn(),
-  onMushafLayoutPress: jest.fn(),
-  onAmbientPress: jest.fn(),
-  onOptionsPress: jest.fn(),
-  onFollowAlongPress: jest.fn(),
-};
-
-const players = [
-  {
-    name: 'TabletPlayer (landscape sidebar)',
-    orientation: 'landscape' as const,
-    element: () => <TabletPlayer {...handlers} measuredParentWidth={1366} />,
-  },
-  {
-    name: 'TabletPlayer (portrait dock)',
-    orientation: 'portrait' as const,
-    element: () => <TabletPlayer {...handlers} measuredParentWidth={1024} />,
-  },
-  {
-    name: 'TabletPlayerControlsColumn',
-    orientation: 'portrait' as const,
-    element: () => (
-      <TabletPlayerControlsColumn
-        {...handlers}
-        showQueue={false}
-        onQueueToggle={jest.fn()}
-      />
-    ),
-  },
-];
-
-// The labels of the phone player (Sprint 50 Task 20), by testID.
-const CONTROLS: Array<[string, string]> = [
-  ['player-skip-back', 'Skip back 15 seconds'],
-  ['player-previous', 'Previous'],
-  ['player-play-pause', 'Play'],
-  ['player-next', 'Next'],
-  ['player-skip-forward', 'Skip forward 15 seconds'],
-  ['player-mushaf-settings', 'Mushaf settings'],
-  ['player-speed', 'Playback Speed'],
-  ['player-repeat', 'Repeat'],
-  ['player-sleep-timer', 'Sleep Timer'],
-  ['player-ambient', 'Ambient Sounds'],
-  ['player-locate-verse', 'Follow Along'],
-  ['player-queue-button', 'Queue'],
-  ['player-love', 'Add to loved'],
-  ['player-progress', 'Playback position'],
-];
-
-describe.each(players)(
-  '$name: labels of the phone player (TECH_DEBT #339)',
-  ({element, orientation}) => {
-    beforeEach(() => {
-      mockOrientation = orientation;
-      mockLoved = false;
-      mockState.playback.state = 'paused';
-      mockState.playback.rate = 1;
-      mockState.settings.repeatMode = 'none';
-      mockState.settings.sleepTimerEnd = null;
-    });
-
-    it.each(CONTROLS)('finds %s by the label "%s"', (testID, label) => {
-      const {getByLabelText} = render(element());
-      const control = getByLabelText(label);
-      expect(control.props.testID).toBe(testID);
-      expect(control.props.accessibilityRole).toBe(
-        testID === 'player-progress' ? 'adjustable' : 'button',
-      );
-    });
-
-    it('gives play/pause, love, repeat and speed their state', () => {
-      mockState.playback.state = 'playing';
-      mockLoved = true;
-      mockState.settings.repeatMode = 'track';
-      mockState.playback.rate = 1.5;
-      const {getByTestId} = render(element());
-      expect(getByTestId('player-play-pause').props.accessibilityLabel).toBe(
-        'Pause',
-      );
-      expect(getByTestId('player-love').props.accessibilityLabel).toBe(
-        'Remove from loved',
-      );
-      expect(getByTestId('player-repeat').props.accessibilityValue).toEqual({
-        text: 'Current recitation',
-      });
-      expect(getByTestId('player-speed').props.accessibilityValue).toEqual({
-        text: '1.5x',
-      });
-    });
-
-    it('marks the sleep timer and Follow Along as selected when they are on', () => {
-      mockState.settings.sleepTimerEnd = Date.now() + 60_000;
-      const {getByTestId} = render(element());
-      expect(
-        getByTestId('player-sleep-timer').props.accessibilityState,
-      ).toMatchObject({selected: true});
-      expect(
-        getByTestId('player-locate-verse').props.accessibilityState,
-      ).toMatchObject({selected: true});
-    });
-
-    it('makes the slider the adjustable element on iOS, as the phone does', () => {
-      const platformOS = Platform.OS;
-      Platform.OS = 'ios';
-      try {
-        const {getByTestId} = render(element());
-        const slider = getByTestId('player-progress');
-        expect(slider.props.accessible).toBe(true);
-        expect(slider.props.accessibilityValue).toEqual({
-          text: '0:30 of 5:00',
-        });
-      } finally {
-        Platform.OS = platformOS;
-      }
-    });
-  },
-);
+// Pass D (2026-11-07): upstream replaced TabletPlayer and
+// TabletPlayerControlsColumn with components/player/v2/tablet/*, which label
+// their controls through hooks/usePlayerA11y (its own tests cover them). The
+// tests of the two deleted players are removed; the reciter column stays.
 
 describe('TabletPlayerReciterColumn labels (TECH_DEBT #339)', () => {
   it('names the button that opens the reciter profile', () => {

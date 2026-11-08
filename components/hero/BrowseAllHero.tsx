@@ -1,14 +1,8 @@
 import React, {useMemo, useEffect, useRef} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  InteractionManager,
-} from 'react-native';
+import {View, Text, StyleSheet, Pressable} from 'react-native';
 import {Link} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -25,6 +19,7 @@ import Color from 'color';
 // @ai-start
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
+import {runAfterFirstPaint} from '@/utils/runAfterFirstPaint'; // @ai Qariah
 // @ai-end
 
 const TILE_COLORS = [
@@ -152,7 +147,9 @@ const TileColumn = React.memo(
     }));
 
     useEffect(() => {
-      const task = InteractionManager.runAfterInteractions(() => {
+      // @ai Qariah: after the screen transition (runAfterInteractions runs at
+      // once in React Native 0.86).
+      const task = runAfterFirstPaint(() => {
         if (!mountedRef.current) return;
         scrollY.value = startOffset;
         scrollY.value = withRepeat(
@@ -163,7 +160,7 @@ const TileColumn = React.memo(
           -1,
           false,
         );
-      });
+      }, 300);
 
       return () => {
         mountedRef.current = false;

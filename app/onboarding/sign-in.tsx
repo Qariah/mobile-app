@@ -19,8 +19,9 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {OnboardingColumn} from '@/components/onboarding/OnboardingColumn'; // @ai
 import {useRouter} from 'expo-router';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {useAuth} from '@/services/auth';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
@@ -52,64 +53,67 @@ export default function OnboardingSignIn() {
     <SafeAreaView
       style={[styles.container, {backgroundColor: theme.colors.background}]}
       edges={['top', 'bottom']}>
-      <View style={styles.content}>
-        <Text style={[styles.title, {color: theme.colors.text}]}>
-          {t('qariah:signIn.onboardingTitle')}
-        </Text>
-        <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
-          {t('qariah:signIn.onboardingBody')}
-        </Text>
-        {/* `lastError` is technical English ("State mismatch (possible
-         * CSRF)"); it stays in AuthContext for the sign-in telemetry. The
-         * user sees one localized sentence. */}
-        {lastError ? (
-          <View
-            style={[
-              styles.errorBox,
-              {
-                backgroundColor: 'rgba(220, 38, 38, 0.10)',
-                borderColor: 'rgba(220, 38, 38, 0.30)',
-              },
-            ]}>
-            <Text style={[styles.errorText, {color: theme.colors.error}]}>
-              {t('qariah:auth.signInFailed')}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.footer}>
-        <Pressable
-          onPress={signIn}
-          disabled={isWorking}
-          style={({pressed}) => [
-            styles.cta,
-            {backgroundColor: theme.colors.primary},
-            (pressed || isWorking) && styles.ctaPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={t('qariah:signIn.withQF')}>
-          {isWorking ? (
-            <ActivityIndicator color={theme.colors.background} />
-          ) : (
-            <Text style={[styles.ctaText, {color: theme.colors.background}]}>
-              {t('qariah:signIn.withQF')}
-            </Text>
-          )}
-        </Pressable>
-        <Pressable
-          onPress={() => {
-            qariahAnalytics.trackOnboardingSkipped({step: 'sign_in'});
-            router.replace('/onboarding/done');
-          }}
-          style={styles.skipButton}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel={t('qariah:signIn.skipA11y')}>
-          <Text style={[styles.skipText, {color: theme.colors.textSecondary}]}>
-            {t('qariah:common.skipForNow')}
+      <OnboardingColumn>
+        <View style={styles.content}>
+          <Text style={[styles.title, {color: theme.colors.text}]}>
+            {t('qariah:signIn.onboardingTitle')}
           </Text>
-        </Pressable>
-      </View>
+          <Text style={[styles.body, {color: theme.colors.textSecondary}]}>
+            {t('qariah:signIn.onboardingBody')}
+          </Text>
+          {/* `lastError` is technical English ("State mismatch (possible
+           * CSRF)"); it stays in AuthContext for the sign-in telemetry. The
+           * user sees one localized sentence. */}
+          {lastError ? (
+            <View
+              style={[
+                styles.errorBox,
+                {
+                  backgroundColor: 'rgba(220, 38, 38, 0.10)',
+                  borderColor: 'rgba(220, 38, 38, 0.30)',
+                },
+              ]}>
+              <Text style={[styles.errorText, {color: theme.colors.error}]}>
+                {t('qariah:auth.signInFailed')}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.footer}>
+          <Pressable
+            onPress={signIn}
+            disabled={isWorking}
+            style={({pressed}) => [
+              styles.cta,
+              {backgroundColor: theme.colors.primary},
+              (pressed || isWorking) && styles.ctaPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={t('qariah:signIn.withQF')}>
+            {isWorking ? (
+              <ActivityIndicator color={theme.colors.background} />
+            ) : (
+              <Text style={[styles.ctaText, {color: theme.colors.background}]}>
+                {t('qariah:signIn.withQF')}
+              </Text>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              qariahAnalytics.trackOnboardingSkipped({step: 'sign_in'});
+              router.replace('/onboarding/done');
+            }}
+            style={styles.skipButton}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel={t('qariah:signIn.skipA11y')}>
+            <Text
+              style={[styles.skipText, {color: theme.colors.textSecondary}]}>
+              {t('qariah:common.skipForNow')}
+            </Text>
+          </Pressable>
+        </View>
+      </OnboardingColumn>
     </SafeAreaView>
   );
 }
@@ -117,7 +121,6 @@ export default function OnboardingSignIn() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
     paddingHorizontal: moderateScale(28),
   },
   content: {

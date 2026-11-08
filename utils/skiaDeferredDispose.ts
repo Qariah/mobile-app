@@ -1,3 +1,4 @@
+// @ai-start
 /**
  * An object that owns Skia native memory and exposes the JSI `dispose()`.
  * `SkParagraph`, `SkImage`, `SkPaint` and `SkFont` all match this shape.
@@ -21,65 +22,25 @@ const uiQueueBarrier = () => {
  * Use this for an object that a `<Canvas>` renders. Dispose a
  * measurement-only object directly, because no draw ever holds it.
  *
- * ## The defect this closes (GH #458, Sentry QARIAHV2-3X)
+ * The defect: Skia's `redraw()` copies the live object pointers into a
+ * recorder and queues the draw with `runOnUI` (`sksg/Container.native.ts`).
+ * React can run an effect cleanup before the UI thread drains that queue. A
+ * direct `dispose()` then frees an object that a queued draw still holds, and
+ * the UI thread aborts with `Attempted to access a disposed object`.
  *
- * - `@shopify/react-native-skia` renders through `SkiaSGRoot.render()`. That
- *   method is `async` (`sksg/Reconciler.ts`), so its `redraw()` call lands in
- *   a microtask after the React commit.
- * - `redraw()` copies the live `SkParagraph` pointers into a recorder. It then
- *   queues the draw on the UI thread with `Rea.runOnUI`
- *   (`sksg/Container.native.ts`). The library offers no way to cancel that
- *   job, and `Container.unmount()` only sets a flag.
- * - React destroys the effects of a changed or deleted subtree before the UI
- *   thread drains that queue. A direct `dispose()` in an effect cleanup
- *   therefore frees a paragraph that a queued draw still holds.
- * - The UI thread then calls `recorder.play(picture)` on freed memory. The app
- *   aborts with `Attempted to access a disposed object`. A rotation of the
- *   Mushaf is the reliable trigger, because the orientation key in
- *   `components/mushaf/main.tsx` rebuilds every line in one commit.
+ * The barrier: `runOnUIAsync` pushes onto the same FIFO queue that Skia's
+ * `runOnUI` uses (`react-native-worklets/src/threads.native.ts`). The barrier
+ * therefore runs after every draw that can still hold the object. A draw
+ * queued after the cleanup is safe, because Skia commits the newest rendered
+ * tree, which already carries the replacement (or nothing).
  *
- * ## Why the barrier works
- *
- * `runOnUIAsync` pushes onto the same `runOnUIQueue` array that Skia's
- * `runOnUI` uses (`react-native-worklets/src/threads.native.ts`). The UI
- * thread replays that queue in push order, and the native `UIScheduler` keeps
- * the batches in order too. A barrier that the cleanup queues therefore runs
- * after every draw that can still hold the object.
- *
- * A draw that the app queues AFTER the cleanup is safe. This argument makes
- * no claim about WHEN the Skia commit happens, because two earlier versions
- * of this comment each named a mechanism and each named it wrong. Do not
- * reintroduce one.
- *
- * `redraw()` runs only from `SkiaSGRoot.render()`, and only after the `await`
- * on `updateContainer()` resolves (`sksg/Reconciler.ts`) — that is, only
- * after the Skia reconciler commits a tree. Every commit carries the newest
- * element that the app rendered. An object becomes disposable only because
- * the app rendered a replacement, or rendered nothing. Therefore every commit
- * that can precede a later `redraw()` already carries the replacement, and no
- * draw queued after the cleanup can reference the disposed object. On the
- * unmount path no later draw exists at all, because `redraw()` returns early
- * once `Container.unmount()` sets its flag.
- *
- * Two facts that a reader must not assume otherwise: the Skia renderer is
- * PERSISTENT, not a mutation renderer (`sksg/HostConfig.ts` sets
- * `supportsMutation: false`), and its host config returns
- * `DefaultEventPriority` from `resolveUpdatePriority`, so the work takes a
- * default lane and does NOT commit synchronously. Skia calls the async
- * `updateContainer`, never react-reconciler's `updateContainerSync`.
- *
- * The promise resolves back on the JS thread. The object never crosses a
- * runtime boundary.
- *
- * ## The stated limit — this is an improvement, not a proof
- *
- * `IOSUIScheduler::scheduleOnUI` short-circuits when the caller is already on
- * the main thread (`react-native-worklets/apple/worklets/apple/
- * IOSUIScheduler.mm`): it runs the batch immediately and never touches the
- * FIFO `uiJobs_` queue. A barrier that this path carries can therefore
- * overtake an earlier batch that still waits in `uiJobs_`. Nobody has shown
- * that React Native 0.85 runs these cleanups on the main thread, so the case
- * is unproven. Treat the barrier as a verified happy-path improvement.
+ * Limits:
+ * - Valid for canvases without animated (shared-value) props. An animated
+ *   canvas's mapper can replay the old recorder until the next redraw stops
+ *   it.
+ * - On iOS, `IOSUIScheduler::scheduleOnUI` runs a batch at once when the
+ *   caller is already on the main thread, and skips the FIFO queue. A barrier
+ *   on that path could overtake an earlier batch. This case is unproven.
  */
 export function disposeAfterPendingDraws(
   objects: ReadonlyArray<SkiaDisposable | null | undefined>,
@@ -103,41 +64,37 @@ export function disposeAfterPendingDraws(
 
   try {
     // Required here, not imported at the top: loading react-native-worklets
-    // initializes its native part, which throws where there is none (the
-    // inherited Jest suites that render Skia verse text do not mock it). The
-    // catch below then disposes at once. `require` is synchronous and
-    // module-cached, so the device path is unchanged.
+    // initializes its native part, which throws where there is none (Jest
+    // suites that render Skia text without a worklets mock). The catch below
+    // then disposes at once. `require` is synchronous and module-cached.
     const {runOnUIAsync} =
       require('react-native-worklets') as typeof import('react-native-worklets');
-    // `runOnUIAsync` builds its promise with a resolve callback only. It has
-    // no reject path, so this call needs no rejection handler.
-    //
-    // A throw in ANY worklet is therefore permanent. `flushUIQueue` runs the
-    // batch with a bare `queue.forEach`, so a throw aborts the loop and no
-    // later `jobResolve` runs. Every barrier behind it waits for the life of
-    // the process and holds its `live` array. A Skia draw is one of the jobs
-    // most likely to throw, which puts the two paths next to each other.
-    runOnUIAsync(uiQueueBarrier).then(disposeAll);
+    // The promise rejects only when the barrier itself throws on the UI
+    // thread, so the earlier draws have run in both cases. If an earlier UI
+    // job throws and the rest of its batch is dropped, the barrier never
+    // settles: the objects then leak instead of crashing the app.
+    runOnUIAsync(uiQueueBarrier).then(disposeAll, disposeAll);
   } catch {
     // The worklets runtime is unavailable, so no UI-thread draw is in flight.
     // Dispose now. This is the pre-fix behaviour.
     disposeAll();
   }
 }
+// @ai-end
 
 /**
- * @ai — Calls `fn` on the JS thread after the UI thread runs every Skia draw
- * that is already in the worklets UI queue. The rotation stage
+ * @ai Qariah: calls `fn` on the JS thread after the UI thread runs every Skia
+ * draw that is already in the worklets UI queue. The rotation stage
  * (components/mushaf/MushafRotationStage.tsx) uses it to report a page as
- * painted only after its draw has run. Same barrier, and the same stated
- * limit, as `disposeAfterPendingDraws` above.
+ * painted only after its draw has run. Same barrier, and the same limits, as
+ * `disposeAfterPendingDraws` above.
  */
 export function runAfterPendingDraws(fn: () => void): void {
   try {
     // Required here for the reason given in `disposeAfterPendingDraws`.
     const {runOnUIAsync} =
       require('react-native-worklets') as typeof import('react-native-worklets');
-    runOnUIAsync(uiQueueBarrier).then(fn);
+    runOnUIAsync(uiQueueBarrier).then(fn, fn);
   } catch {
     // No worklets runtime, so no UI-thread draw is in flight.
     fn();

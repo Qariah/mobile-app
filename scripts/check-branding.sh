@@ -6,9 +6,11 @@
 #
 #   bash scripts/check-branding.sh
 #
-# Exit 0 = clean, 1 = a brand string was found. Two checks:
+# Exit 0 = clean, 1 = a brand string was found. Three checks:
 #   1. JS/TS: "Bayaan" or "thebayaan" in .ts/.tsx/.js/.jsx outside the
 #      allowlists below (moved here from the workflow in Sprint 46).
+#   1b. JS/TS: a lowercase brand file name with a user-visible extension
+#      (`bayaan-share.png`), with the same allowlists (GitHub #731).
 #   2. Native: the word "Bayaan" in user-visible text in .swift/.kt/.xml/
 #      .plist/.xcstrings/.strings under modules/ and targets/, and in the
 #      string literals of the JS/TS paths that PASS_B_ALLOWED exempts
@@ -66,7 +68,7 @@ PASS_B_ALLOWED=(
   '^\./modules/bayaan-'
   '^\./services/car/'
   '^\./services/widgets/'
-  '^\./plugins/with(BayaanCar|AppShortcuts|BayaanWidgets)\.js:'
+  '^\./plugins/with(BayaanCar|AppShortcuts|BayaanWidgets|BayaanKeyboard)\.js:'
   '^\./plugins/__tests__/withBayaanWidgets\.test\.js:'
   '^\./targets/widgets/expo-target\.config\.js:'
   # The widget id BayaanNow (an identifier; the label comes from the plugin).
@@ -77,7 +79,7 @@ PASS_B_ALLOWED=(
   "^\./utils/surahArtworkBase\.ts:[0-9]+:.*'https://cdn\.thebayaan\.com/assets/car/surah/'"
   '^\./utils/__tests__/surahArtworkBase\.test\.ts:'
   # app.config.js: the App Group Info.plist key and the plugin paths.
-  "^\./app\.config\.js:[0-9]+:[[:space:]]*(BayaanAppGroup:|'\./plugins/with(BayaanCar|BayaanWidgets)\.js',)"
+  "^\./app\.config\.js:[0-9]+:[[:space:]]*(BayaanAppGroup:|'\./plugins/with(BayaanCar|BayaanWidgets|BayaanKeyboard)\.js',)"
   # The mock of the BayaanCar native module (Sprint 46 boot test).
   '^\./services/__tests__/appBoot\.qariah\.characterization\.test\.ts:[0-9]+:[[:space:]]*BayaanCar: \{$'
   # Upstream's collection function getBayaanOriginalsReciters (an identifier;
@@ -89,6 +91,19 @@ PASS_B_ALLOWED=(
   # with appName 'Bayaan' (a fixture value, never shown to a user). Kept
   # byte-identical to upstream.
   "^\./services/audio/__tests__/LockScreenService\.adhkar\.test\.ts:[0-9]+:.*'Bayaan'"
+  # Pass D (Sprint 52): upstream's iPad keyboard module (BayaanKeyboard, an
+  # identifier, as BayaanCar above) and the upstream suites that mock it or
+  # that set Bayaan's own branding as a fixture. Kept byte-identical to upstream.
+  '^\./services/keyboard/'
+  '^\./plugins/__tests__/with(BayaanCar|BayaanKeyboard)\.test\.js:'
+  '^\./components/keyboard/__tests__/ReaderKeyCommands\.test\.tsx:'
+  '^\./components/tablet/__tests__/TabletSidebar\.test\.tsx:'
+  '^\./components/settings/__tests__/settingsItems\.test\.ts:'
+  '^\./utils/__tests__/(reviewUtils|audioFileUrl)\.test\.ts:'
+  # The mock of the BayaanKeyboard native module in a Qariah sidebar test.
+  '^\./components/tablet/__tests__/tabletSidebarLogo\.test\.tsx:[0-9]+:[[:space:]]*BayaanKeyboard: \{$'
+  # The pattern of the test that fails when a UI string names the upstream app.
+  '^\./i18n/__tests__/qariahNoUpstreamAppName\.test\.ts:[0-9]+:.*/\\bBayaan\\b/'
 )
 PASS_B="$(IFS='|'; echo "${PASS_B_ALLOWED[*]}")"
 
@@ -114,6 +129,29 @@ if [ -n "$MATCHES" ]; then
   STATUS=1
 else
   echo "✓ No hardcoded Bayaan brand strings found in source files."
+fi
+
+# GitHub #731: a lowercase brand file name (`bayaan-share.png`) is not the
+# word "Bayaan", so the check above passed it, and the iOS share sheet showed
+# "bayaan-share" as its title. This check fails a `bayaan-<name>.<ext>` or
+# `bayaan_<name>.<ext>` literal whose extension a user can see (an image, a
+# document, a sound, an archive). A resource name (`bayaan_widgets.xml`) and
+# an identifier are not hits. The same allowlists and comment filters apply.
+FILE_NAME_MATCHES=$(grep -rEn 'bayaan[-_][a-z0-9_-]*\.(png|jpe?g|gif|webp|pdf|txt|csv|zip|mp3|m4a|wav)' \
+  --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=ios --exclude-dir=android \
+  . 2>/dev/null | grep -vE "$ALLOWED" | grep -vE "$PASS_B" | grep -vE "$COMMENT_LINE" || true)
+if [ -n "$FILE_NAME_MATCHES" ]; then
+  FILE_NAME_MATCHES=$(printf '%s\n' "$FILE_NAME_MATCHES" | awk -f scripts/lib/branding-comment-filter.awk)
+fi
+if [ -n "$FILE_NAME_MATCHES" ]; then
+  echo "::error::A user-visible file name carries the upstream brand (GitHub #731)."
+  echo "Read the file name from config/branding.js (for example branding.shareImageFileName), or add the path to the allowlist in scripts/check-branding.sh."
+  echo ""
+  echo "$FILE_NAME_MATCHES"
+  STATUS=1
+else
+  echo "✓ No user-visible file name carries the upstream brand."
 fi
 
 if ! node scripts/check-native-branding.mjs "$ROOT"; then

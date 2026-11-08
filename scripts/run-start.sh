@@ -2,7 +2,7 @@
 # run-start.sh — the FIRST action of every scheduled run.
 #
 # Usage:
-#   bash scripts/run-start.sh <triage|drafts|autoSprint> [--shadow]
+#   bash scripts/run-start.sh <triage|drafts|autoSprint|auditor|promoter|steward|upstreamSteward|retro> [--shadow]
 #
 #   --shadow (triage only): the shadow week of the cloud routine. Writes the marker
 #   <root>/.claude/.shadow-run. While it exists, the REST write helpers in
@@ -23,7 +23,8 @@
 #   Steps 3 and 4 are skipped when CLAUDE_CODE_REMOTE=true (a cloud session).
 #
 # Exit 0 = start the run. Exit 1 = do not start; write the report, and run
-# `bash scripts/run-end.sh <task> FAILED` first.
+# `bash scripts/run-end.sh <task> FAILED` first. Exit 3 = the pause switch (step 1b)
+# stops the run; run `bash scripts/run-end.sh <task> SKIPPED`, then end.
 #
 # The PreToolUse hook .claude/hooks/qariah-run-limits.sh sees THIS command before it
 # runs and starts the limits for the session (see the handshake in qariah-run-limits.cjs).
@@ -34,9 +35,9 @@ set -uo pipefail
 task="${1:-}"
 shadow="${2:-}"
 case "$task" in
-  triage | drafts | autoSprint) ;;
+  triage | drafts | autoSprint | auditor | promoter | steward | upstreamSteward | retro) ;;
   *)
-    echo "usage: bash scripts/run-start.sh <triage|drafts|autoSprint> [--shadow]" >&2
+    echo "usage: bash scripts/run-start.sh <triage|drafts|autoSprint|auditor|promoter|steward|upstreamSteward|retro> [--shadow]" >&2
     exit 2
     ;;
 esac
@@ -49,7 +50,7 @@ case "$shadow" in
     }
     ;;
   *)
-    echo "usage: bash scripts/run-start.sh <triage|drafts|autoSprint> [--shadow]" >&2
+    echo "usage: bash scripts/run-start.sh <triage|drafts|autoSprint|auditor|promoter|steward|upstreamSteward|retro> [--shadow]" >&2
     exit 2
     ;;
 esac
@@ -80,6 +81,20 @@ echo "run-start: task=$task maxToolCalls=$(get limits.maxToolCalls) maxWallMinut
   "commandMinutes=default:$(get limits.commandMinutes.default)/build:$(get limits.commandMinutes.build)/upload:$(get limits.commandMinutes.upload)" \
   "repeatStop=$(get limits.sameCallInARow) diskFloorGB=${floor_gb:-none} (source: $(get source))"
 echo "run-start: wrap each long command as: bash scripts/bounded.sh <minutes> -- <command>"
+
+# --- 1b. the pause switch ------------------------------------------------------------
+# A label on the pinned Daily card stops the run: `pipeline-paused` stops every task,
+# `off:<task>` stops one (scripts/lib/pipeline-switch.mjs). A failed read does not stop
+# the run. Exit 3 = stopped: the run posts SKIPPED and ends.
+if [ -f "$tree/scripts/pipeline-switch.mjs" ]; then
+  sw_out="$(cd "$tree" && node scripts/pipeline-switch.mjs "$task" 2>&1)"
+  sw=$?
+  printf '%s\n' "$sw_out" | sed 's/^/run-start: /'
+  if [ "$sw" -eq 3 ]; then
+    echo "run-start: STOP. The pause switch stops this run. Run: bash scripts/run-end.sh $task SKIPPED, then end the run. Its report is the STOP line above." >&2
+    exit 3
+  fi
+fi
 
 # --- 2. stale markers ----------------------------------------------------------------
 stale_min=$(( ${stale_h:-8} * 60 ))
@@ -118,7 +133,7 @@ fi
 # disk:home is left out on purpose: step 4 checks disk against the policy floor.
 need="tool:git tool:gh tool:node tool:npm tool:python3 auth:gh repo:qariah-v2 secret:qariah-v2/.env.local"
 case "$task" in
-  autoSprint) need="$need tool:adb xcode jdk:17 jdk:21 gradle:java-paths" ;;
+  autoSprint | auditor | promoter) need="$need tool:adb xcode jdk:17 jdk:21 gradle:java-paths" ;;
 esac
 pf="$HOME/.claude/skills/machine-preflight/preflight.sh"
 if [ ! -f "$pf" ]; then
@@ -148,7 +163,7 @@ if [ -n "$floor_gb" ]; then
     fail=1
   fi
   if [ -n "$gb" ] && [ "$gb" -lt "$floor_gb" ]; then
-    echo "run-start: FAIL only ${gb} GB free on \$HOME. This task needs ${floor_gb} GB. Free disk space, then run again (~/.claude/bin/qariah-disk-report.sh shows what is large)." >&2
+    echo "run-start: FAIL only ${gb} GB free on \$HOME. This task needs ${floor_gb} GB. Do not delete anything to continue: a scheduled run never removes a worktree or a cache by hand. Stop, and report this line." >&2
     fail=1
   elif [ -n "$gb" ]; then
     echo "run-start: disk OK (${gb} GB free, floor ${floor_gb} GB)"

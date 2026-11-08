@@ -1,0 +1,83 @@
+[
+  {
+    "number": 801,
+    "title": "[Sentry] TypeError in playerStore",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/801",
+    "state": "closed",
+    "created_at": "2026-11-03T10:00:00Z",
+    "closed_at": "2026-11-05T10:00:00Z",
+    "labels": [{"name": "sentry"}, {"name": "bug"}, {"name": "fixed-in:3813"}],
+    "body": "| **First seen** | 2026-11-03 |\n\n### Affected\n- **Release:** com.qariah.app@3.2.3+3763 (12), com.qariah.app@3.2.3+3772 (3)\n"
+  },
+  {
+    "number": 802,
+    "title": "Widget shows no text on 3.2.4 (3900)",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/802",
+    "state": "open",
+    "created_at": "2026-11-03T12:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "feedback"}],
+    "body": "A tester on build 3900 (TestFlight) sees an empty widget."
+  },
+  {
+    "number": 803,
+    "title": "Crash during the audit of 3900",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/803",
+    "state": "open",
+    "created_at": "2026-11-01T22:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "bug"}],
+    "body": "Seen on com.qariah.app@3.2.4+3900 during the device gates, before the verdict."
+  },
+  {
+    "number": 804,
+    "title": "Daily card",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/804",
+    "state": "open",
+    "created_at": "2026-11-02T00:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "ops"}],
+    "body": "build 3763 build 3900"
+  },
+  {
+    "number": 805,
+    "title": "A report that names no build",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/805",
+    "state": "open",
+    "created_at": "2026-11-03T00:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "feedback"}],
+    "body": "The player stopped. No version given."
+  },
+  {
+    "number": 806,
+    "title": "A report on an internal beta",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/806",
+    "state": "open",
+    "created_at": "2026-11-03T00:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "bug"}],
+    "body": "com.qariah.app.beta@3.2.4+3813 (4)"
+  },
+  {
+    "number": 807,
+    "title": "fix: something",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/pull/807",
+    "state": "open",
+    "created_at": "2026-11-03T00:00:00Z",
+    "closed_at": null,
+    "pull_request": {"url": "x"},
+    "labels": [{"name": "bug"}],
+    "body": "Refs #801 build 3763"
+  },
+  {
+    "number": 808,
+    "title": "Old report on production vc3763",
+    "html_url": "https://github.com/omar-zarka/qariah-v2/issues/808",
+    "state": "open",
+    "created_at": "2026-10-15T00:00:00Z",
+    "closed_at": null,
+    "labels": [{"name": "bug"}],
+    "body": "vc3763"
+  }
+]

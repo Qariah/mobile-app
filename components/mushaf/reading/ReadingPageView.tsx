@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   type LayoutChangeEvent,
+  type ScrollViewInstance,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useTheme} from '@/hooks/useTheme';
@@ -14,6 +15,7 @@ import {
 } from '@/store/mushafSettingsStore';
 import {
   useMushafPlayerStore,
+  usePlaybackBasmalaSurah, // @ai
   usePlaybackVerseKeys, // @ai
 } from '@/store/mushafPlayerStore';
 import {useTajweedStore} from '@/store/tajweedStore';
@@ -36,15 +38,17 @@ import PageEdgeDecoration, {
   EDGE_BORDER_RADIUS,
   EDGE_HORIZONTAL_INSET,
 } from '../PageEdgeDecoration';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {
   SCREEN_WIDTH,
   SCREEN_HEIGHT,
   PAGE_PADDING_HORIZONTAL,
   PAGE_PADDING_TOP,
   PAGE_PADDING_BOTTOM,
+  READING_COLUMN_MAX_WIDTH, // @ai
   getPageEdgeLayout,
   type MushafLayoutMetrics, // @ai TECH_DEBT #265
+  readingColumnPadding, // @ai
 } from '../constants';
 // @ai-start
 import {useRewayahVerseUnits} from '@/hooks/useRewayahVerseUnits';
@@ -82,6 +86,14 @@ interface ReadingPageViewProps {
     | 'pageWidth'
     | 'pageOffsetX'
   >;
+  // @ai-start
+  /**
+   * The pager item's size on iPad, where the text also sits in a centred
+   * reading column. Phones leave it out and keep the launch-time screen
+   * size.
+   */
+  pageSize?: {width: number; height: number};
+  // @ai-end
 }
 
 // @ai-start
@@ -98,10 +110,11 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
   isBookLayout,
   onTap,
   metrics, // @ai TECH_DEBT #265
+  pageSize,
 }) => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
   const verseOffsetsRef = useRef<Map<string, number>>(new Map());
 
   // Settings subscriptions
@@ -167,6 +180,9 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
   const playbackVerseKeys = usePlaybackVerseKeys(); // @ai
   const playbackState = useMushafPlayerStore(s => s.playbackState);
   const isPlaying = playbackState === 'playing';
+  // @ai — the surah whose basmala is being recited (the intro before its
+  // first verse): its header's basmala is lit as a recited verse is.
+  const basmalaSurah = usePlaybackBasmalaSurah();
 
   // @ai-start
   // Decision 3 (Release 1): a non-Hafs text lists the page's verses as its
@@ -207,27 +223,52 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
     [pageNumber],
   );
 
+  // @ai-start TECH_DEBT #265 — the page size comes from the live reader layout, not the module-load window.
+  // iPad: upstream's `pageSize` (the pager item). Phones: the live `metrics`.
+  const pageWidth = pageSize?.width ?? metrics?.screenWidth ?? SCREEN_WIDTH;
+  const pageHeight =
+    pageSize?.height ??
+    (metrics
+      ? (metrics.scrollContainerHeight ?? metrics.screenHeight)
+      : SCREEN_HEIGHT);
+  // Phone landscape: the text moves out of the cutouts; the page stays one window wide for `getItemLayout`.
+  const cutoutLeft =
+    !pageSize && metrics?.scrollContainerHeight ? metrics.pageOffsetX : 0;
+  const cutoutRight =
+    !pageSize && metrics?.scrollContainerHeight
+      ? Math.max(
+          0,
+          metrics.screenWidth - metrics.pageOffsetX - metrics.pageWidth,
+        )
+      : 0;
+  const safeWidth = pageWidth - cutoutLeft - cutoutRight;
+  // @ai-end
+
   // Content area horizontal padding for the ScrollView
   const bookContentPadding = moderateScale(12);
   const contentHorizontalPadding = isBookLayout
     ? bookContentPadding
-    : PAGE_PADDING_HORIZONTAL + 8;
+    : pageSize
+      ? readingColumnPadding(pageWidth, PAGE_PADDING_HORIZONTAL + 8)
+      : PAGE_PADDING_HORIZONTAL + 8;
 
-  // @ai-start TECH_DEBT #265 — the page size comes from the live reader layout, not the module-load window.
-  const pageWidth = metrics?.screenWidth ?? SCREEN_WIDTH;
-  const pageHeight = metrics
-    ? (metrics.scrollContainerHeight ?? metrics.screenHeight)
-    : SCREEN_HEIGHT;
-  // Phone landscape: the text moves out of the cutouts; the page stays one window wide for `getItemLayout`.
-  const cutoutLeft = metrics?.scrollContainerHeight ? metrics.pageOffsetX : 0;
-  const cutoutRight = metrics?.scrollContainerHeight
-    ? Math.max(0, metrics.screenWidth - metrics.pageOffsetX - metrics.pageWidth)
-    : 0;
-  const safeWidth = pageWidth - cutoutLeft - cutoutRight;
-  // @ai-end
+  // Book layout on iPad: the card holds the reading column and is centred
+  // in the item with all four corners rounded, like a single mushaf page.
+  const sheetWidth = pageSize
+    ? Math.min(
+        pageWidth,
+        READING_COLUMN_MAX_WIDTH +
+          (bookContentPadding + EDGE_HORIZONTAL_INSET) * 2,
+      )
+    : pageWidth;
+  const symmetricEdges = sheetWidth < pageWidth;
 
   // Width available for SurahDivider / content items
-  const cardWidth = safeWidth - EDGE_HORIZONTAL_INSET; // @ai TECH_DEBT #265
+  const cardWidth =
+    sheetWidth -
+    cutoutLeft -
+    cutoutRight -
+    EDGE_HORIZONTAL_INSET * (symmetricEdges ? 2 : 1); // @ai TECH_DEBT #265
   const contentItemWidth = isBookLayout
     ? cardWidth - bookContentPadding * 2
     : safeWidth - contentHorizontalPadding * 2; // @ai TECH_DEBT #265
@@ -286,6 +327,11 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
               arabicTextWeight={arabicTextWeight}
               showAllahNameHighlight={showAllahNameHighlight}
               allahNameHighlightColor={allahNameHighlightColor}
+              // @ai — lit while its basmala is recited; unset otherwise, so the
+              // header's props stay exactly as before (readingViews.hafsGolden)
+              isActive={
+                (isPlaying && basmalaSurah === item.surahNumber) || undefined
+              }
             />
           </View>
         );
@@ -368,6 +414,7 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
       indexedTajweedData,
       handleVersePress,
       playbackVerseKeys, // @ai
+      basmalaSurah, // @ai
       bandKeys, // @ai
       isPlaying,
       translationName,
@@ -417,14 +464,13 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
 
   return (
     <View
-      style={[
-        styles.page,
-        // @ai TECH_DEBT #265 — the live size replaces the module-load size.
-        {width: pageWidth, height: pageHeight},
-        {backgroundColor: isBookLayout ? bgColor : cardColor},
-      ]}>
+      style={{
+        width: pageWidth,
+        height: pageHeight,
+        backgroundColor: isBookLayout ? bgColor : cardColor,
+      }}>
       {isBookLayout ? (
-        <>
+        <View style={[styles.sheet, {width: sheetWidth}]}>
           <View
             style={[
               styles.bookCard,
@@ -434,19 +480,25 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
                 backgroundColor: cardColor,
               },
               // @ai TECH_DEBT #265 — the cutout insets (0 outside phone landscape).
-              isRightPage
+              symmetricEdges
                 ? {
-                    left: cutoutLeft,
-                    right: EDGE_HORIZONTAL_INSET + cutoutRight,
-                    borderTopRightRadius: EDGE_BORDER_RADIUS,
-                    borderBottomRightRadius: EDGE_BORDER_RADIUS,
+                    left: EDGE_HORIZONTAL_INSET,
+                    right: EDGE_HORIZONTAL_INSET,
+                    borderRadius: EDGE_BORDER_RADIUS,
                   }
-                : {
-                    left: EDGE_HORIZONTAL_INSET + cutoutLeft,
-                    right: cutoutRight,
-                    borderTopLeftRadius: EDGE_BORDER_RADIUS,
-                    borderBottomLeftRadius: EDGE_BORDER_RADIUS,
-                  },
+                : isRightPage
+                  ? {
+                      left: cutoutLeft,
+                      right: EDGE_HORIZONTAL_INSET + cutoutRight,
+                      borderTopRightRadius: EDGE_BORDER_RADIUS,
+                      borderBottomRightRadius: EDGE_BORDER_RADIUS,
+                    }
+                  : {
+                      left: EDGE_HORIZONTAL_INSET + cutoutLeft,
+                      right: cutoutRight,
+                      borderTopLeftRadius: EDGE_BORDER_RADIUS,
+                      borderBottomLeftRadius: EDGE_BORDER_RADIUS,
+                    },
             ]}>
             <ScrollView
               ref={scrollViewRef}
@@ -472,9 +524,10 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
               isRightPage={isRightPage}
               borderColor={borderColor}
               pageColor={cardColor}
+              symmetric={symmetricEdges}
             />
           </View>
-        </>
+        </View>
       ) : (
         <ScrollView
           ref={scrollViewRef}
@@ -483,8 +536,12 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
             paddingTop: PAGE_PADDING_TOP - METADATA_OFFSET,
             paddingBottom: PAGE_PADDING_BOTTOM,
             // @ai TECH_DEBT #265 — keep the text out of the landscape cutouts.
-            paddingLeft: contentHorizontalPadding + cutoutLeft,
-            paddingRight: contentHorizontalPadding + cutoutRight,
+            ...(cutoutLeft || cutoutRight
+              ? {
+                  paddingLeft: contentHorizontalPadding + cutoutLeft,
+                  paddingRight: contentHorizontalPadding + cutoutRight,
+                }
+              : {paddingHorizontal: contentHorizontalPadding}),
           }}
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled>
@@ -497,9 +554,9 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
 // @ai-end
 
 const styles = StyleSheet.create({
-  page: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+  sheet: {
+    height: '100%',
+    alignSelf: 'center',
   },
   bookCard: {
     position: 'absolute',

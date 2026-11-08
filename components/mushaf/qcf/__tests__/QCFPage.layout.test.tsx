@@ -154,6 +154,7 @@ jest.mock('@/store/mushafPlayerStore', () => ({
     sel({currentVerseKey: null, playbackState: 'idle'}),
   // Upstream #329: QCFPage reads the playing verses through this hook.
   usePlaybackVerseKeys: () => [],
+  usePlaybackBasmalaSurah: () => null, // Pass D: upstream's basmala intro
 }));
 const mockSelectionState = {
   selectedVerseKeys: [],

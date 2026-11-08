@@ -34,7 +34,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollView,
+  type ScrollViewInstance,
 } from 'react-native';
 import {isRTL} from '@/utils/rtl';
 
@@ -64,7 +64,7 @@ export function useRtlRowStart<ItemT>(handlers: RowStartHandlers = {}) {
     // A row that fits on the screen has nothing to scroll.
     if (viewportWidth <= 0 || contentWidth <= viewportWidth) return;
     const scrollView = ref.current?.getNativeScrollRef() as
-      | Partial<Pick<ScrollView, 'scrollTo'>>
+      | Partial<Pick<ScrollViewInstance, 'scrollTo'>>
       | null
       | undefined;
     scrollView?.scrollTo?.({x: contentWidth - viewportWidth, animated: false});

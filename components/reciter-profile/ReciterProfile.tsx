@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useLayoutEffect,
 } from 'react';
+import {SurahOptionsScope} from '@/components/sheets/options/surahOptions'; // @ai
 import {
   View,
   Text,
@@ -15,12 +16,14 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   useWindowDimensions,
-  InteractionManager,
   PixelRatio, // @ai
+  type LayoutChangeEvent, // @ai
   Platform,
   StyleSheet,
   Alert,
+  type ScrollViewInstance,
 } from 'react-native';
+import {runAfterInteractions} from '@/utils/afterInteractions';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '@/hooks/useTheme';
 import {Surah, SURAHS} from '@/data/surahData';
@@ -61,16 +64,21 @@ import Animated, {
 import {ActionButtons} from './components/ActionButtons';
 import {ReciterHeader} from './components/ReciterHeader';
 import {NavigationButtons} from './components/NavigationButtons';
-import {SurahList} from './components/SurahList';
+import {
+  SurahList,
+  SurahListTableHeader,
+  TABLE_MIN_WIDTH,
+} from './components/SurahList'; // @ai
 import {SearchView} from './components/SearchView';
 import {RewayatTabBar} from './components/RewayatTabBar';
 import {UploadsTabContent} from './components/UploadsTabContent';
 import {useUploadsStore} from '@/store/uploadsStore';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useBottomInset} from '@/hooks/useBottomInset';
 import {HAFS_REWAYAT_NAME} from '@/data/rewayat';
+import {pickRewayatId} from '@/utils/rewayatPreference'; // @ai
 import {useNavigation} from 'expo-router';
-import {useHeaderHeight} from 'expo-router/react-navigation';
+import {useGlassHeaderHeight} from '@/hooks/useGlassHeaderHeight'; // @ai
 import {USE_GLASS} from '@/hooks/useGlassProps';
 import {reciterShareUrl, shareUrl} from '@/utils/shareUtils';
 import branding from '@/config/branding';
@@ -88,6 +96,11 @@ import {rankSurahs} from '@/utils/search/catalog'; // @ai
 // @ai-end
 import {hasPagerReachedInitialPage} from './utils/pagerLayout'; // @ai
 import {NAVIGATION_TITLE_INSET} from './components/NavigationButtons'; // @ai
+import {runAfterFirstPaint} from '@/utils/runAfterFirstPaint'; // @ai Qariah
+import {TabletReciterHero} from './components/TabletReciterHero'; // @ai
+import {QariahReciterDetails} from './components/QariahReciterDetails'; // @ai Qariah (Sprint 52 Task 3)
+import {countUniqueSurahs} from './components/ReciterHeader'; // @ai Qariah (Sprint 52 Task 3)
+import {useResponsive} from '@/hooks/useResponsive'; // @ai
 
 interface ReciterProfileProps {
   id: string;
@@ -220,31 +233,47 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
   const {height: screenHeight, width: windowWidth} = useWindowDimensions();
-  // @ai Qariah (TECH_DEBT #354): a page is as wide as the pager, not the window (the iPad sidebar).
-  // Under 1 pt of difference (Android float layout) keeps the window width, so a phone does not change.
-  const [pagerWidth, setPagerWidth] = useState(0);
-  const screenWidth =
-    pagerWidth > 0 && Math.abs(pagerWidth - windowWidth) >= 1
-      ? pagerWidth
-      : windowWidth;
+  // iPad (mockup L9): a photo hero and a surah table across the pane, with
+  // the page margin for the window's width class (ipad-standards §5.2).
+  const {isTablet} = useResponsive();
+  const pageMargin = windowWidth >= 900 ? 32 : 24;
+  // @ai-start
+  // The pager pages must match the pager's own width, not the window: on
+  // iPad the profile sits beside the sidebar inside a capped column, so
+  // window-wide pages were clipped and swipes landed mid-page. Pages render
+  // once the pager has been measured (it is hidden until then anyway); the
+  // window width is only a first guess for the math before that.
+  const [measuredPagerWidth, setMeasuredPagerWidth] = useState<number | null>(
+    null,
+  );
+  const pageWidth = measuredPagerWidth ?? windowWidth;
+  const handlePagerLayout = useCallback((e: LayoutChangeEvent) => {
+    const next = e.nativeEvent.layout.width;
+    if (next > 0) setMeasuredPagerWidth(prev => (prev === next ? prev : next));
+  }, []);
+  // @ai-end
   const navigation = useNavigation();
-  const headerHeight = isGlass ? useHeaderHeight() : 0;
+  const headerHeight = useGlassHeaderHeight(isGlass); // @ai
 
   // Synchronous reciter init — data available on first render, no deferred loading delay
   const initialReciter = useMemo(
     () => initReciter(currentReciterId),
     [currentReciterId],
   );
-  // Prefer the rewayat passed via navigation, then fall back to the first one
+  // @ai-start
+  // Prefer the rewayat passed via navigation, then the one the user last
+  // picked for this reciter, then the first one. The saved pick is read once
+  // so saving a new pick does not move the open profile.
   const initialRewayatId = useMemo(() => {
-    if (
-      initialRewayatIdProp &&
-      initialReciter?.rewayat.some(r => r.id === initialRewayatIdProp)
-    ) {
-      return initialRewayatIdProp;
-    }
-    return initialReciter?.rewayat[0]?.id;
+    if (!initialReciter) return undefined;
+    const savedRewayatId =
+      useSettings.getState().reciterPreferences[initialReciter.id];
+    return pickRewayatId(initialReciter.rewayat, [
+      initialRewayatIdProp,
+      savedRewayatId,
+    ]);
   }, [initialRewayatIdProp, initialReciter]);
+  // @ai-end
 
   const [reciter, setReciter] = useState<Reciter | null>(initialReciter);
   const surahs = SURAHS;
@@ -278,13 +307,13 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             // "My Uploads" is at index 0 only when userUploads is on; rewayat follow it.
             // Find the index of the initial rewayat to set the correct scroll position.
             const offset = isFeatureEnabled('userUploads') ? 1 : 0;
-            if (!initialRewayatId) return offset * screenWidth;
+            if (!initialRewayatId) return offset * pageWidth;
             const rewayatIndex = initialReciter.rewayat.findIndex(
               r => r.id === initialRewayatId,
             );
             return rewayatIndex >= 0
-              ? (rewayatIndex + offset) * screenWidth
-              : offset * screenWidth;
+              ? (rewayatIndex + offset) * pageWidth
+              : offset * pageWidth;
           })()
         : 0,
     ),
@@ -360,9 +389,16 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   );
   const [showLovedOnly, setShowLovedOnly] = useState(showLoved);
   const [activeTab, setActiveTab] = useState<string>(initialRewayatId ?? '');
+  // iPad list tables pin their column header in the sticky section, so it
+  // must use the same width test as SurahList (the page is the list). @ai
+  const showPinnedTableHeader =
+    isTablet &&
+    viewMode === 'list' &&
+    activeTab !== 'uploads' &&
+    pageWidth >= TABLE_MIN_WIDTH;
   const [neighborsReady, setNeighborsReady] = useState(singleTabAtMount);
-  const outerScrollRef = useRef<ScrollView>(null);
-  const horizontalRef = useRef<ScrollView>(null);
+  const outerScrollRef = useRef<ScrollViewInstance>(null);
+  const horizontalRef = useRef<ScrollViewInstance>(null);
   const currentScrollYRef = useRef(0);
   const renderedTabsRef = useRef(new Set<string>());
   // #67: single-tab needs no initial pager scroll (this also closes the empty-rewayat poison path).
@@ -404,9 +440,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     };
   }, []);
   // @ai-end
-  // Keep the narrowed selector: the whole-store form re-renders the profile on each playback tick.
-  const startNewChain = useRecentlyPlayedStore(s => s.startNewChain);
-  const {reciterPreferences, setReciterPreference} = useSettings();
+  const startNewChain = useRecentlyPlayedStore(s => s.startNewChain); // @ai
+  const {setReciterPreference} = useSettings(); // @ai
 
   // Retrieve persisted reciter profile settings
   const setReciterViewModeSetting = useSettings(
@@ -906,7 +941,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
       if (tabIndex >= 0 && horizontalRef.current) {
         scrollTargetRef.current = tabId;
         horizontalRef.current.scrollTo({
-          x: tabIndex * screenWidth,
+          x: tabIndex * pageWidth,
           animated: true,
         });
       }
@@ -918,13 +953,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
         outerScrollRef.current?.scrollTo({y: snapPoint, animated: false});
       }
     },
-    [
-      collapsibleHeight,
-      stickyPinOffset,
-      handleRewayatChange,
-      tabs,
-      screenWidth,
-    ],
+    [collapsibleHeight, stickyPinOffset, handleRewayatChange, tabs, pageWidth],
   );
 
   // Scroll listener — only clears programmatic scroll gate; no side effects during swipe.
@@ -932,21 +961,21 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (scrollTargetRef.current !== null) {
         const offsetX = e.nativeEvent.contentOffset.x;
-        const pageIndex = Math.round(offsetX / screenWidth);
+        const pageIndex = Math.round(offsetX / pageWidth);
         const tab = tabs[pageIndex];
         if (tab && tab.id === scrollTargetRef.current) {
           scrollTargetRef.current = null;
         }
       }
     },
-    [tabs, screenWidth],
+    [tabs, pageWidth],
   );
 
   // Fires after paging snap completes — updates tab state without interrupting gesture.
   const handleHorizontalMomentumEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = e.nativeEvent.contentOffset.x;
-      const pageIndex = Math.round(offsetX / screenWidth);
+      const pageIndex = Math.round(offsetX / pageWidth);
       const tab = tabs[pageIndex];
 
       if (scrollTargetRef.current !== null) return; // programmatic scroll handled elsewhere
@@ -964,13 +993,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
         }
       }
     },
-    [
-      tabs,
-      screenWidth,
-      handleRewayatChange,
-      collapsibleHeight,
-      stickyPinOffset,
-    ],
+    [tabs, pageWidth, handleRewayatChange, collapsibleHeight, stickyPinOffset],
   );
 
   // Opacity-gated reveal: scroll pager to initial rewayat tab before showing.
@@ -986,11 +1009,11 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   const handlePagerContentSizeChange = useCallback(
     (contentWidth: number) => {
       if (pagerScrolledRef.current) return;
-      const targetX = initialTabIndex * screenWidth;
+      const targetX = initialTabIndex * pageWidth;
       // @ai-start
       const initialPageReady = hasPagerReachedInitialPage(
         contentWidth,
-        screenWidth,
+        pageWidth,
         initialTabIndex,
         PixelRatio.get(),
       );
@@ -1010,7 +1033,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
       }
       // @ai-end
     },
-    [screenWidth, pagerOpacity, initialTabIndex, scrollX],
+    [pageWidth, pagerOpacity, initialTabIndex, scrollX],
   );
 
   // DO NOT DROP: Android single-tab pagers never fire onContentSizeChange, so lift the gate here (TECH_DEBT #115).
@@ -1028,27 +1051,14 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     if (neighborsReady) return;
     const t = setTimeout(() => {
       pagerScrolledRef.current = true;
-      const targetX = initialTabIndex * screenWidth;
+      const targetX = initialTabIndex * pageWidth;
       scrollX.setValue(targetX);
       horizontalRef.current?.scrollTo({x: targetX, y: 0, animated: false});
       pagerOpacity.setValue(1);
       setNeighborsReady(true);
     }, 1500);
     return () => clearTimeout(t);
-  }, [neighborsReady, initialTabIndex, screenWidth, scrollX, pagerOpacity]);
-
-  // @ai Qariah (TECH_DEBT #354): a new page width (the first pager layout, an iPad rotation)
-  // keeps the active page in view. Before the reveal, onContentSizeChange scrolls with the new width.
-  const lastPageWidthRef = useRef(screenWidth);
-  useEffect(() => {
-    if (lastPageWidthRef.current === screenWidth) return;
-    lastPageWidthRef.current = screenWidth;
-    if (!pagerScrolledRef.current) return;
-    const idx = tabs.findIndex(tab => tab.id === activeTabRef.current);
-    const targetX = (idx >= 0 ? idx : initialTabIndex) * screenWidth;
-    scrollX.setValue(targetX);
-    horizontalRef.current?.scrollTo({x: targetX, y: 0, animated: false});
-  }, [screenWidth, tabs, initialTabIndex, scrollX]);
+  }, [neighborsReady, initialTabIndex, pageWidth, scrollX, pagerOpacity]);
 
   // @ai REPORT-ONLY surah-list stall watchdog (TECH_DEBT #243).
   useReciterProfileSurahsWatchdog({
@@ -1059,6 +1069,21 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
     tabsCount: tabs.length,
     pagerScrolledRef,
   });
+  // @ai-start
+  // Keep the current page in place when the pager width changes after the
+  // first reveal (rotation, Split View, sidebar changes).
+  const lastPageWidthRef = useRef(pageWidth);
+  useEffect(() => {
+    if (lastPageWidthRef.current === pageWidth) return;
+    lastPageWidthRef.current = pageWidth;
+    if (!pagerScrolledRef.current) return;
+    const index = tabs.findIndex(tab => tab.id === activeTabRef.current);
+    if (index < 0) return;
+    const x = index * pageWidth;
+    scrollX.setValue(x);
+    horizontalRef.current?.scrollTo({x, y: 0, animated: false});
+  }, [pageWidth, tabs, scrollX]);
+  // @ai-end
 
   // Sticky title bar opacity — fades in as the outer scroll collapses the header
   // With negative margin on header, the actual collapse point is reduced
@@ -1147,13 +1172,11 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
               onLayout={e => setCollapsibleHeight(e.nativeEvent.layout.height)}
               style={{marginBottom: -stickyPinOffset, zIndex: 11}}
               pointerEvents="box-none">
-              <ReciterHeader
-                reciter={reciter}
-                showSearch={showSearch}
-                insets={insets}
-              />
-              <View style={styles.contentContainer}>
-                <ActionButtons
+              {isTablet ? (
+                <TabletReciterHero
+                  reciter={reciter}
+                  paddingTop={showSearch ? 16 : isGlass ? 8 : insets.top + 56}
+                  margin={pageMargin}
                   onFavoritePress={handleToggleFavorite}
                   onShufflePress={handleShuffleAll}
                   onPlayPress={handlePlayAll}
@@ -1162,8 +1185,36 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                   isDownloadingAll={isDownloadingAll}
                   downloadAllProgress={downloadAllProgress}
                   allDownloaded={allDownloaded}
+                  // @ai Qariah (Sprint 52 Task 3): the country and translation chips, the bio and the narration line.
+                  details={
+                    <QariahReciterDetails
+                      reciter={reciter}
+                      surahCount={countUniqueSurahs(reciter)}
+                      variant="tablet"
+                    />
+                  }
                 />
-              </View>
+              ) : (
+                <>
+                  <ReciterHeader
+                    reciter={reciter}
+                    showSearch={showSearch}
+                    insets={insets}
+                  />
+                  <View style={styles.contentContainer}>
+                    <ActionButtons
+                      onFavoritePress={handleToggleFavorite}
+                      onShufflePress={handleShuffleAll}
+                      onPlayPress={handlePlayAll}
+                      isFavoriteReciter={isFavoriteReciter(reciter.id)}
+                      onDownloadAllPress={handleDownloadAll}
+                      isDownloadingAll={isDownloadingAll}
+                      downloadAllProgress={downloadAllProgress}
+                      allDownloaded={allDownloaded}
+                    />
+                  </View>
+                </>
+              )}
             </View>
 
             {/* Child 1: Sticky section — sticks at top when header collapses */}
@@ -1180,10 +1231,14 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                     onTabChange={handleTabChange}
                     theme={theme}
                     scrollX={scrollX}
-                    screenWidth={screenWidth}
+                    screenWidth={pageWidth}
                   />
                 )}
-                <View style={styles.controlsRow}>
+                <View
+                  style={[
+                    styles.controlsRow,
+                    isTablet && {marginHorizontal: pageMargin},
+                  ]}>
                   {activeTab !== 'uploads' && (
                     <View style={styles.sortOptionsContainer}>
                       <Pressable
@@ -1265,6 +1320,11 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                     </Pressable>
                   </View>
                 </View>
+                {/* @ai: the table's column labels stay on screen while the
+                    surahs scroll under them. */}
+                {showPinnedTableHeader && (
+                  <SurahListTableHeader margin={pageMargin} />
+                )}
               </View>
             </View>
 
@@ -1273,8 +1333,6 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
             {/* When uploads is active, cap height to viewport so the tall rewayat pages */}
             {/* don't inflate the scrollable area with empty space */}
             <View
-              // @ai Qariah (TECH_DEBT #354): the page width comes from this layout.
-              onLayout={e => setPagerWidth(e.nativeEvent.layout.width)}
               style={
                 activeTab === 'uploads'
                   ? {height: contentMinHeight, overflow: 'hidden'}
@@ -1289,6 +1347,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                 showsHorizontalScrollIndicator={false}
                 scrollEventThrottle={16}
                 style={[{opacity: pagerOpacity}, forceLTR]}
+                onLayout={handlePagerLayout} // @ai
                 onContentSizeChange={handlePagerContentSizeChange}
                 onScrollBeginDrag={() => {
                   scrollTargetRef.current = null;
@@ -1298,56 +1357,68 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                   [{nativeEvent: {contentOffset: {x: scrollX}}}],
                   {useNativeDriver: true, listener: handleHorizontalScroll},
                 )}>
-                {tabs.map(tab => (
-                  <View
-                    key={tab.id}
-                    style={{
-                      width: screenWidth,
-                      minHeight: contentMinHeight,
-                      paddingBottom: bottomInset,
-                      direction: isRTL ? 'rtl' : 'ltr',
-                    }}>
-                    {renderedTabsRef.current.has(tab.id) ? (
-                      tab.id === 'uploads' ? (
-                        <UploadsTabContent
-                          inline
-                          reciterId={currentReciterId}
-                          reciterName={reciter.name}
-                          viewMode={viewMode}
-                          showLovedOnly={showLovedOnly}
-                          getColorForSurah={getColorForSurah}
-                        />
-                      ) : (
-                        <MemoizedSurahList
-                          inline
-                          surahs={getSurahsForTab(tab.id)}
-                          onSurahPress={handleSurahPress}
-                          reciterId={currentReciterId}
-                          isLoved={
-                            isLovedPerTab.get(tab.id) ??
-                            isLovedWithCurrentRewayat
-                          }
-                          isDownloaded={isDownloaded}
-                          onOptionsPress={(surah: Surah) =>
-                            SheetManager.show('surah-options', {
-                              payload: {
-                                surah,
-                                reciterId: currentReciterId,
-                                rewayatId: tab.id,
-                                onAddToQueue: handleAddToQueue,
-                                hideGoToReciter: true,
-                              },
-                            })
-                          }
-                          viewMode={viewMode}
-                          sortOption={sortOption}
-                          getColorForSurah={getColorForSurah}
-                          rewayatId={tab.id}
-                        />
-                      )
-                    ) : null}
-                  </View>
-                ))}
+                {/* @ai: pages wait for the measured pager width */}
+                {measuredPagerWidth !== null &&
+                  tabs.map(tab => (
+                    <View
+                      key={tab.id}
+                      style={{
+                        width: pageWidth,
+                        minHeight: contentMinHeight,
+                        paddingBottom: bottomInset,
+                        direction: isRTL ? 'rtl' : 'ltr',
+                      }}>
+                      {renderedTabsRef.current.has(tab.id) ? (
+                        tab.id === 'uploads' ? (
+                          <UploadsTabContent
+                            inline
+                            reciterId={currentReciterId}
+                            reciterName={reciter.name}
+                            viewMode={viewMode}
+                            showLovedOnly={showLovedOnly}
+                            getColorForSurah={getColorForSurah}
+                          />
+                        ) : (
+                          // @ai-start
+                          <SurahOptionsScope
+                            reciterId={currentReciterId}
+                            rewayatId={tab.id}
+                            onAddToQueue={handleAddToQueue}
+                            hideGoToReciter>
+                            <MemoizedSurahList
+                              inline
+                              surahs={getSurahsForTab(tab.id)}
+                              onSurahPress={handleSurahPress}
+                              reciterId={currentReciterId}
+                              isLoved={
+                                isLovedPerTab.get(tab.id) ??
+                                isLovedWithCurrentRewayat
+                              }
+                              isDownloaded={isDownloaded}
+                              onOptionsPress={(surah: Surah) =>
+                                SheetManager.show('surah-options', {
+                                  payload: {
+                                    surah,
+                                    reciterId: currentReciterId,
+                                    rewayatId: tab.id,
+                                    onAddToQueue: handleAddToQueue,
+                                    hideGoToReciter: true,
+                                  },
+                                })
+                              }
+                              viewMode={viewMode}
+                              sortOption={sortOption}
+                              getColorForSurah={getColorForSurah}
+                              rewayatId={tab.id}
+                              tabletMargin={isTablet ? pageMargin : undefined}
+                              hideTableHeader={isTablet} // @ai
+                            />
+                          </SurahOptionsScope>
+                          // @ai-end
+                        )
+                      ) : null}
+                    </View>
+                  ))}
               </RNAnimated.ScrollView>
               {/* #67: only multi-tab profiles show the skeleton; single-tab ones mount ready. */}
               {!neighborsReady && tabs.length > 1 && (
@@ -1430,36 +1501,44 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
       {/* Search overlay — mounted on top, preserves main content underneath */}
       {showSearch && (
         <View style={StyleSheet.absoluteFill} pointerEvents="auto">
-          <SearchView
-            surahs={filteredSurahs}
-            onSurahPress={handleSurahPress}
+          {/* @ai-start */}
+          <SurahOptionsScope
             reciterId={currentReciterId}
-            isLoved={isLovedWithCurrentRewayat}
-            onOptionsPress={(surah: Surah) =>
-              SheetManager.show('surah-options', {
-                payload: {
-                  surah,
-                  reciterId: currentReciterId,
-                  rewayatId: selectedRewayat?.id,
-                  onAddToQueue: handleAddToQueue,
-                  hideGoToReciter: true,
-                },
-              })
-            }
-            searchQuery={searchQuery}
-            onSearchChange={handleSearch}
-            onCloseSearch={() => {
-              setShowSearch(false);
-              setSearchQuery('');
-            }}
-            availableRewayat={rewayatList}
-            selectedRewayatId={selectedRewayatId}
-            onRewayatSelect={handleRewayatChange}
-            isDarkMode={theme.isDarkMode}
-            reciterName={getReciterDisplayName(reciter)}
-            viewMode={viewMode}
-            getColorForSurah={getColorForSurah}
-          />
+            rewayatId={selectedRewayat?.id}
+            onAddToQueue={handleAddToQueue}
+            hideGoToReciter>
+            <SearchView
+              surahs={filteredSurahs}
+              onSurahPress={handleSurahPress}
+              reciterId={currentReciterId}
+              isLoved={isLovedWithCurrentRewayat}
+              onOptionsPress={(surah: Surah) =>
+                SheetManager.show('surah-options', {
+                  payload: {
+                    surah,
+                    reciterId: currentReciterId,
+                    rewayatId: selectedRewayat?.id,
+                    onAddToQueue: handleAddToQueue,
+                    hideGoToReciter: true,
+                  },
+                })
+              }
+              searchQuery={searchQuery}
+              onSearchChange={handleSearch}
+              onCloseSearch={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              availableRewayat={rewayatList}
+              selectedRewayatId={selectedRewayatId}
+              onRewayatSelect={handleRewayatChange}
+              isDarkMode={theme.isDarkMode}
+              reciterName={getReciterDisplayName(reciter)}
+              viewMode={viewMode}
+              getColorForSurah={getColorForSurah}
+            />
+          </SurahOptionsScope>
+          {/* @ai-end */}
         </View>
       )}
     </View>
@@ -1469,8 +1548,8 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
 
 // Lightweight wrapper — defers mounting the heavy content until the navigation
 // transition finishes so the screen push feels instant.
-// On Android, InteractionManager can hang indefinitely if an interaction never
-// completes, so we race it against a short timeout.
+// The idle callback can be late while the JS thread stays busy, so we race it
+// against a short timeout.
 const ReciterProfile: React.FC<ReciterProfileProps> = props => {
   const [ready, setReady] = useState(false);
   const {theme} = useTheme();
@@ -1483,7 +1562,9 @@ const ReciterProfile: React.FC<ReciterProfileProps> = props => {
       setReady(true);
     };
 
-    const handle = InteractionManager.runAfterInteractions(markReady);
+    // @ai Qariah: after the first frames (runAfterInteractions runs at once
+    // in React Native 0.86).
+    const handle = runAfterFirstPaint(markReady);
     // Fallback: if interactions don't settle within 300ms, mount anyway
     const timer = setTimeout(markReady, 300);
 

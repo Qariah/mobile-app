@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import {Stack, useRouter} from 'expo-router';
-import {moderateScale} from 'react-native-size-matters';
+import {moderateScale} from '@/utils/scale';
 import {useTheme} from '@/hooks/useTheme';
 import {useAuth} from '@/services/auth';
 import {useBottomInset} from '@/hooks/useBottomInset';

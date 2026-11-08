@@ -5,6 +5,7 @@ import type {TranslationProvider} from '@/types/TranslationProvider';
 import type {TafsirProvider} from '@/types/TafsirProvider';
 import type {CommunityReflectionsProvider} from '@/types/CommunityReflection';
 import type {AyahTimestamp} from '@/types/timestamps';
+import type {SettingsSection} from '@/components/settings/settingsItems';
 
 /** Catalog source config for the active branding. */
 export interface BrandingCatalogConfig {
@@ -251,12 +252,11 @@ export interface Branding {
    * RFC-014 — strategy for wiring the player Mushaf FlashList's scroll
    * handling.
    *
-   * `'gorhom'` — `useBottomSheetScrollableCreator()` is called and its
-   *   result is passed as `renderScrollComponent` on FlashList. The
-   *   swipe-down-to-dismiss gesture on the player sheet is active.
-   *   Imperative `scrollToIndex` / `scrollToOffset` calls issued before
-   *   the sheet's animation has settled into EXTENDED/FILL_PARENT are
-   *   intercepted by the gorhom wrapper and silently no-op.
+   * `'gorhom'`: the player's dismiss-aware scroll component (see
+   *   `usePlayerScrollable`) is passed as `renderScrollComponent` on
+   *   FlashList, so a downward drag at the top of the list dismisses the
+   *   player. The name predates the move off the gorhom sheet and is kept
+   *   so existing branding configs keep working.
    *
    * `'native'` — gorhom wrapper skipped; imperative scroll calls reach
    *   the native scroll node immediately, regardless of the sheet's
@@ -375,6 +375,53 @@ export interface Branding {
     light: ImageSourcePropType;
     dark?: ImageSourcePropType;
   };
+  // @ai-start
+  /**
+   * Apple App Store numeric id (the `id…` segment of the App Store URL).
+   * Drives the iOS "Write a Review" link in `utils/reviewUtils.ts`. Android
+   * reads `bundleId.android`.
+   *
+   * Field absent → no iOS review link: `openAppStoreForReview()` opens
+   * nothing and Settings hides the "Write a Review" row on iOS. Android keeps
+   * its row. Bayaan sets its own listing in `config/branding.js`.
+   */
+  appStoreId?: string;
+  /**
+   * Source-code repository URL opened by Settings → "Contribute on GitHub".
+   * An AGPL fork sets its own public source here.
+   *
+   * Field absent → Settings hides the "Contribute on GitHub" row; it never
+   * falls back to Bayaan's repository. Bayaan sets its own repository in
+   * `config/branding.js`.
+   */
+  githubUrl?: string;
+  /**
+   * A fork's own Settings pages: the route name in `app/(tabs)/(d.settings)/`
+   * of each page, by the item `type` of the row that opens it. They join
+   * `SETTINGS_ROUTE_NAMES`, and the Settings stack declares a screen for
+   * each one (the page sets its own title). Field absent → no extra pages.
+   */
+  settingsRouteNames?: Record<string, string>;
+  /**
+   * A hook that takes Bayaan's Settings sections and returns the fork's: it
+   * may add rows and sections (`leading` puts one above Appearance) and read
+   * state (an account, a flag). The phone list and the iPad list both call
+   * it through `useSettingsSections`. Field absent → Bayaan's list.
+   */
+  useSettingsSections?: (sections: SettingsSection[]) => SettingsSection[];
+  /**
+   * Opens a row that a fork handles itself (a row it added, or a Bayaan row
+   * that it opens another way). Returns true when it handled `type`; false
+   * leaves the row to `openSettingsItem`. Field absent → Bayaan's handling.
+   */
+  openSettingsItem?: (type: string) => boolean | Promise<boolean>;
+  /**
+   * Rendered once by each Settings screen, outside the scrolling list (a
+   * fork's confirm sheet that one of its rows opens). Field absent → none.
+   * A fork sets it with a getter that `require()`s the component on access.
+   */
+  settingsOverlayComponent?: ComponentType;
+  // @ai-end
 }
 
 /** Qariah's catalog config: upstream's fields plus the live catalog URL. */
@@ -459,6 +506,13 @@ export interface QariahBranding extends Branding {
    * `Branding` field, default off).
    */
   whatsNewOnPatchUpdate?: boolean;
+
+  /**
+   * GitHub #731: the file name of the "Share as Image" PNG that `components/share/captureShareCard.ts`
+   * writes to the cache directory. The iOS share sheet shows the name as its title, so it must carry
+   * the brand of the app. Upstream candidate (a `Branding` field, default `bayaan-share.png`).
+   */
+  shareImageFileName: string;
 }
 
 declare const branding: QariahBranding;
