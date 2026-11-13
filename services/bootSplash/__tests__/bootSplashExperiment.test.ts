@@ -2,11 +2,11 @@
 
 import {
   FLAG_RESPONSE_WATCHDOG_MS,
-  armsTreatment,
   BootSplashNative,
   createBootSplashExperiment,
   FlagClientLike,
   mapExitReason,
+  nextLaunchAction,
   NONBLOCKING_SPLASH_FLAG_V2,
   PreviousProcessInfo,
   readFlagResolution,
@@ -74,7 +74,6 @@ function makeNative(opts?: {
   const anrSideEffect = opts?.anrSideEffect ?? true;
   const native = {
     setNonBlockingSplashForNextLaunch: jest.fn(),
-    setNonBlockingSplashOffKeepGuard: jest.fn(),
     getBootSplashMode: jest.fn(() => opts?.mode ?? 'control'),
     setBootRisk: jest.fn(() => {
       file.bootRisk = true;
@@ -141,22 +140,24 @@ describe('mapExitReason', () => {
   });
 });
 
-describe('armsTreatment and resolutionLabel', () => {
+// Default ON: only 'control' or false from a good response turns it off, and
+// a failed request keeps the stored value.
+describe('nextLaunchAction and resolutionLabel', () => {
   it.each([
-    ['treatment', false, true, 'treatment'],
-    ['control', false, false, 'control'],
-    [false, false, false, 'false'],
-    [undefined, false, false, 'missing'],
-    ['weird', false, false, 'other'],
-    [true, false, false, 'other'],
-    ['treatment', true, false, 'error'],
-    ['control', true, false, 'error'],
-    [undefined, true, false, 'error'],
+    ['treatment', false, 'on', 'treatment'],
+    ['control', false, 'off', 'control'],
+    [false, false, 'off', 'false'],
+    [undefined, false, 'on', 'missing'],
+    ['weird', false, 'on', 'other'],
+    [true, false, 'on', 'other'],
+    ['treatment', true, 'keep', 'error'],
+    ['control', true, 'keep', 'error'],
+    [undefined, true, 'keep', 'error'],
   ] as const)(
-    'value %p requestFailed %p → arms %p, label %p',
-    (value, requestFailed, arms, label) => {
+    'value %p requestFailed %p → action %p, label %p',
+    (value, requestFailed, action, label) => {
       const r = {value, requestFailed};
-      expect(armsTreatment(r)).toBe(arms);
+      expect(nextLaunchAction(r)).toBe(action);
       expect(resolutionLabel(r)).toBe(label);
     },
   );
@@ -203,7 +204,7 @@ describe('readFlagResolution', () => {
     expect(readFlagResolution(client).requestFailed).toBe(false);
   });
 
-  it('fails closed for a client without getStoredFlagDetails', () => {
+  it('keeps the stored value for a client without getStoredFlagDetails', () => {
     const client: FlagClientLike = {
       getFeatureFlag: () => 'treatment',
       onFeatureFlags: () => () => undefined,
@@ -211,10 +212,10 @@ describe('readFlagResolution', () => {
     };
     const r = readFlagResolution(client);
     expect(r).toEqual({value: undefined, requestFailed: true});
-    expect(armsTreatment(r)).toBe(false);
+    expect(nextLaunchAction(r)).toBe('keep');
   });
 
-  it('fails closed when the client throws', () => {
+  it('keeps the stored value when the client throws', () => {
     const {client} = makeClient({value: 'treatment'});
     client.getFeatureFlag.mockImplementation(() => {
       throw new Error('boom');
@@ -311,8 +312,8 @@ describe('attach', () => {
 });
 
 describe('flag responses', () => {
-  function setup(buildFlagEnabled = true) {
-    const {native} = makeNative();
+  function setup(buildFlagEnabled = true, mode = 'control') {
+    const {native} = makeNative({mode});
     const {client, respond} = makeClient();
     const exp = createBootSplashExperiment({
       native,
@@ -323,44 +324,60 @@ describe('flag responses', () => {
     return {native, client, respond, exp};
   }
 
-  it('writes true for treatment, then OFF with the guard kept after an error response', () => {
+  it('writes true for treatment, and an error response after it writes nothing', () => {
     const {native, respond} = setup();
     respond({value: 'treatment'});
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenLastCalledWith(
       true,
     );
-    expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
     respond({value: 'treatment', details: {requestError: {type: 'network'}}});
-    expect(native.setNonBlockingSplashOffKeepGuard).toHaveBeenCalledTimes(1);
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
   });
 
+  // The old rule wrote OFF here. In the field that put a device with a slow
+  // network back in the blocking splash for one launch (sequences c-t-c).
   it.each([
     ['a request error', {requestError: {type: 'network'}}],
     ['a flag quota limit', {quotaLimited: ['feature_flags']}],
     ['a partial response', {errorsWhileComputingFlags: true}],
-  ])(
-    'writes OFF with the guard kept for %s',
-    (_name, details: StoredDetails) => {
-      const {native, respond, exp} = setup();
+  ])('keeps the stored value for %s', (_name, details: StoredDetails) => {
+    for (const [mode, on] of [
+      ['treatment', true],
+      ['fallback', true],
+      ['control', false],
+    ] as const) {
+      const {native, respond, exp} = setup(true, mode);
       const cb = jest.fn();
       exp.onResolved(cb);
-      respond({value: 'treatment', details});
-      expect(native.setNonBlockingSplashOffKeepGuard).toHaveBeenCalledTimes(1);
+      respond({value: 'control', details});
       expect(native.setNonBlockingSplashForNextLaunch).not.toHaveBeenCalled();
+      // armsNextLaunch reports the mode this process booted in.
       expect(cb).toHaveBeenCalledWith({
-        resolution: {value: 'treatment', requestFailed: true},
+        resolution: {value: 'control', requestFailed: true},
         label: 'error',
-        armsNextLaunch: false,
+        armsNextLaunch: on,
       });
-    },
-  );
+    }
+  });
+
+  it('a failed response after a good one reports the value of the good one', () => {
+    const {respond, exp} = setup(true, 'treatment');
+    const cb = jest.fn();
+    exp.onResolved(cb);
+    respond({value: 'control'});
+    respond({value: 'control', details: {requestError: {type: 'network'}}});
+    expect(cb).toHaveBeenLastCalledWith({
+      resolution: {value: 'control', requestFailed: true},
+      label: 'error',
+      armsNextLaunch: false,
+    });
+  });
 
   it('a good response after a failed one writes the full value', () => {
     const {native, respond} = setup();
     respond({value: 'control', details: {requestError: {type: 'network'}}});
-    expect(native.setNonBlockingSplashOffKeepGuard).toHaveBeenCalledTimes(1);
+    expect(native.setNonBlockingSplashForNextLaunch).not.toHaveBeenCalled();
     respond({value: 'control'});
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledWith(
@@ -372,19 +389,39 @@ describe('flag responses', () => {
     const {native, respond} = setup();
     respond({value: 'treatment', details: null});
     expect(native.setNonBlockingSplashForNextLaunch).not.toHaveBeenCalled();
-    expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
   });
 
-  it.each([['control'], [false], [undefined], ['weird']])(
-    'writes false for %p',
+  // The remote off switch: only these two values turn the default off.
+  it.each([['control'], [false]])('writes false for %p', value => {
+    const {native, respond, exp} = setup(true, 'treatment');
+    const cb = jest.fn();
+    exp.onResolved(cb);
+    respond({value});
+    expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
+    expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledWith(
+      false,
+    );
+    expect(cb).toHaveBeenLastCalledWith(
+      expect.objectContaining({armsNextLaunch: false}),
+    );
+  });
+
+  // A flag that is missing from a good response (deleted or archived) and an
+  // unknown variant go back to the default, so a device cannot stay off.
+  it.each([['treatment'], [undefined], ['weird'], [true]])(
+    'writes true for %p',
     value => {
-      const {native, respond} = setup();
+      const {native, respond, exp} = setup(true, 'control');
+      const cb = jest.fn();
+      exp.onResolved(cb);
       respond({value});
       expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
       expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledWith(
-        false,
+        true,
       );
-      expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
+      expect(cb).toHaveBeenLastCalledWith(
+        expect.objectContaining({armsNextLaunch: true}),
+      );
     },
   );
 
@@ -400,7 +437,6 @@ describe('flag responses', () => {
     respond({value: 'treatment'});
     respond({value: 'treatment'});
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledTimes(1);
-    expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -819,7 +855,7 @@ describe('flag-response watchdog', () => {
     jest.useRealTimers();
   });
 
-  it('reloads once when no response arrives, and a failed reload writes a transient OFF', () => {
+  it('reloads once when no response arrives, and a failed reload keeps the stored value', () => {
     const {native} = makeNative();
     const {client, respond} = makeClient({value: 'treatment'});
     const exp = createBootSplashExperiment({
@@ -837,7 +873,6 @@ describe('flag-response watchdog', () => {
       value: 'treatment',
       details: {requestError: {type: 'connection_error'}},
     });
-    expect(native.setNonBlockingSplashOffKeepGuard).toHaveBeenCalledTimes(1);
     expect(native.setNonBlockingSplashForNextLaunch).not.toHaveBeenCalled();
     jest.advanceTimersByTime(60_000);
     expect(client.reloadFeatureFlags).toHaveBeenCalledTimes(1);
@@ -856,7 +891,6 @@ describe('flag-response watchdog', () => {
     expect(client.reloadFeatureFlags).toHaveBeenCalledTimes(1);
     respond({value: 'treatment'});
     expect(native.setNonBlockingSplashForNextLaunch).toHaveBeenCalledWith(true);
-    expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
   });
 
   it('writes nothing when a response stores no flags object', () => {
@@ -897,7 +931,6 @@ describe('flag-response watchdog', () => {
     jest.advanceTimersByTime(10 * FLAG_RESPONSE_WATCHDOG_MS);
     expect(client.reloadFeatureFlags).toHaveBeenCalledTimes(1);
     expect(native.setNonBlockingSplashForNextLaunch).not.toHaveBeenCalled();
-    expect(native.setNonBlockingSplashOffKeepGuard).not.toHaveBeenCalled();
   });
 
   it('starts no watchdog when the build flag is off or on iOS', () => {

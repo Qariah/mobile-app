@@ -225,6 +225,12 @@ Qariah-only events, named in `services/analytics/qariahEvents.ts` and sent by `s
 | `notification_opened` | A tap on a notice opened the app | `type`, `cold_start`, `result` (`play`, `browse_surah`, `resume`, `listen`, `profile`, `no_navigator`, `failed`), `announcement_id`, `platform` |
 | `notification_background_run` | The next start after a run of the background task (`services/notifications/backgroundRunReport.ts`) | `status`, `hours_since_run`, `launch_was_background`, `runs_since_report`, `platform` |
 
+#### QuranReflect Events (Qariah)
+
+| Event | Trigger | Key Properties |
+|-------|---------|----------------|
+| `reflection_published` | QuranReflect accepted a publish of a Reflection (`publishNote()` in `services/userState/notes.ts` got a post id), TECH_DEBT #369 | None, by design: no note text, no id, no verse key |
+
 #### App Lifecycle Events
 
 | Event | Trigger | Key Properties |

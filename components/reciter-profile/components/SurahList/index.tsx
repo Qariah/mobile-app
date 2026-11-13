@@ -19,6 +19,7 @@ import {useTranslation} from 'react-i18next';
 import {runAfterFirstPaint} from '@/utils/runAfterFirstPaint'; // @ai Qariah
 import Color from 'color';
 import {computeGridLayout} from '@/utils/gridLayout';
+import {useFollowAlongSurahs} from '@/hooks/useFollowAlongCoverage'; // @ai Qariah (#847)
 // @ai-end
 
 // Define types matching useSettings and ReciterProfile
@@ -116,6 +117,7 @@ export const SurahList = React.forwardRef<
     const {theme} = useTheme();
     const {t} = useTranslation(['player', 'common']);
     const styles = createStyles(theme);
+    const followAlongSurahs = useFollowAlongSurahs(rewayatId); // @ai Qariah (#847)
 
     // Build flat data array + sticky header indices
     const {data, stickyIndices} = React.useMemo(() => {
@@ -258,6 +260,7 @@ export const SurahList = React.forwardRef<
             isDownloaded={isDownloaded(reciterId, itemSurahs[0].id.toString())}
             onOptionsPress={onOptionsPress}
             rewayatId={rewayatId}
+            showFollowAlong={followAlongSurahs.has(itemSurahs[0].id)} // @ai Qariah (#847)
           />
         );
       },
@@ -272,6 +275,7 @@ export const SurahList = React.forwardRef<
         rewayatId,
         styles,
         theme.colors,
+        followAlongSurahs, // @ai Qariah (#847)
       ],
     );
 
@@ -326,6 +330,7 @@ export const SurahList = React.forwardRef<
             onOptionsPress={onOptionsPress}
             rewayatId={rewayatId}
             tableColumns={showColumns}
+            showFollowAlong={followAlongSurahs.has(item.surahs[0].id)} // @ai Qariah (#847)
           />
         );
       },
@@ -342,6 +347,7 @@ export const SurahList = React.forwardRef<
         styles.juzHeader,
         styles.juzHeaderText,
         theme.colors.textSecondary,
+        followAlongSurahs, // @ai Qariah (#847)
       ],
     );
 

@@ -1,7 +1,12 @@
 // @ai-generated
 // Qariah (Sprint 48, S48.6): which notification to send, and the candidates.
 import type {Reciter} from '@/data/reciterData';
-import {listRecitations, type RecitationEntry} from './catalogDiff';
+import {
+  listRecitations,
+  listTimingCoverage,
+  type RecitationEntry,
+  type TimingEntry,
+} from './catalogDiff';
 import {localDay} from './localDay';
 import type {
   NotificationCandidate,
@@ -10,13 +15,20 @@ import type {
   NotificationType,
   NotificationTypePrefs,
   RecitationKey,
+  TimingKey,
 } from './types';
 
-/** The order when two types compete for the one notice of a day (the plan: 1, 5, 2, 3, 4). */
+/**
+ * The order when two types compete for the one notice of a day (the plan: 1,
+ * 5, 2, 3, 4). `follow_along` (#845) comes after a new recitation: a new
+ * recitation is the larger news, and the follow-along notice waits for the
+ * next day (its keys are held back).
+ */
 export const NOTIFICATION_PRIORITY: readonly NotificationType[] = [
   'followed_recitation',
   'whats_new',
   'new_recitation',
+  'follow_along',
   'kahf_friday',
   'continue_listening',
 ];
@@ -201,11 +213,12 @@ export function pickNotification(
 }
 
 /**
- * The recitation keys that this check holds back: the `coveredKeys` of each
- * candidate that was not picked, but that a later check can still post (its
- * toggle is on, and it lost to the order or to the daily limit). Leave these
- * keys out of the saved snapshot (`snapshotAfter`), so the next check finds
- * them again.
+ * The keys that this check holds back: the `coveredKeys` of each candidate
+ * that was not picked, but that a later check can still post (its toggle is
+ * on, and it lost to the order or to the daily limit). Leave these keys out of
+ * the saved snapshots (`snapshotAfter`), so the next check finds them again.
+ * The list has recitation keys and, for `follow_along`, timing keys; each
+ * snapshot uses only its own keys.
  *
  * The keys of a candidate whose toggle is off, and every key when the user is
  * in the holdout or has no permission, are dropped on purpose: they go into the
@@ -214,9 +227,9 @@ export function pickNotification(
 export function heldBackKeys(
   input: PickNotificationInput,
   picked: NotificationCandidate | null,
-): RecitationKey[] {
+): (RecitationKey | TimingKey)[] {
   if (input.holdout || !input.permissionGranted) return [];
-  const out: RecitationKey[] = [];
+  const out: (RecitationKey | TimingKey)[] = [];
   for (const candidate of input.candidates) {
     if (candidate === picked) continue;
     if (input.prefs[candidate.type] !== true) continue;
@@ -378,6 +391,101 @@ export function buildRecitationCandidates(
     });
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// The follow-along candidate (#845)
+
+export interface BuildFollowAlongCandidatesInput {
+  /** The new timing keys of the check (`diffTimingCoverage`). */
+  newKeys: readonly TimingKey[];
+  /** The catalog that `newKeys` came from. */
+  reciters: readonly Reciter[];
+  /** `useFavoriteRecitersStore.getState().favoriteReciterIds` ("follow" = favorite). */
+  favoriteReciterIds: readonly string[];
+  /** The reciter name in the app language. Default: the catalog `name`. */
+  formatReciterName?: (reciter: Reciter) => string;
+  /** The surah name in the app language. Default: the surah number. */
+  formatSurahName?: (surah: number) => string;
+}
+
+/**
+ * The candidate for the surahs that got follow-along: at most ONE, of the
+ * type `follow_along`. The surahs of a favorite reciter come first, then the
+ * order of reciter name, rewayah id and surah. The first surah is the one
+ * that the notice names and opens (the `recitation` target):
+ * - one surah: "<reciter> · <surah> now has follow-along.";
+ * - `RECITATION_SUMMARY_MIN_COUNT` (2) or more: ONE summary that gives the
+ *   count, names the first surah and covers each key.
+ * A key that is not in `reciters` is skipped.
+ */
+export function buildFollowAlongCandidates(
+  input: BuildFollowAlongCandidatesInput,
+): NotificationCandidate[] {
+  const {
+    newKeys,
+    reciters,
+    favoriteReciterIds,
+    formatReciterName = reciter => reciter.name,
+    formatSurahName = surah => String(surah),
+  } = input;
+  if (newKeys.length === 0) return [];
+
+  const wanted = new Set(newKeys);
+  const favorites = new Set(favoriteReciterIds);
+  const isFavorite = (entry: TimingEntry) => favorites.has(entry.reciter.id);
+  const entries = listTimingCoverage(reciters)
+    .filter(entry => wanted.has(entry.key))
+    .sort(
+      (a, b) =>
+        Number(isFavorite(b)) - Number(isFavorite(a)) ||
+        compareText(a.reciter.name, b.reciter.name) ||
+        compareText(a.rewayah.id, b.rewayah.id) ||
+        a.surah - b.surah,
+    );
+  if (entries.length === 0) return [];
+
+  const [first] = entries;
+  const reciterName = formatReciterName(first.reciter);
+  const surahName = formatSurahName(first.surah);
+  const target = {
+    kind: 'recitation',
+    reciterId: first.reciter.id,
+    reciterSlug: first.reciter.slug ?? null,
+    rewayahId: first.rewayah.id,
+    surah: first.surah,
+  } as const;
+  const title = {key: 'qariah:notifications.followAlong.title'} as const;
+
+  if (entries.length >= RECITATION_SUMMARY_MIN_COUNT) {
+    const count = entries.length;
+    return [
+      {
+        type: 'follow_along',
+        title,
+        body: {
+          key: 'qariah:notifications.followAlongSummary.body',
+          params: {count, reciterName, surahName},
+        },
+        target,
+        dedupeKey: `follow_along:summary:${count}:${first.key}`,
+        coveredKeys: entries.map(entry => entry.key),
+      },
+    ];
+  }
+  return [
+    {
+      type: 'follow_along',
+      title,
+      body: {
+        key: 'qariah:notifications.followAlong.body',
+        params: {reciterName, surahName},
+      },
+      target,
+      dedupeKey: `follow_along:${first.key}`,
+      coveredKeys: [first.key],
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------

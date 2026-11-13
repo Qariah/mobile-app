@@ -347,4 +347,111 @@ export const CASES = {
     // The new play works (#235).
     await ensurePlaying(ctx);
   },
+
+  /**
+   * MSH-12 (#876): after "Play from Here" starts the Mushaf audio at once (no sheet), the
+   * reader still takes touches. Before the fix the verse sheet's Modal stayed presented,
+   * and its empty full-screen view took every touch until a restart.
+   */
+  'MSH-12': async ctx => {
+    const {wda, log} = ctx;
+    await wda.activate(IOS_BUNDLE_ID);
+    await sleep(1500);
+    await wda.openUrl('qariah://mushaf?page=440');
+    await sleep(4000);
+    await stopMushafAudio(wda);
+    // 1. Play once through the Playback Settings sheet, so that the player remembers a
+    // qariah. 2. Stop.
+    await wda.tap('Play', {timeoutMs: 10000});
+    await wda.waitFor('Playback Settings', {timeoutMs: 10000});
+    // A new install has no qariah yet: Zaynab Talha has verse timings.
+    const select = (await wda.find('Select Qariah, .*')).node;
+    if (select) {
+      await wda.tapNode(select);
+      await wda.tap('Zaynab Talha.*', {timeoutMs: 10000});
+      await wda.waitFor('Playback Settings', {timeoutMs: 10000});
+    }
+    await wda.tap('.*, Play', {timeoutMs: 10000}); // the sheet's play button
+    await sleep(4000);
+    await ctx.shot('played-from-the-sheet');
+    check((await wda.find('Stop')).node, 'the sheet did not start the audio');
+    await stopMushafAudio(wda);
+    for (let round = 1; round <= 3; round += 1) {
+      // 3. Long-press a verse → "Play from Here": the audio starts at once.
+      const {screen} = await wda.snapshot({alerts: false});
+      await wda.longPress(screen.width / 2, screen.height * 0.55, 1.0);
+      await wda.waitFor('Play from Here', {timeoutMs: 10000});
+      // A tap while the sheet still slides up can miss the moving row.
+      await sleep(1500);
+      await wda.tap('Play from Here', {timeoutMs: 5000});
+      await wda.waitFor('Play from Here', {not: true, timeoutMs: 5000});
+      await sleep(2000);
+      const top = await mainWindowLayers(wda);
+      await ctx.shot(`round-${round}-playing`);
+      check(
+        top === 1,
+        `round ${round}: ${top} full-screen views on the main window (the sheet's Modal stayed)`,
+      );
+      // 4. Pause: the button shows Play. 5. Stop: the toolbar goes back to idle.
+      const pause = await waitToolbarButton(wda, 'Pause', 15000);
+      check(
+        pause,
+        `round ${round}: the toolbar shows no Pause (the audio did not start)`,
+      );
+      await wda.tapNode(pause);
+      await sleep(1500);
+      check(
+        (await waitToolbarButton(wda, 'Play', 3000)) &&
+          (await wda.find('Stop')).node,
+        `round ${round}: Pause did not pause the audio (the reader ignores touches)`,
+      );
+      await stopMushafAudio(wda);
+      log(`  round ${round}: one window layer; Pause and Stop work`);
+    }
+  },
 };
+
+/**
+ * A Mushaf toolbar button by its label, or null after `timeoutMs`. On iOS 26 XCUITest reports
+ * the middle group (Previous ayah, Play or Pause, Next ayah) as not visible, so this does not
+ * filter on visibility. The idle toolbar's Play is its own group, and it is visible.
+ */
+async function waitToolbarButton(wda, label, timeoutMs) {
+  const end = Date.now() + timeoutMs;
+  do {
+    const {nodes} = await wda.snapshot({alerts: false});
+    const node = nodes.find(n => /Button$/.test(n.type) && n.label === label);
+    if (node) return node;
+    await sleep(500);
+  } while (Date.now() < end);
+  return null;
+}
+
+/** Taps the Mushaf toolbar's Stop while it shows, and checks that the toolbar goes idle. */
+async function stopMushafAudio(wda) {
+  const stop = (await wda.find('Stop')).node;
+  if (!stop) return;
+  await wda.tapNode(stop);
+  await sleep(1500);
+  check(
+    !(await wda.find('Stop')).node && (await wda.find('Search')).node,
+    'Stop did not stop the Mushaf audio',
+  );
+}
+
+/**
+ * The full-screen views directly on the main window. 1 is the app; a presented view
+ * controller (a React Native Modal) adds one.
+ */
+async function mainWindowLayers(wda) {
+  const raw = await wda.s('GET', '/source?format=description', undefined, {
+    timeoutMs: 60000,
+  });
+  const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  const start = text.indexOf('Attributes: Window (Main)');
+  const end = text.indexOf('Path to element:', start);
+  return text
+    .slice(start, end)
+    .split('\n')
+    .filter(l => /^ {4}\S/.test(l)).length;
+}

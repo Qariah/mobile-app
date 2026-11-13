@@ -13,7 +13,6 @@ import {
   getPreviousProcessInfo,
   setBootRisk,
   setNonBlockingSplashForNextLaunch,
-  setNonBlockingSplashOffKeepGuard,
 } from '@/modules/qariah-boot-splash';
 import {isQariahFeatureEnabled} from '@/config/qariahFeatureFlags';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
@@ -30,7 +29,6 @@ export type {BootRiskReason, ColdStartBootProps} from './bootSplashExperiment';
 export const bootSplashExperiment = createBootSplashExperiment({
   native: {
     setNonBlockingSplashForNextLaunch,
-    setNonBlockingSplashOffKeepGuard,
     getBootSplashMode,
     setBootRisk,
     getBootRisk,

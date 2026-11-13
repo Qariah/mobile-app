@@ -1,8 +1,9 @@
 // @ai-generated
 // Qariah (Sprint 48): one recitation (one surah of one rewayah of one
-// reciter) on the "Newly Added" Listen row. The look follows
-// BrowseReciterCard: the reciter photo on top, then the surah name, the
-// reciter name and, for a partial recording, the ayah range.
+// reciter) on the "Newly Added" Listen row and, since #847, on the "Follow
+// Along" Listen row. The look follows BrowseReciterCard: the reciter photo on
+// top, then the surah name, the reciter name and, for a partial recording,
+// the ayah range.
 import React, {useCallback, useMemo} from 'react';
 import {View, Text, Pressable, StyleSheet} from 'react-native';
 import {moderateScale} from '@/utils/scale';
@@ -22,9 +23,15 @@ import type {Theme} from '@/utils/themeUtils';
 export const RECITATION_CARD_WIDTH = moderateScale(120);
 export const RECITATION_CARD_HEIGHT = moderateScale(164);
 
-interface RecitationCardProps {
-  recitation: NewlyAddedRecitation;
-  onPress: (recitation: NewlyAddedRecitation) => void;
+/** What a card shows: the rows pass their own recitation type (#847). */
+export type RecitationCardItem = Pick<
+  NewlyAddedRecitation,
+  'reciter' | 'surah' | 'range'
+>;
+
+interface RecitationCardProps<T extends RecitationCardItem> {
+  recitation: T;
+  onPress: (recitation: T) => void;
   /** iPad shelf width; the height keeps the 120:164 ratio. Phones omit it. */
   cardWidth?: number;
 }
@@ -41,7 +48,7 @@ export function getRecitationSurahName(surahId: number): string {
 
 /** "ayahs 5–20" for a partial recording; undefined for a full surah. */
 export function getRecitationRangeText(
-  recitation: NewlyAddedRecitation,
+  recitation: Pick<RecitationCardItem, 'surah' | 'range'>,
 ): string | undefined {
   if (!recitation.range) return undefined;
   return formatAyahRange({
@@ -97,10 +104,12 @@ function createStyles(theme: Theme, cardWidth?: number) {
       lineHeight: moderateScale(15),
       includeFontPadding: false,
     },
+    // #847 (critique round 1, H4): the secondary color, not a smaller size
+    // of the primary color.
     reciterName: {
       fontSize: moderateScale(9.5),
       fontFamily: 'Manrope-Medium',
-      color: Color(theme.colors.text).alpha(0.7).toString(),
+      color: theme.colors.textSecondary,
       letterSpacing: latinLetterSpacing(-0.2),
       lineHeight: moderateScale(13),
       includeFontPadding: false,
@@ -115,89 +124,93 @@ function createStyles(theme: Theme, cardWidth?: number) {
   });
 }
 
-export const RecitationCard = React.memo(
-  ({recitation, onPress, cardWidth}: RecitationCardProps) => {
-    const {theme} = useTheme();
-    const {t} = useTranslation('qariah');
-    const glassColorScheme = useGlassColorScheme();
-    const styles = useMemo(
-      () => createStyles(theme, cardWidth),
-      [theme, cardWidth],
-    );
+function RecitationCardView<T extends RecitationCardItem>({
+  recitation,
+  onPress,
+  cardWidth,
+}: RecitationCardProps<T>) {
+  const {theme} = useTheme();
+  const {t} = useTranslation('qariah');
+  const glassColorScheme = useGlassColorScheme();
+  const styles = useMemo(
+    () => createStyles(theme, cardWidth),
+    [theme, cardWidth],
+  );
 
-    const surahName = getRecitationSurahName(recitation.surah);
-    const reciterName = getReciterDisplayName(recitation.reciter);
-    const rangeText = getRecitationRangeText(recitation);
-    const accessibilityLabel = rangeText
-      ? t('a11y.playRecitationRange', {
-          surah: surahName,
-          range: rangeText,
-          reciter: reciterName,
-        })
-      : t('a11y.playRecitation', {surah: surahName, reciter: reciterName});
+  const surahName = getRecitationSurahName(recitation.surah);
+  const reciterName = getReciterDisplayName(recitation.reciter);
+  const rangeText = getRecitationRangeText(recitation);
+  const accessibilityLabel = rangeText
+    ? t('a11y.playRecitationRange', {
+        surah: surahName,
+        range: rangeText,
+        reciter: reciterName,
+      })
+    : t('a11y.playRecitation', {surah: surahName, reciter: reciterName});
 
-    const handlePress = useCallback(
-      () => onPress(recitation),
-      [onPress, recitation],
-    );
+  const handlePress = useCallback(
+    () => onPress(recitation),
+    [onPress, recitation],
+  );
 
-    const content = (
-      <>
-        <View style={styles.imageContainer}>
-          <ReciterImage
-            imageUrl={recitation.reciter.image_url || undefined}
-            reciterName={recitation.reciter.name}
-            style={styles.image}
-            profileIconSize={moderateScale(40)}
-          />
-        </View>
-        <View style={styles.contentContainer}>
-          <Text style={styles.surahName} numberOfLines={1}>
-            {surahName}
+  const content = (
+    <>
+      <View style={styles.imageContainer}>
+        <ReciterImage
+          imageUrl={recitation.reciter.image_url || undefined}
+          reciterName={recitation.reciter.name}
+          style={styles.image}
+          profileIconSize={moderateScale(40)}
+        />
+      </View>
+      <View style={styles.contentContainer}>
+        <Text style={styles.surahName} numberOfLines={1}>
+          {surahName}
+        </Text>
+        <Text style={styles.reciterName} numberOfLines={1}>
+          {reciterName}
+        </Text>
+        {rangeText ? (
+          <Text style={styles.rangeText} numberOfLines={1}>
+            {rangeText}
           </Text>
-          <Text style={styles.reciterName} numberOfLines={1}>
-            {reciterName}
-          </Text>
-          {rangeText ? (
-            <Text style={styles.rangeText} numberOfLines={1}>
-              {rangeText}
-            </Text>
-          ) : null}
-        </View>
-      </>
-    );
+        ) : null}
+      </View>
+    </>
+  );
 
-    if (USE_GLASS) {
-      return (
-        <Pressable
-          onPress={handlePress}
-          accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
-          testID="recitation-card">
-          <GlassView
-            style={StyleSheet.flatten([
-              styles.container,
-              styles.glassContainer,
-            ])}
-            glassEffectStyle="regular"
-            colorScheme={glassColorScheme}>
-            {content}
-          </GlassView>
-        </Pressable>
-      );
-    }
-
+  if (USE_GLASS) {
     return (
       <Pressable
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        testID="recitation-card"
-        style={({pressed}) => [styles.container, pressed && styles.pressed]}>
-        {content}
+        testID="recitation-card">
+        <GlassView
+          style={StyleSheet.flatten([styles.container, styles.glassContainer])}
+          glassEffectStyle="regular"
+          colorScheme={glassColorScheme}>
+          {content}
+        </GlassView>
       </Pressable>
     );
-  },
-);
+  }
+
+  return (
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID="recitation-card"
+      style={({pressed}) => [styles.container, pressed && styles.pressed]}>
+      {content}
+    </Pressable>
+  );
+}
+
+/** One recitation card. Generic, so `onPress` gets the row's own type. */
+export const RecitationCard = React.memo(
+  RecitationCardView,
+) as typeof RecitationCardView & {displayName?: string};
 
 RecitationCard.displayName = 'RecitationCard';

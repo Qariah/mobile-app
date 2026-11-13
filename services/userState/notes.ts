@@ -34,6 +34,7 @@
  */
 
 import * as Sentry from '@sentry/react-native'; // @ai
+import {qariahAnalytics} from '@/services/analytics/qariahEvents'; // @ai
 import {getQfSdk} from '@/services/auth/sdkClient';
 import {QfApiError, withQfCall} from './qfErrors'; // @ai
 import {unwrapQfList} from './qfResponse'; // @ai
@@ -282,6 +283,8 @@ export async function publishNote(
         'publishNote: QF response missing postId — cannot record local qfPostId',
       );
     }
+    // @ai TECH_DEBT #369: count each publish that QF accepted (no property).
+    qariahAnalytics.trackReflectionPublished();
     return String(postId);
   });
 }

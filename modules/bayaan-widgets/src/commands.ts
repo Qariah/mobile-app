@@ -42,7 +42,21 @@ export type WidgetCommand =
   // Play an adhkar list's audio from dhikrId (null: the first with audio). // @ai
   | {type: 'playAdhkar'; superId: string; dhikrId: string | null} // @ai
   // Absolute target state for the adhkar player, like setPlayback. // @ai
-  | {type: 'setAdhkarPlayback'; playing: boolean}; // @ai
+  | {type: 'setAdhkarPlayback'; playing: boolean} // @ai
+  // @ai Qariah (2026-11-11): an iOS App Shortcut opens a screen
+  // (services/shortcuts/appShortcuts.ts).
+  | {type: 'openShortcut'; target: WidgetShortcutTarget}; // @ai
+
+// @ai-start
+/** The screens of the app shortcuts (services/shortcuts/appShortcuts.ts). */
+export const WIDGET_SHORTCUT_TARGETS = [
+  'continue-listening',
+  'continue-reading',
+  'search',
+] as const;
+
+export type WidgetShortcutTarget = (typeof WIDGET_SHORTCUT_TARGETS)[number];
+// @ai-end
 
 export interface QueuedWidgetCommand {
   command: WidgetCommand;
@@ -99,6 +113,8 @@ export function isWidgetCommand(value: unknown): value is WidgetCommand {
       );
     case 'setAdhkarPlayback':
       return typeof value.playing === 'boolean';
+    case 'openShortcut':
+      return WIDGET_SHORTCUT_TARGETS.some(t => t === value.target);
     // @ai-end
     default:
       return false;
@@ -141,14 +157,17 @@ export function selectFreshCommands(
   let lastSet = -1;
   // @ai-start
   let lastAdhkarSet = -1;
+  // An app shortcut opens a screen; it is not a play. The last one wins.
+  let lastShortcut = -1;
   fresh.forEach((c, i) => {
     if (c.type === 'setPlayback') lastSet = i;
     else if (c.type === 'setAdhkarPlayback') lastAdhkarSet = i;
+    else if (c.type === 'openShortcut') lastShortcut = i;
     else lastPlay = i;
   });
   // @ai-end
   // @ai-start
-  const picked = [lastPlay];
+  const picked = [lastPlay, lastShortcut];
   if (lastSet > lastPlay) picked.push(lastSet);
   if (lastAdhkarSet > lastPlay) picked.push(lastAdhkarSet);
   return picked

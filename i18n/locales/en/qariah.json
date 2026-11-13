@@ -30,7 +30,9 @@
       "whatsNewDesc": "When an update brings new features",
       "permissionOff": "Notifications are off for {{appName}} in your phone settings.",
       "allow": "Allow notifications",
-      "readFailed": "We could not read your notification choices. Try again later."
+      "readFailed": "We could not read your notification choices. Try again later.",
+      "followAlong": "New follow-along",
+      "followAlongDesc": "When a surah of a qariah gets follow-along"
     }
   },
   "a11y": {
@@ -48,6 +50,10 @@
       "repeatQueue": "Queue",
       "repeatTrack": "Current recitation",
       "positionValue": "{{position}} of {{duration}}"
+    },
+    "reciterProfile": {
+      "lovedOnly": "Loved only",
+      "gridView": "Grid view"
     }
   },
   "listenTop": {
@@ -288,13 +294,22 @@
       "newRecitation": "New recitations",
       "kahfFriday": "Friday Al-Kahf reminder",
       "continueListening": "Continue listening",
-      "whatsNew": "New features"
+      "whatsNew": "New features",
+      "followAlong": "New follow-along"
     },
     "softPrompt": {
       "allow": "Allow",
       "title": "Notifications from {{appName}}",
       "footer": "You choose which ones you get in Settings.",
       "choose": "Choose notifications"
+    },
+    "followAlong": {
+      "title": "New follow-along",
+      "body": "{{reciterName}} · {{surahName}} now has follow-along."
+    },
+    "followAlongSummary": {
+      "body_one": "{{count}} surah now has follow-along, including {{reciterName}} · {{surahName}}.",
+      "body_other": "{{count}} surahs now have follow-along, including {{reciterName}} · {{surahName}}."
     }
   },
   "storage": {
@@ -418,6 +433,370 @@
     "title": "Ayah {{key}}",
     "close": "Close panel",
     "moreOptions": "More options for ayah {{key}}"
+  },
+  "changelog": {
+    "v3_2_5": {
+      "title": "Qariah on iPad",
+      "highlights": {
+        "0": {
+          "title": "Qariah on iPad",
+          "description": "A layout made for the larger screen: your Collection in a sidebar, Settings in two columns and the player in two panes. Read Tafsir, Reflections and your notes beside the Mushaf page."
+        },
+        "1": {
+          "title": "Fixes on iPhone",
+          "description": "Playback no longer freezes when a recitation starts, and a crash in the Quran reader is fixed."
+        },
+        "2": {
+          "title": "Lite mode on low-memory Android phones",
+          "description": "On an Android phone with less than 3 GB of memory, Qariah starts in Lite mode: simpler screens that stay fast, with listening, downloads, background audio and the Mushaf. Change it anytime in Settings › Lite mode."
+        },
+        "3": {
+          "title": "Tell us what you think",
+          "description": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support."
+        }
+      },
+      "features": {
+        "0": "iPad: a layout made for the larger screen, with your Collection in a sidebar, wider rows, Settings in two columns and the player in two panes",
+        "1": "iPad: Tafsir, Reflections and Personal Notes open in a panel beside the Mushaf page in a wide window, and as a centred card in a narrow one",
+        "2": "Lite mode on Android phones with less than 3 GB of memory or a 32-bit processor: simpler and faster screens that keep listening, reciter profiles, downloads, background audio and Mushaf reading. Settings › Lite mode offers Automatic, On and Off; the choice applies at the next launch"
+      },
+      "improvements": {
+        "0": "The splash screen no longer waits for the Mushaf data on low-memory Android phones",
+        "1": "A bookmark tap and the Repeat action in the verse sheet open the Mushaf reader at once",
+        "2": "The app keeps the splash until a restored Mushaf page is drawn, so no blank page shows",
+        "3": "The Mushaf keeps its line layout across launches and loads the word data faster",
+        "4": "The player keeps its position and its queue up to date while the app is in the background, so the return after a long listen does not freeze",
+        "5": "Android: lighter now-playing bars that stop when their screen is not on view",
+        "6": "Android: the app stops its screen animations while it is in the background, so it uses less battery when you are not looking at it"
+      },
+      "fixes": {
+        "0": "iPhone: playback no longer freezes for a few seconds when a recitation starts",
+        "1": "iPhone: the Quran reader no longer closes after many changes in List view with word by word on",
+        "2": "A shared link to a Qariah plays the recitation that has the surah",
+        "3": "Copy and share a translation as plain text, with no footnote code",
+        "4": "The \"Share as Image\" file carries the Qariah’s name",
+        "5": "The Mushaf fallback fonts load once, after a failed preload, and a failed load tries again",
+        "6": "The player header uses the same Mushaf font as the reader",
+        "7": "A change of the riwayah in the reader keeps the opened verse and the selection",
+        "8": "A failed word-data read shows an error, and a retry draws the page again",
+        "9": "The Home Screen widgets refresh their snapshot when the Mushaf data is ready"
+      }
+    },
+    "v3_2_3": {
+      "title": "Qariah in Arabic, widgets and new recitations",
+      "highlights": {
+        "0": {
+          "title": "Qariah in Arabic",
+          "description": "Most of the app is now in Arabic, with a right-to-left layout and the qariahs' names and bios in Arabic. It follows your phone's language, and you can change it anytime in Settings › Language."
+        },
+        "1": {
+          "title": "Home Screen widgets",
+          "description": "Add Qariah widgets to your Home Screen on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day. The play button works when the app is closed."
+        },
+        "2": {
+          "title": "New recitations, smoother listening",
+          "description": "The Newly Added row on the Listen tab lists the newest recitations. Complete recitations come first, and when a surah ends, the next surah by the same Qariah plays."
+        },
+        "3": {
+          "title": "Tell us what you think",
+          "description": "Found a problem or have an idea? Send us your feedback anytime in Settings › Feedback › Help & Support."
+        }
+      },
+      "features": {
+        "0": "Most of the app in Arabic, with a right-to-left layout. It follows your phone's language; change it in Settings › Language",
+        "1": "Qariah names and bios in Arabic",
+        "2": "Home Screen widgets on iPhone and Android: Continue Listening, Continue Reading, Quick Surah and Ayah of the Day. The play button works when the app is closed",
+        "3": "A shared link to a Qariah or a surah opens in the app"
+      },
+      "improvements": {
+        "0": "The Newly Added row on the Listen tab lists the newest recitations first, with the surah, the Qariah and the ayah range of a partial recitation",
+        "1": "Complete recitations are listed before partial ones",
+        "2": "When a surah ends, the next surah by the same Qariah plays. A playlist with one surah stops at its end",
+        "3": "A surah in a curated playlist opens the list of Qariahs who recite it",
+        "4": "\"Arabic text only\" is the first option in Mushaf Settings",
+        "5": "You can edit a reflection in place",
+        "6": "iPad: the Qariah rows, the sidebar and the player fit the screen, and the country and riwayah pages show every Qariah",
+        "7": "You stay signed in to your Quran Foundation account through network errors and server outages"
+      },
+      "fixes": {
+        "0": "iPhone and iPad: the Mushaf reader turns smoothly between portrait and landscape, without a cropped or squeezed page",
+        "1": "Android: in landscape, each Mushaf page lines up with the screen on phones with a camera cutout",
+        "2": "A link to a Mushaf page or a surah opens it in the reader that is already open, and a link no longer opens a second reader",
+        "3": "Android: Play on the Continue Listening widget resumes where you stopped, not at the start of the surah",
+        "4": "Shuffle shows its message, and Clear cache no longer leaves an empty Qariah card in Control Center"
+      }
+    },
+    "v3_1_3": {
+      "title": "Qariah, rebuilt on Bayaan",
+      "highlights": {
+        "0": {
+          "title": "A new Qariah, built on Bayaan",
+          "description": "Qariah has been rebuilt from the ground up on top of Bayaan, the open-source Quran app. You get a modern app and design with a much fuller feature set — and Qariah's mission stays the same: celebrating contemporary women reciters."
+        },
+        "1": {
+          "title": "Reciters with translations",
+          "description": "New reciters with translations of the Quran into English, Spanish, Russian, and more — alongside the classical Hafs catalog. Translation reciters are tagged on every profile."
+        },
+        "2": {
+          "title": "Rich reciter profiles",
+          "description": "Every reciter now has a profile with their photo, country, bio, recitation count, and the rewayat they recite in. Browse by country with stylized country badges."
+        },
+        "3": {
+          "title": "Curated Listen tab",
+          "description": "A redesigned Listen tab with stacked Reciter and Surah pills, a tall Shuffle pill, and curated rows: Honored Reciters, Paradise Reciters, Newly Added, Full Recordings, Stories of the Prophets, and more."
+        },
+        "4": {
+          "title": "Multiple rewayat",
+          "description": "Read and listen in eight rewayat — Hafs, Warsh, Qalun, Al-Bazzi, Qunbul, Shu'bah, Al-Duri, and Al-Susi — with per-letter and whole-word diff highlighting in the mushaf."
+        },
+        "5": {
+          "title": "Full mushaf with tajweed",
+          "description": "The complete Uthmani mushaf with tajweed coloring, ayah-by-ayah follow-along highlighting, page jumps, bookmarks, and an immersive reading mode."
+        },
+        "6": {
+          "title": "Sign in to restore your favorites",
+          "description": "Sign in with your Quran Foundation account to automatically restore your favorite reciters and surahs from the original Qariah app. Or export and import your data from Settings › Your Data."
+        },
+        "7": {
+          "title": "Offline downloads & custom playlists",
+          "description": "Download individual surahs or entire playlists for offline listening. Create your own playlists, or use curated ones like Surahs of the Prophets and Stories from the Quran."
+        },
+        "8": {
+          "title": "Open source",
+          "description": "Qariah is open source on GitHub. Star the repo, report issues, or open a pull request. Link in Settings › Contribute on GitHub."
+        }
+      },
+      "features": {
+        "0": "Rebuilt from the ground up on top of Bayaan (github.com/thebayaan/Bayaan), the open-source Quran app — Qariah inherits Bayaan's full feature surface verbatim, with Qariah-specific catalog, branding, and curation layered on top",
+        "1": "Reciter catalog of contemporary women reciters, hosted on Cloudflare R2 with a bundled offline fallback",
+        "2": "Reciters with translations of the Quran into English, Spanish, Russian, and more — tagged on every profile",
+        "3": "Rich reciter profiles: photo, country, bio, recitation count, narration tabs, and surah list per rewayah",
+        "4": "Browse reciters by country with stylized 2-letter ISO country badges and tap-to-filter",
+        "5": "Curated Listen-tab rows: Honored Reciters, Paradise Reciters, Newly Added, Full Recordings, Explore by Surah, Explore by Country, Your Favorites, and more",
+        "6": "Redesigned Listen-tab top: stacked Reciter and Surah pills with a tall Shuffle pill",
+        "7": "Mushaf reading with the full Uthmani script, tajweed coloring, ayah-level follow-along, page jumps, bookmarks, and immersive reading mode",
+        "8": "Eight rewayat — Hafs, Warsh, Qalun, Al-Bazzi, Qunbul, Shu'bah, Al-Duri (Abu Amr), Al-Susi — with per-letter and whole-word diff highlighting; calligraphy glyphs (ScheherazadeNew) on every rewayah card",
+        "9": "Rewayah-aware player: verse text renders in the currently-playing rewayah; bookmarks remember their rewayah; a toast tells you when it switches",
+        "10": "Custom playlists with reorder + delete, plus curated playlists: Surahs of the Prophets (expanded), Stories from the Quran, and more",
+        "11": "Sign in with your Quran Foundation account to restore favorite reciters and surahs from the original Qariah app",
+        "12": "Export and Import your data as JSON from Settings › Your Data — round-trippable backups, no account required",
+        "13": "Offline downloads for individual surahs and entire playlists, with progress tracking and storage management",
+        "14": "Deep-linkable share buttons on verses, surahs, mushaf pages, reciters, and recitations"
+      },
+      "improvements": {
+        "0": "Settings › Default Reciter now lists all reciters with the complete Quran without requiring a search query",
+        "1": "Default reciter on first launch is now guaranteed to have a complete Quran",
+        "2": "Mini-player no longer blocks scroll in Browse All",
+        "3": "Queue and player rows now show reciter photos instead of colored placeholders",
+        "4": "Reciter name now shows as subtitle on Queue rows",
+        "5": "Stories of the Prophets expanded to include Al-A'raf",
+        "6": "Browse All Surahs header fixed and surah tap now goes straight to the filtered reciter list",
+        "7": "Translations are now a tagged badge on the reciter profile rather than a noisy filter pill"
+      },
+      "fixes": {
+        "0": "Default Reciter screen no longer requires typing in the search bar to show options",
+        "1": "Calligraphy on rewayah cards no longer gets cut off",
+        "2": "Country tap on the Explore-by-Country row filters the reciter list correctly",
+        "3": "Browse All Surahs no longer shows a duplicate header",
+        "4": "Onboarding carousel updated: the Ambient Sounds slide was removed (the feature is still available in the player)"
+      }
+    },
+    "v2_2": {
+      "title": "A More Personal Mushaf",
+      "highlights": {
+        "0": {
+          "title": "Bayaan is now Open Source",
+          "description": "Bayaan is now AGPL-3.0 and on GitHub. Star the repo, report issues, or open a pull request. Link in Settings › About Bayaan"
+        },
+        "1": {
+          "title": "7 More Rewayat",
+          "description": "Read the mushaf in Warsh, Qalun, Al-Bazzi, Qunbul, Shu'bah, Al-Duri, and Al-Susi alongside Hafs, with per-letter and whole-word diff highlighting"
+        },
+        "2": {
+          "title": "Rewayah Everywhere",
+          "description": "The player renders verse text in the currently-playing rewayah, saved bookmarks remember which rewayah they were made in, and a toast tells you when it switches"
+        },
+        "3": {
+          "title": "Share Anything",
+          "description": "New share buttons on verses, surahs, mushaf pages, reciters, recitations, adhkar, and dhikr. Deep links open straight back into the app"
+        },
+        "4": {
+          "title": "Surahs Tab",
+          "description": "A dedicated tab for the whole mushaf, with juz groupings and a continue-reading hero that remembers where you left off"
+        }
+      },
+      "features": {
+        "0": "Bayaan is now open source at github.com/thebayaan/Bayaan under AGPL-3.0; a new Contribute on GitHub link in Settings › About Bayaan opens the repo",
+        "1": "7 new rewayat with full mushaf text and diff highlighting: Shu'bah, Al-Bazzi, Qunbul, Warsh, Qalun, Al-Duri (Abu Amr), Al-Susi. 8 rewayat with text in total, Hafs included",
+        "2": "Canonical rewayah identity module with support for all 20 qira'at narrations; the 12 text-less rewayat appear in the picker as audio-only entries",
+        "3": "Rewayah-aware player: verse text renders in the currently-playing rewayah; bookmarks, notes, highlights, and share URLs carry the rewayah stamp",
+        "4": "Char-level tajweed highlights for Warsh/Qalun (madd al-badal, tashil, ibdal, taghliz al-lam, silah) plus whole-word mukhtalif tinting for Al-Duri/Al-Susi",
+        "5": "\"Now reading\" toast when the currently-playing track's rewayah transitions",
+        "6": "Consistent foreground diff highlighting across paginated mushaf, vertical mushaf, and list modes. Previously only the paginated view painted them",
+        "7": "Collapsible accordion for the rewayat picker in mushaf settings with the diff toggle promoted above it; color legend disclosure per rewayah",
+        "8": "Shareable deep links for verses, surahs, mushaf pages, reciters, recitations, adhkar super-categories, and individual dhikr. All open back into the app",
+        "9": "Share buttons in player options, surah options, verse actions, mushaf header, adhkar index, dhikr screen, and the recent-reciter long-press sheet",
+        "10": "Theme-aware Open Graph images (light/dark) generated server-side with custom fonts for surah and verse share links",
+        "11": "New Surahs tab with juz groupings, continue-reading hero that resumes at your last-read page, and shared gradient-mesh styling with the hero",
+        "12": "Listening insights: anonymous PostHog analytics (30s/10% meaningful-listen threshold) with opt-out, Sentry crash reporting, local MMKV aggregation for offline events",
+        "13": "Bayaan backend API integration for reciter catalog. App now pulls from api.thebayaan.com with a local bundled fallback and cache",
+        "14": "Community-fork friendly: app runs without an API key using the bundled fallback catalog",
+        "15": "iOS 26 Liquid Glass treatment for the search-tab browse tiles",
+        "16": "Cross-platform network-status toasts on connection loss, recovery, and backend-fallback transitions. Replaces the persistent pill banner",
+        "17": "Share recent-played recitation from the reciter long-press sheet with reciter + surah + rewayah context"
+      },
+      "improvements": {
+        "0": "iOS 26 polish pass: inset handling across scroll views, search-keyboard edge cases, surah-card cleanup",
+        "1": "Mini-player auto-collapses on scroll in the mushaf-settings and search tabs (iOS 26)",
+        "2": "Adhkar cards now show titles below the artwork with sharper corners, preserving the home-screen vertical rhythm",
+        "3": "Clearer 'Add reciter to favorites' vs 'Add to loved' labels in the recent-reciter sheet; heart icon for loved is bigger",
+        "4": "Review and Learn About icons render at full text color (were previously dimmed by hardcoded opacity)",
+        "5": "Adhkar See More button, rewayah-aware navigation context, and canonical category ordering",
+        "6": "Rewayah displayed in mushaf header meta",
+        "7": "Quran tab icon resized for visual balance",
+        "8": "Cached reciter data is used immediately on startup (no blank state while the API responds)"
+      },
+      "fixes": {
+        "0": "Recovered users stuck on a stale pre-canonical rewayah slug (\"qaloon\", \"shouba\", etc.) where the mushaf would fail to load",
+        "1": "Android toasts now show the full text instead of dropping the subtitle line",
+        "2": "Explore-tab bento tiles no longer double-pad under the iOS 26 search bar",
+        "3": "Share sheet from the recent-reciter options no longer conflicts with the dismissing action sheet",
+        "4": "Fixed 4 codepoints that weren't in the DigitalKhatt font (substituted cleanly)",
+        "5": "Android crash on setColorScheme(null); settings top-inset fix",
+        "6": "Adhkar header styling and settings-screen scroll behavior",
+        "7": "What's New onboarding now filters by version",
+        "8": "TrackInfo navigation cleanup and hydration timeout fallback",
+        "9": "Floating player, player-sheet header, and upload UI refinements"
+      }
+    },
+    "v2_1": {
+      "title": "Deeper Understanding",
+      "highlights": {
+        "0": {
+          "title": "Word by Word",
+          "description": "Tap any word to see its meaning, transliteration, and grammar right in the mushaf or player"
+        },
+        "1": {
+          "title": "Translations & Tafseer",
+          "description": "Browse dozens of translations and scholarly commentaries in multiple languages, all downloadable for offline use"
+        },
+        "2": {
+          "title": "Thematic Highlighting",
+          "description": "Verses are color-coded by theme so you can see the structure and topics of each surah at a glance"
+        },
+        "3": {
+          "title": "IndoPak Script",
+          "description": "Switch to the IndoPak Nastaliq script in the mushaf for the style used across South Asia"
+        }
+      }
+    },
+    "v2_0": {
+      "title": "A New Chapter",
+      "highlights": {
+        "0": {
+          "title": "The Mushaf",
+          "description": "A dedicated reading screen with full Uthmani script, tajweed coloring, and immersive mode"
+        },
+        "1": {
+          "title": "Follow Along",
+          "description": "Each ayah highlights in sync with the recitation, available for most reciters"
+        },
+        "2": {
+          "title": "Ambient Sounds",
+          "description": "Layer nature soundscapes over your recitation for a focused experience"
+        },
+        "3": {
+          "title": "Verse Interactions",
+          "description": "Bookmark, highlight, take notes, copy, and share any verse"
+        },
+        "4": {
+          "title": "Personal Recitations",
+          "description": "Import, tag, and organize your own audio recordings"
+        },
+        "5": {
+          "title": "Adhkar (Remembrance)",
+          "description": "Complete Hisnul Muslim collection with audio playback and saved favorites"
+        }
+      },
+      "features": {
+        "0": "Digital Uthmani Mushaf with Skia rendering and tajweed coloring",
+        "1": "Ayah-by-ayah timestamp tracking and auto-scroll for 43 reciters",
+        "2": "Complete Hisnul Muslim adhkar collection with audio and Play All",
+        "3": "8 ambient nature soundscapes with gapless dual-player crossfade",
+        "4": "Verse annotations: bookmark, highlight, notes, copy, share",
+        "5": "Personal recitations upload with metadata tagging",
+        "6": "Immersive reading mode with tap-to-hide chrome",
+        "7": "Mushaf audio player with ayah-by-ayah playback",
+        "8": "Verse share cards with Skia rendering",
+        "9": "Similar verses and shared phrases discovery",
+        "10": "Mushaf session restore on app relaunch",
+        "11": "Skia surah headers and mushaf-style basmala in player"
+      },
+      "improvements": {
+        "0": "New expo-audio engine replacing react-native-track-player",
+        "1": "Redesigned search with dual-mode browse/search crossfade",
+        "2": "Redesigned reciter profiles with centered layout",
+        "3": "Adhkar category card illustrations (dark/light variants)",
+        "4": "Mushaf deep-linking by surah, page, or ayah",
+        "5": "Lock screen controls with reliable metadata and artwork"
+      },
+      "fixes": {
+        "0": "Queue auto-advance and previous button reliability",
+        "1": "Lock screen controls showing empty metadata",
+        "2": "Player sheet panning and gesture coordination",
+        "3": "Android mushaf gesture conflicts",
+        "4": "Verse annotations database race condition"
+      }
+    },
+    "v1_3": {
+      "title": "Offline Mode, Playlists & More!",
+      "highlights": {
+        "0": {
+          "title": "Offline Mode",
+          "description": "Download surahs for offline listening"
+        },
+        "1": {
+          "title": "Custom Playlists",
+          "description": "Create and manage your own playlists"
+        },
+        "2": {
+          "title": "Redesigned Search",
+          "description": "Beautiful bento layout with curated system playlists"
+        }
+      },
+      "features": {
+        "0": "Complete offline download system with progress tracking",
+        "1": "Bulk download for playlists and collections",
+        "2": "Create, edit, and manage custom playlists",
+        "3": "Reorder and delete playlist items",
+        "4": "Juz-based surah grouping in browse and reciter screens",
+        "5": "Enhanced collection screen with rewayat-aware downloads",
+        "6": "Download state indicators throughout the app",
+        "7": "Storage management with usage breakdown",
+        "8": "Gradient text highlighting for currently playing track",
+        "9": "Juz section separators in browse all surahs screen"
+      },
+      "improvements": {
+        "0": "Eliminated navigation lag in explore view",
+        "1": "Fixed play icon flickering",
+        "2": "Optimized button interactions across the app",
+        "3": "Significant performance boost for main UI",
+        "4": "Improved FloatingPlayer visibility logic",
+        "5": "Better audio player state management",
+        "6": "Enhanced download performance to prevent freezing",
+        "7": "Improved collection and playlist organization",
+        "8": "Better touch zones for surah list items"
+      },
+      "fixes": {
+        "0": "Resolved TestFlight file corruption issues",
+        "1": "Fixed audio playback race conditions",
+        "2": "Fixed double-tap bugs",
+        "3": "Corrected playback behavior inconsistencies",
+        "4": "Fixed download UI freezing during operations",
+        "5": "Resolved bottom sheet positioning issues",
+        "6": "Fixed various TypeScript type issues"
+      }
+    }
   },
   "countries": {
     "DZ": "Algeria",

@@ -20,6 +20,12 @@
 // Friday with the Al-Kahf reminder on, and on the day of a "continue
 // listening" notice, step 3 picks nothing (`scheduledNoticeOnDay`).
 //
+// The follow-along notice (#845) uses a second snapshot in each step: the
+// surahs with follow-along (`timingKeysOf`, MMKV `TIMING_SNAPSHOT_KEY`), with
+// the same rules (`diffTimingCoverage`). A surah whose recitation is new in
+// the same check gives no follow-along notice: the recitation notice tells of
+// it, and its timing key goes into the snapshot.
+//
 // The cap (review of Sprint 51, Lane N): the first local day on which a
 // taken day held a catalog notice back is in MMKV
 // (`CATALOG_NOTICE_HELD_SINCE_KEY`). From `CATALOG_NOTICE_HOLD_CAP_DAYS` days
@@ -30,15 +36,20 @@ import type {Reciter} from '@/data/reciterData';
 import {continueNoticeDays} from './continueListeningStore';
 import {
   createCatalogSnapshotStore,
+  createTimingSnapshotStore,
   diffCatalog,
+  diffTimingCoverage,
   notificationsStorage,
   recitationKeysOf,
   snapshotAfter,
+  timingKeyOfRecitation,
+  timingKeysOf,
   type CatalogSnapshotStore,
 } from './catalogDiff';
 import {localDay} from './localDay';
 import {notificationPrefsSource} from './prefsStore';
 import {
+  buildFollowAlongCandidates,
   buildRecitationCandidates,
   heldBackKeys,
   holdCapReached,
@@ -52,6 +63,7 @@ import type {
   NotificationPrefsSource,
   Notifier,
   RecitationKey,
+  TimingKey,
 } from './types';
 
 /** The first local day (`YYYY-MM-DD`) on which a taken day held a catalog notice back. */
@@ -85,11 +97,13 @@ function writeHeldSince(storage: KeyValueStorage, day: string | null): void {
  * - `empty_catalog`: the catalog has no recitation (a failed load). Nothing saved or posted.
  * - `permission_unavailable`: `notifier.getPermission()` failed. Nothing saved or posted.
  * - `save_failed`: the snapshot did not save. Nothing posted.
- * - `first_check`: the first snapshot is saved; no recitation is announced.
- * - `nothing_new`: no new recitation, and no other candidate posted.
- * - `not_posted`: new recitations, but no notice today (the toggles, the
- *   holdout, no permission, the daily limit, an OS-scheduled notice today).
- *   The held-back keys come again.
+ * - `first_check`: the first recitation snapshot is saved; no recitation is
+ *   announced.
+ * - `nothing_new`: no new recitation and no new follow-along, and no other
+ *   candidate posted.
+ * - `not_posted`: new recitations or new follow-along, but no notice today
+ *   (the toggles, the holdout, no permission, the daily limit, an
+ *   OS-scheduled notice today). The held-back keys come again.
  * - `post_failed`: `notifier.schedule()` failed.
  * - `posted`: one notice posted.
  */
@@ -120,6 +134,12 @@ export interface CatalogCheckDeps {
   notifier: Notifier;
   /** Default: the MMKV snapshot store. */
   snapshotStore?: CatalogSnapshotStore;
+  /**
+   * The follow-along snapshot (#845). Default: the MMKV store
+   * (`createTimingSnapshotStore`). When it is not available, the check
+   * compares no follow-along and saves none; the recitations work as before.
+   */
+  timingSnapshotStore?: CatalogSnapshotStore;
   /** Default: `notificationPrefsSource` (the persisted store). */
   prefs?: NotificationPrefsSource;
   /** Default: the time of the call. */
@@ -146,8 +166,16 @@ export interface CatalogCheckResult {
   posted: NotificationCandidate | null;
   /** The new recitation keys of this check. */
   newKeys: RecitationKey[];
-  /** The keys left out of the saved snapshot, so the next check finds them again. */
-  heldBackKeys: RecitationKey[];
+  /**
+   * The new timing keys of this check (#845), without the surahs whose
+   * recitation is new too.
+   */
+  newTimingKeys: TimingKey[];
+  /**
+   * The keys left out of the saved snapshots, so the next check finds them
+   * again: recitation keys and timing keys.
+   */
+  heldBackKeys: (RecitationKey | TimingKey)[];
   /** Status `posted` only: `false` when today could not be recorded. */
   markedToday?: boolean;
 }
@@ -157,6 +185,7 @@ export async function runCatalogCheck(
   deps: CatalogCheckDeps,
 ): Promise<CatalogCheckResult> {
   const snapshotStore = deps.snapshotStore ?? createCatalogSnapshotStore();
+  const timingStore = deps.timingSnapshotStore ?? createTimingSnapshotStore();
   const prefsSource = deps.prefs ?? notificationPrefsSource;
   const now = deps.now ?? new Date();
   const result = (
@@ -166,6 +195,7 @@ export async function runCatalogCheck(
     status,
     posted: null,
     newKeys: [],
+    newTimingKeys: [],
     heldBackKeys: [],
     ...extra,
   });
@@ -189,6 +219,23 @@ export async function runCatalogCheck(
   const {newKeys, isFirstCheck} = next
     ? diffCatalog(prev, next)
     : {newKeys: [] as RecitationKey[], isFirstCheck: false};
+
+  // The follow-along snapshot (#845): only with a catalog, and only when its
+  // store is available.
+  const nextTiming =
+    catalog && isStoreAvailable(timingStore) ? timingKeysOf(catalog) : null;
+  const prevTiming = nextTiming ? timingStore.load() : null;
+  const timingDiff = nextTiming
+    ? diffTimingCoverage(prevTiming, nextTiming)
+    : {newKeys: [] as TimingKey[]};
+  // A surah whose recitation is new in this check: the recitation notice
+  // tells of it. Its key is in no candidate, so it goes into the snapshot.
+  const newRecitationSurahs = new Set(
+    newKeys.map(timingKeyOfRecitation).filter(key => key !== null),
+  );
+  const newTimingKeys = timingDiff.newKeys.filter(
+    key => !newRecitationSurahs.has(key),
+  );
 
   let permissionGranted: boolean;
   try {
@@ -214,6 +261,13 @@ export async function runCatalogCheck(
         formatReciterName: deps.formatReciterName,
         formatSurahName: deps.formatSurahName,
       }),
+      ...buildFollowAlongCandidates({
+        newKeys: newTimingKeys,
+        reciters: catalog ?? [],
+        favoriteReciterIds: deps.favoriteReciterIds,
+        formatReciterName: deps.formatReciterName,
+        formatSurahName: deps.formatSurahName,
+      }),
       ...(deps.extraCandidates ?? []),
     ],
     prefs,
@@ -233,7 +287,31 @@ export async function runCatalogCheck(
     // `toSave` is empty only when each key is new and held back. Then the
     // previous snapshot stays: it has none of the held-back keys either.
     if (toSave.size > 0 && !snapshotStore.save(toSave)) {
-      return result('save_failed', {newKeys, heldBackKeys: held});
+      return result('save_failed', {
+        newKeys,
+        newTimingKeys,
+        heldBackKeys: held,
+      });
+    }
+    // The follow-along snapshot. An empty one is kept (a baseline).
+    if (
+      nextTiming &&
+      !timingStore.save(snapshotAfter(prevTiming, nextTiming, held))
+    ) {
+      // The recitation snapshot has the keys of the picked notice now: take
+      // them out again (best effort), so the next check posts them.
+      if (picked && picked.coveredKeys.length > 0) {
+        const undo = snapshotAfter(prev, next, [
+          ...held,
+          ...picked.coveredKeys,
+        ]);
+        if (undo.size > 0) snapshotStore.save(undo);
+      }
+      return result('save_failed', {
+        newKeys,
+        newTimingKeys,
+        heldBackKeys: held,
+      });
     }
     // The held-since day (see the file header). Only a check that compared a
     // catalog knows what is held back; a post always ends the wait (below).
@@ -252,10 +330,10 @@ export async function runCatalogCheck(
   if (!picked) {
     const status: CatalogCheckStatus = isFirstCheck
       ? 'first_check'
-      : newKeys.length > 0
+      : newKeys.length > 0 || newTimingKeys.length > 0
         ? 'not_posted'
         : 'nothing_new';
-    return result(status, {newKeys, heldBackKeys: held});
+    return result(status, {newKeys, newTimingKeys, heldBackKeys: held});
   }
 
   try {
@@ -269,7 +347,14 @@ export async function runCatalogCheck(
       const retrySnapshot = snapshotAfter(prev, next, retryHeld);
       if (retrySnapshot.size > 0) snapshotStore.save(retrySnapshot);
     }
-    return result('post_failed', {newKeys, heldBackKeys: retryHeld});
+    if (nextTiming) {
+      timingStore.save(snapshotAfter(prevTiming, nextTiming, retryHeld));
+    }
+    return result('post_failed', {
+      newKeys,
+      newTimingKeys,
+      heldBackKeys: retryHeld,
+    });
   }
 
   let markedToday: boolean;
@@ -282,7 +367,17 @@ export async function runCatalogCheck(
   return result('posted', {
     posted: picked,
     newKeys,
+    newTimingKeys,
     heldBackKeys: held,
     markedToday,
   });
+}
+
+/** `store.isAvailable()`, `false` when it throws. */
+function isStoreAvailable(store: CatalogSnapshotStore): boolean {
+  try {
+    return store.isAvailable();
+  } catch {
+    return false;
+  }
 }

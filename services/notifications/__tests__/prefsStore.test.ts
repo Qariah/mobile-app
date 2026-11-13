@@ -103,6 +103,7 @@ describe('useNotificationPrefsStore', () => {
       kahf_friday: true,
       continue_listening: true,
       whats_new: true,
+      follow_along: true,
     });
     expect(state).toMatchObject({
       ...DEFAULT_NOTIFICATION_TYPE_PREFS,
@@ -134,6 +135,7 @@ describe('useNotificationPrefsStore', () => {
         kahf_friday: false,
         continue_listening: true,
         whats_new: true,
+        follow_along: true,
         softPromptAnswered: true,
         lastNotifiedDay: '2026-10-20',
       },
@@ -179,6 +181,7 @@ describe('useNotificationPrefsStore', () => {
         kahf_friday: true,
         continue_listening: true,
         whats_new: true,
+        follow_along: true,
         softPromptAnswered: true,
         lastNotifiedDay: '2026-10-19',
       },
@@ -200,6 +203,53 @@ describe('useNotificationPrefsStore', () => {
       followed_recitation: false,
       softPromptAnswered: true,
       lastNotifiedDay: '2026-10-19',
+    });
+  });
+
+  // #845: `follow_along` came after the first stored values. The version stays
+  // 1: zustand's default merge gives the new type its default, so no
+  // `migrate` is needed (and a new version without one drops the value).
+  const BEFORE_FOLLOW_ALONG = {
+    followed_recitation: false,
+    new_recitation: true,
+    kahf_friday: false,
+    continue_listening: true,
+    whats_new: true,
+    softPromptAnswered: true,
+    lastNotifiedDay: '2026-11-10',
+  };
+
+  it('a version-1 value from before follow_along reads follow_along ON and keeps each stored toggle', async () => {
+    mockDisk[KEY] = JSON.stringify({state: BEFORE_FOLLOW_ALONG, version: 1});
+    const {useNotificationPrefsStore, getHydratedNotificationPrefs} =
+      loadModule();
+    const prefs = await getHydratedNotificationPrefs();
+    expect(prefs).toMatchObject({...BEFORE_FOLLOW_ALONG, follow_along: true});
+    // The first write keeps the stored toggles and adds the new type.
+    useNotificationPrefsStore.getState().setTypeEnabled('follow_along', false);
+    await settle();
+    expect(stored()).toEqual({
+      state: {...BEFORE_FOLLOW_ALONG, follow_along: false},
+      version: 1,
+    });
+  });
+
+  it('a setter in flight over a value from before follow_along adds follow_along; the stored values win', async () => {
+    mockDisk[KEY] = JSON.stringify({state: BEFORE_FOLLOW_ALONG, version: 1});
+    mockHoldReads = true;
+    const {useNotificationPrefsStore} = loadModule();
+    useNotificationPrefsStore.getState().setTypeEnabled('kahf_friday', true);
+    mockHeldReads.forEach(release => release());
+    await settle();
+    // The guard replays the held write with zustand's merge (stored wins):
+    // the one new key is follow_along, at its default.
+    expect(stored()).toEqual({
+      state: {...BEFORE_FOLLOW_ALONG, follow_along: true},
+      version: 1,
+    });
+    expect(useNotificationPrefsStore.getState()).toMatchObject({
+      kahf_friday: false,
+      follow_along: true,
     });
   });
 

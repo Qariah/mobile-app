@@ -100,6 +100,24 @@ describe('notificationTapOf', () => {
     ).toBeNull();
     expect(notificationTapOf(null)).toBeNull();
   });
+
+  it('reads a follow_along tap (#845): its recitation target plays the recitation', () => {
+    const target = {
+      kind: 'recitation',
+      reciterId: 'r-z',
+      reciterSlug: 'zaynab',
+      rewayahId: 'w-z',
+      surah: 36,
+    } as const;
+    const tap = notificationTapOf(
+      response({type: 'follow_along', target}, {id: 'follow_along:w-z|36'}),
+    );
+    expect(tap).toMatchObject({type: 'follow_along', target});
+    expect(resolveTapAction(target, lookup)).toMatchObject({
+      kind: 'play',
+      surah: 36,
+    });
+  });
 });
 
 describe('resolveTapAction (the route table)', () => {

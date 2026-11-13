@@ -4,7 +4,12 @@
 // MMKV, the preferences, the favorites and the notifier.
 import type {Reciter, Rewayat} from '@/data/reciterData';
 import {CATALOG_NOTICE_HELD_SINCE_KEY} from '../catalogCheck';
-import {CATALOG_SNAPSHOT_KEY, createCatalogSnapshotStore} from '../catalogDiff';
+import {
+  CATALOG_SNAPSHOT_KEY,
+  TIMING_SNAPSHOT_KEY,
+  createCatalogSnapshotStore,
+  createTimingSnapshotStore,
+} from '../catalogDiff';
 import {
   CATALOG_CHECK_PENDING_KEY,
   LAST_CATALOG_VERSION_KEY,
@@ -207,7 +212,17 @@ function device(options: {prefs?: Partial<NotificationPrefsSnapshot>} = {}) {
     now?: Date,
   ) => runQariahCatalogTask('foreground', deps({catalog, ...extra}, now));
   const snapshot = () => createCatalogSnapshotStore(storage).load();
-  return {storage, prefs, notifier, srv, background, foreground, snapshot};
+  const timingSnapshot = () => createTimingSnapshotStore(storage).load();
+  return {
+    storage,
+    prefs,
+    notifier,
+    srv,
+    background,
+    foreground,
+    snapshot,
+    timingSnapshot,
+  };
 }
 
 beforeEach(() => {
@@ -685,6 +700,104 @@ describe('runQariahCatalogTask (foreground)', () => {
     d.srv.state.catalogs.set(LIVE_URL, WITH_KAHF);
     const result = await d.background();
     expect(result.status).toBe('posted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #845: the follow-along notice in the background and the foreground runs.
+
+/** BASE with follow-along on surah 1 of `fav` (`timestamps_surah_list: [1]`). */
+const WITH_FOLLOW_ALONG: Reciter[] = [
+  {
+    ...reciter('fav', [1]),
+    rewayat: [
+      {
+        ...rewayah('fav-w', [1]),
+        has_timestamps: true,
+        timestamps_surah_list: [1],
+      },
+    ],
+  },
+  reciter('other', [2]),
+];
+
+describe('runQariahCatalogTask: follow-along (#845)', () => {
+  it('a new catalog version that adds a surah to timestamps_surah_list gives ONE notice; the same catalog again none', async () => {
+    const d = device();
+    expect((await d.background()).status).toBe('first_check');
+    expect(d.timingSnapshot()).toEqual(new Set());
+
+    d.srv.state.version = 6;
+    d.srv.state.catalogs.set(LIVE_URL, WITH_FOLLOW_ALONG);
+    const result = await d.background();
+    expect(result).toMatchObject({status: 'posted', catalogVersion: 6});
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+    expect(d.notifier.schedule.mock.calls[0][0]).toMatchObject({
+      type: 'follow_along',
+      target: {
+        kind: 'recitation',
+        reciterId: 'fav',
+        rewayahId: 'fav-w',
+        surah: 1,
+      },
+      coveredKeys: ['fav-w|1'],
+    });
+    expect(mockSentry.addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          new_timing_keys: 1,
+          posted_type: 'follow_along',
+        }),
+      }),
+    );
+
+    // The same version: no download. A new version, the same catalog: nothing.
+    expect((await d.background({}, DAY2)).status).toBe('version_unchanged');
+    d.srv.state.version = 7;
+    expect((await d.background({}, DAY2)).status).toBe('nothing_new');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('the foreground run with the catalog in memory gives the notice too', async () => {
+    const d = device();
+    expect((await d.foreground(BASE)).status).toBe('first_check');
+    const result = await d.foreground(WITH_FOLLOW_ALONG);
+    expect(result).toMatchObject({source: 'foreground', status: 'posted'});
+    expect(result.check?.posted?.type).toBe('follow_along');
+    expect((await d.foreground(WITH_FOLLOW_ALONG, {}, DAY2)).status).toBe(
+      'nothing_new',
+    );
+  });
+
+  it('an unchanged version without a follow-along snapshot (the first run of this build) downloads once for the baseline', async () => {
+    const d = device();
+    await d.background();
+    // A build from before #845 saved only the recitation snapshot.
+    d.storage.data.delete(TIMING_SNAPSHOT_KEY);
+    d.srv.fetchFn.mockClear();
+
+    const result = await d.background({}, DAY2);
+    expect(result.status).toBe('nothing_new');
+    expect(d.srv.catalogFetches()).toEqual([LIVE_URL]);
+    expect(d.timingSnapshot()).toEqual(new Set());
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+    expect((await d.background({}, DAY2)).status).toBe('version_unchanged');
+  });
+
+  it('a holdout user, or no permission, removes the follow-along snapshot too', async () => {
+    const d = device();
+    await d.background();
+    expect(d.timingSnapshot()).not.toBeNull();
+    expect((await d.background({isHoldout: () => true})).status).toBe(
+      'holdout',
+    );
+    expect(d.timingSnapshot()).toBeNull();
+
+    await d.background();
+    expect(d.timingSnapshot()).not.toBeNull();
+    d.notifier.getPermission.mockResolvedValue('denied');
+    expect((await d.background()).status).toBe('no_permission');
+    expect(d.timingSnapshot()).toBeNull();
   });
 });
 

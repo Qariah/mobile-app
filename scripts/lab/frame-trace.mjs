@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 // @ai Qariah: the longest main-thread frames in an atrace file (the PERF-09 return stall).
-// Usage: node scripts/lab/frame-trace.mjs <trace> <pid>
+// Usage: node scripts/lab/frame-trace.mjs <trace> <pid> [--after=<seconds>]
 // Prints the frame count, the six longest Choreographer#doFrame slices of that
 // thread (ms@seconds from the trace start) and the first five frames.
+// --after=N counts only the frames that start N seconds or more after the
+// first event of the process (scripts/lab/anr-probe.sh --link-at).
 import fs from 'node:fs';
 
-const [file, pid] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const [file, pid] = argv.filter(x => !x.startsWith('--'));
+const afterArg = argv.find(x => x.startsWith('--after='));
+const after = afterArg ? Number(afterArg.split('=')[1]) : 0;
 if (!file || !pid) {
   console.error('usage: frame-trace.mjs <trace> <pid>');
   process.exit(2);
@@ -26,7 +31,7 @@ for (const line of fs.readFileSync(file, 'latin1').split('\n')) {
     stack.push({name: m[6], t});
   } else {
     const open = stack.pop();
-    if (open && /doFrame/.test(open.name)) {
+    if (open && /doFrame/.test(open.name) && open.t - first >= after) {
       frames.push({at: open.t - first, ms: (t - open.t) * 1000});
     }
   }

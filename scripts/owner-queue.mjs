@@ -5,13 +5,15 @@
 // ---------------------------------------------------------------------------
 // A scheduled run never asks a question in its session, and never leaves a
 // finding as prose in its report. It files the item here. The Steward
-// (.claude/routines/qariah-steward.md, a cloud routine every 2 hours) reads
+// (.claude/routines/qariah-steward.md, a cloud routine every 4 hours) reads
 // the open queue and answers it, fixes it, hands it to the Fixer, or
 // escalates it to the owner. The rules are in scripts/lib/owner-queue.mjs.
 //
 //   node scripts/owner-queue.mjs ask --kind=decision|action|info --title=<text> \
 //        --body-file=<path> [--reply=<the exact reply text>] [--due=<ISO>] \
-//        [--run=<task>] [--issue=<n>] [--key=<a-z0-9->] [--priority=P0|P1|P2] [--dry-run]
+//        [--run=<task>] [--issue=<n>] [--key=<a-z0-9->] [--priority=P0|P1|P2] [--dry-run] \
+//        [--do=<one line: what the owner does>] [--not-before=build>N|<ISO date>] \
+//        [--blocks=<steps, for example audit,promote>]
 //   node scripts/owner-queue.mjs list [--json] [--kind=<k>]
 //   node scripts/owner-queue.mjs answer <n> --by=steward|owner --text-file=<path> [--dry-run]
 //   node scripts/owner-queue.mjs handover <n> --text-file=<path> [--dry-run]
@@ -28,6 +30,10 @@
 // label `escalated` (the Steward does this for an owner-only item, with one
 // email). `needs-you` prints the card's `NEEDS YOU` lines from the open
 // `decision` and `action` items.
+// `--do`, `--not-before` and `--blocks` feed the "Needs you" box of the ops
+// console's Pipeline page (scripts/lib/pipeline-flow.mjs): the one-line task,
+// the condition before which the item waits under "Later", and the steps that
+// it blocks (collect, triage, steward, fix, integrate, audit, go, promote, ramp, close).
 //
 // REST only (scripts/lib/triage-common.mjs), so it works on the Mac and in a
 // cloud session. Shadow mode refuses every write. Exit 0 = done, 1 = GitHub
@@ -84,6 +90,7 @@ function usage(msg) {
       'usage:',
       '  owner-queue.mjs ask --kind=decision|action|info --title=<text> --body-file=<path>',
       '        [--reply=<text>] [--due=<ISO>] [--run=<task>] [--issue=<n>] [--key=<k>] [--priority=P0|P1|P2] [--dry-run]',
+      '        [--do=<text>] [--not-before=build>N|<ISO>] [--blocks=<step,step>]',
       '  owner-queue.mjs list [--json] [--kind=<k>]',
       '  owner-queue.mjs answer <n> --by=steward|owner --text-file=<path> [--dry-run]',
       '  owner-queue.mjs handover <n> --text-file=<path> [--dry-run]',
@@ -132,6 +139,9 @@ function ask() {
     key: str('key'),
     priority: str('priority'),
     issue: flags.issue === undefined ? undefined : Number(flags.issue),
+    do: str('do'),
+    notBefore: str('not-before'),
+    blocks: str('blocks'),
   });
   if (!v.ok) usage(v.errors.join('; '));
   const f = v.fields;
@@ -142,7 +152,9 @@ function ask() {
   // A dry run reads nothing: it prints what it would file.
   if (DRY) {
     console.log(
-      `· DRY RUN — would file (or update the open issue with key ${f.key}) [${labels.join(', ')}] "${f.title}"`,
+      `· DRY RUN — would file (or update the open issue with key ${
+        f.key
+      }) [${labels.join(', ')}] "${f.title}"`,
     );
     console.log(text);
     return;
@@ -165,7 +177,9 @@ function ask() {
     addIssueLabels(target.number, labels);
     commentOnIssue(
       target.number,
-      `Asked again${f.run ? ` by the ${f.run} run` : ''} on ${asked}. The body is updated.`,
+      `Asked again${
+        f.run ? ` by the ${f.run} run` : ''
+      } on ${asked}. The body is updated.`,
     );
     console.log(`✓ updated #${target.number} ${target.url}`);
     console.log(`#${target.number}`);
@@ -190,7 +204,11 @@ function list() {
   }
   for (const i of items)
     console.log(
-      `#${i.number} [${i.kind}${i.priority === 'P2' ? '' : ` ${i.priority}`}${i.escalated ? ' escalated' : ''}]${i.run ? ` ${i.run}` : ''}${i.due ? ` due ${i.due.slice(0, 10)}` : ''} · ${i.title}`,
+      `#${i.number} [${i.kind}${i.priority === 'P2' ? '' : ` ${i.priority}`}${
+        i.escalated ? ' escalated' : ''
+      }]${i.run ? ` ${i.run}` : ''}${
+        i.due ? ` due ${i.due.slice(0, 10)}` : ''
+      } · ${i.title}`,
     );
 }
 
@@ -315,7 +333,9 @@ try {
   else usage();
 } catch (e) {
   console.error(
-    `❌ ${e.message}${isShadowRun() ? ' (shadow mode is on: .claude/.shadow-run)' : ''}`,
+    `❌ ${e.message}${
+      isShadowRun() ? ' (shadow mode is on: .claude/.shadow-run)' : ''
+    }`,
   );
   process.exit(1);
 }

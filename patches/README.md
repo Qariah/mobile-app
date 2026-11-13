@@ -119,3 +119,19 @@ needs). `package.json` pins the exact version, so the patch applies.
 `expo-share-intent+9.0.0.patch` changes the config plugin only. A prebuild
 with `--no-clean` adds each Android share filter once and the iOS App Group
 once. Pass D ported the patch from 8.0.1 to 9.0.0 with no change.
+
+# expo-router toolbar accessibility label
+
+`expo-router+58.0.28.patch` makes the `accessibilityLabel` and
+`accessibilityHint` props of a native toolbar item reach the iOS bar button.
+Upstream 58.0.28 sets them only on the item view's own UIView, but the
+`UIBarButtonItem` takes its label from `routerAccessibilityLabel` and
+`routerAccessibilityHint`, which no prop sets. So VoiceOver read the Mushaf
+toolbar of `app/mushaf.tsx` (iOS 26) by its SF Symbol names ("go to end").
+Android does not use this code.
+
+expo-router ships no iOS xcframework, so the podspec compiles the patched
+source. `patches/__tests__/expo-router-toolbar-accessibility-label.test.ts`
+fails if the patch is missing or if an xcframework appears. When upgrading
+expo-router, check whether upstream sets the router values before you
+regenerate the patch.

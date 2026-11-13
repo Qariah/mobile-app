@@ -1,11 +1,21 @@
 // Domain types (camelCase)
 
+// @ai-start
+/**
+ * Qariah (#847): one recitation of one word: [word index in the ayah from 0,
+ * start ms, end ms]. See services/timestamps/wordSegments.ts.
+ */
+export type WordSegment = readonly [number, number, number];
+// @ai-end
+
 export interface AyahTimestamp {
   surahNumber: number;
   ayahNumber: number;
   timestampFrom: number; // milliseconds
   timestampTo: number; // milliseconds
   durationMs: number;
+  /** Qariah (#847): the word times, sorted by start (absent: none). */
+  segments?: readonly WordSegment[]; // @ai
 }
 
 export interface AyahTrackingState {

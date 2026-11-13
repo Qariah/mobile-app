@@ -6,8 +6,11 @@
 // through the `Notifier` interface below (Task 15).
 
 /**
- * The five notification types. The order of this list is NOT the priority;
+ * The six notification types. The order of this list is NOT the priority;
  * the priority is `NOTIFICATION_PRIORITY` in `scheduler.ts`.
+ *
+ * `follow_along` (#845, 2026-11-11): a surah of a reciter got follow-along
+ * (ayah timings) in the catalog (`TimingKey`).
  */
 export const NOTIFICATION_TYPES = [
   'followed_recitation',
@@ -15,6 +18,7 @@ export const NOTIFICATION_TYPES = [
   'kahf_friday',
   'continue_listening',
   'whats_new',
+  'follow_along',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -33,6 +37,20 @@ export type NotificationTypePrefs = Record<NotificationType, boolean>;
  * recitation.
  */
 export type RecitationKey = string;
+
+/**
+ * One surah with follow-along (#845): `rewayahId|surah`. A rewayah id is
+ * unique in the catalog, so the key needs no reciter id.
+ *
+ * A listed surah (`surah_list`) of a rewayah with `has_timestamps: true` has
+ * follow-along when `timestamps_surah_list` names it, or when that list is
+ * missing or empty (then every surah has it). This is the rule of `r2HasSurah`
+ * in `services/timestamps/TimestampFetchService.ts`. A surah that the rewayah
+ * does not list has no recitation to follow, so it gives no key. The bundled
+ * timings (`branding.timestampLocalSurahList`) never reach the catalog, so
+ * they give no key either.
+ */
+export type TimingKey = string;
 
 /**
  * The i18n keys that the engine uses (the `qariah` namespace). The strings
@@ -54,8 +72,15 @@ export type RecitationKey = string;
  * - `kahfFriday.*`, `continueListening.title`: no params.
  * - `continueListening.body`: `{{surahName}}`, `{{reciterName}}` (the track
  *   of the last play).
+ * - `followAlong.title`: no params (the title of the single notice and of
+ *   the summary).
+ * - `followAlong.body`: `{{reciterName}}`, `{{surahName}}`.
+ * - `followAlongSummary.body`: `{{count}}`, `{{reciterName}}`,
+ *   `{{surahName}}` (the surah that the notice opens: a favorite reciter
+ *   first).
  *
- * In the summaries, `reciterName` is the reciter of the newest recitation.
+ * In the recitation summaries, `reciterName` is the reciter of the newest
+ * recitation.
  * A text may leave out a param that the engine passes.
  *
  * The `whats_new` text is not in this list: it is
@@ -76,6 +101,9 @@ export const NOTIFICATION_TEXT_KEYS = [
   'qariah:notifications.kahfFriday.body',
   'qariah:notifications.continueListening.title',
   'qariah:notifications.continueListening.body',
+  'qariah:notifications.followAlong.title',
+  'qariah:notifications.followAlong.body',
+  'qariah:notifications.followAlongSummary.body',
 ] as const;
 
 export type NotificationTextKey = (typeof NOTIFICATION_TEXT_KEYS)[number];
@@ -126,13 +154,14 @@ export interface NotificationCandidate {
    */
   dedupeKey: string;
   /**
-   * The recitation keys that this notice announces: one key for a single
-   * recitation, each key of the group for a summary, none for the other types.
-   * The keys of a candidate that the daily limit or the order holds back stay
-   * out of the saved snapshot (`snapshotAfter`), so the next check finds them
-   * again.
+   * The keys that this notice announces: one key for a single recitation,
+   * each key of the group for a summary, none for the scheduled types. A
+   * `follow_along` notice covers timing keys (`TimingKey`), the other catalog
+   * types cover recitation keys. The keys of a candidate that the daily limit
+   * or the order holds back stay out of the saved snapshot (`snapshotAfter`),
+   * so the next check finds them again.
    */
-  coveredKeys: RecitationKey[];
+  coveredKeys: (RecitationKey | TimingKey)[];
 }
 
 /**

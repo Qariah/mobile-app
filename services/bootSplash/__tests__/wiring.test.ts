@@ -4,7 +4,6 @@
 let mockMarkerSet = false;
 const mockNative = {
   setNonBlockingSplashForNextLaunch: jest.fn(),
-  setNonBlockingSplashOffKeepGuard: jest.fn(),
   getBootSplashMode: jest.fn(() => 'control'),
   setBootRisk: jest.fn(() => {
     mockMarkerSet = true;

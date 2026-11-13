@@ -141,6 +141,36 @@ describe('labelsFor and renderBody', () => {
     assert.ok(body.includes('READY on 3790.'));
     assert.ok(body.includes('qariah-steward.md'));
   });
+  it('renders the Pipeline page fields: do, not-before, blocks', () => {
+    const v = validateAsk(
+      ask({
+        do: ' Free 11 GB  on the Mac. ',
+        notBefore: 'build>4406',
+        blocks: 'audit,promote',
+      }),
+    );
+    assert.equal(v.ok, true);
+    const body = renderBody({...v.fields, asked: '2026-11-05T10:00:00Z'});
+    const f = fieldsOf(body);
+    assert.equal(f.do, 'Free 11 GB on the Mac.');
+    assert.equal(f['not-before'], 'build>4406');
+    assert.equal(f.blocks, 'audit,promote');
+    // A body with none of them has no such lines.
+    const plain = renderBody({...validateAsk(ask()).fields});
+    assert.doesNotMatch(plain, /^- (do|not-before|blocks):/m);
+  });
+  it('refuses a bad not-before and an unknown step', () => {
+    const a = validateAsk(ask({notBefore: 'next week'}));
+    assert.equal(a.ok, false);
+    assert.match(
+      a.errors.join(' '),
+      /--not-before must be build>N or an ISO date/,
+    );
+    assert.equal(validateAsk(ask({notBefore: '2026-11-20'})).ok, true);
+    const b = validateAsk(ask({blocks: 'audit,deploy'}));
+    assert.equal(b.ok, false);
+    assert.match(b.errors.join(' '), /--blocks must name steps/);
+  });
 });
 
 const issue = (n, over = {}) => {
@@ -362,7 +392,10 @@ describe('handoverRefusal', () => {
   const L = (...names) => names.map(name => ({name}));
   it('lets an open owner-queue issue with loop-actionable go', () => {
     assert.equal(
-      handoverRefusal({state: 'open', labels: L(LABEL, 'info', FIXER_LABEL, 'bug')}),
+      handoverRefusal({
+        state: 'open',
+        labels: L(LABEL, 'info', FIXER_LABEL, 'bug'),
+      }),
       '',
     );
   });

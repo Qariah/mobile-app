@@ -2,8 +2,8 @@
 //
 // scripts/lib/upstream-queue.mjs — the queue of Qariah's open PRs on thebayaan/Bayaan.
 // ---------------------------------------------------------------------------
-// Pure functions for scripts/upstream-queue.mjs. The rule (CLAUDE.md "Fork
-// discipline & upstream PRs"): keep the open queue at about 6 or fewer; group
+// Pure functions for scripts/upstream-queue.mjs. The rule (docs/operations/standing-rules/fork-upstream.md,
+// "Fork discipline & upstream PRs"): keep the open queue at about 6 or fewer; group
 // the maintainer pings into ONE round-up comment on the most contextual PR;
 // ping again only after 7 days or more. The Steward refuses to propose a new
 // post over the limit, and drafts (never posts) the round-up text.

@@ -40,6 +40,8 @@ jest.mock('../catalogDiff', () => {
   const load = jest.fn((): Set<string> | null => new Set(['r|w|1||']));
   return {
     createCatalogSnapshotStore: () => ({load}),
+    // The follow-along snapshot (#845) follows the same mock.
+    createTimingSnapshotStore: () => ({load}),
     notificationsStorage: {},
     __load: load,
   };

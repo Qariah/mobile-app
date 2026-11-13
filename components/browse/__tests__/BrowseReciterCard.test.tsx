@@ -138,3 +138,19 @@ it('uses the iPad caption sizes with tabletText', () => {
   expect(phone).not.toEqual([14, 12]);
 });
 // @ai-end
+
+// @ai-start Qariah (UX critique 2026-11-11): the 9 pt rewayah caption was
+// textSecondary at 50 % (2.96:1 on the card). It is drawn at full alpha now.
+it('draws the rewayah caption in full textSecondary', () => {
+  for (const tabletText of [false, true]) {
+    const texts = render({tabletText}).root.findAll(
+      n => (n.type as unknown) === 'Text',
+    );
+    expect(texts).toHaveLength(2);
+    expect(StyleSheet.flatten(texts[1].props.style).color).toBe(
+      theme.colors.textSecondary,
+    );
+    act(() => mounted?.unmount());
+  }
+});
+// @ai-end

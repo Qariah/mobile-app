@@ -17,6 +17,7 @@ import {getDisplayLabelFromName} from '@/services/rewayah/RewayahIdentity';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 import {getRecitationStyleLabel} from '@/components/player/v2/recitationStyle';
+import {useFollowAlongSurahs} from '@/hooks/useFollowAlongCoverage'; // @ai Qariah (#847)
 // @ai-end
 
 // Define view mode type
@@ -62,6 +63,10 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const {t} = useTranslation('player');
   const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
+  // @ai Qariah (#847): the rewayah that a tap plays (the first one when none is picked).
+  const followAlongSurahs = useFollowAlongSurahs(
+    selectedRewayatId ?? availableRewayat[0]?.id,
+  );
 
   // Render list item
   const renderListItem = React.useCallback(
@@ -76,9 +81,17 @@ export const SearchView: React.FC<SearchViewProps> = ({
         isLoved={isLoved(reciterId, item.id.toString())}
         onOptionsPress={onOptionsPress}
         rewayatId={selectedRewayatId}
+        showFollowAlong={followAlongSurahs.has(item.id)} // @ai Qariah (#847)
       />
     ),
-    [onSurahPress, reciterId, isLoved, onOptionsPress, selectedRewayatId],
+    [
+      onSurahPress,
+      reciterId,
+      isLoved,
+      onOptionsPress,
+      selectedRewayatId,
+      followAlongSurahs, // @ai Qariah (#847)
+    ],
   );
 
   // Render card item

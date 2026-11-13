@@ -84,6 +84,12 @@ export interface PageHighlightLayersInput {
   /** Basmallah lines being recited (basmalaPlaybackLines). @ai */
   playbackBasmalaLines?: readonly BasmalaPlaybackLine[];
   playbackColor: string;
+  /**
+   * Qariah (#847): a timed word is lit (wordMark.tsx). The playback layer
+   * then paints nothing, and the verses it covers still hide the lower
+   * layers, so only the word has a tint. @ai
+   */
+  playbackTintHidden?: boolean;
   /** Selected verse keys when the selection is on this page, else null. */
   selectedVerseKeys: readonly string[] | null;
   selectionColor: string;
@@ -107,6 +113,7 @@ export function computePageHighlightLayers(
     playbackVerseKeys,
     playbackBasmalaLines = [], // @ai
     playbackColor,
+    playbackTintHidden = false, // @ai Qariah (#847)
     selectedVerseKeys,
     selectionColor,
   } = input;
@@ -221,11 +228,12 @@ export function computePageHighlightLayers(
     }
   }
   for (const [lineIndex, runs] of playbackRuns) {
+    if (playbackTintHidden) break; // @ai Qariah (#847): the word mark only
     lineArray(lineIndex).push(...runs);
   }
   // @ai — the basmala being recited (the intro before verse 1)
   for (const {lineIndex, length} of playbackBasmalaLines) {
-    if (length <= 0) continue;
+    if (length <= 0 || playbackTintHidden) continue; // @ai (#847)
     lineArray(lineIndex).push({
       start: 0,
       end: length - 1,
@@ -516,6 +524,8 @@ export interface UnitPageHighlightInput {
   bookmarkColor: string;
   highlightColors: Readonly<Record<string, string>>;
   playbackColor: string;
+  /** Qariah (#847): see PageHighlightLayersInput.playbackTintHidden. @ai */
+  playbackTintHidden?: boolean;
   selectionColor: string;
 }
 
@@ -551,6 +561,7 @@ export function computeUnitPageHighlightLayers(
     playbackVerseKeys: unitLayers.playbackVerseKeys,
     playbackBasmalaLines: input.playbackBasmalaLines, // @ai
     playbackColor: input.playbackColor,
+    playbackTintHidden: input.playbackTintHidden, // @ai Qariah (#847)
     selectedVerseKeys: unitLayers.selectedVerseKeys,
     selectionColor: input.selectionColor,
   });

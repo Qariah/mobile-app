@@ -3,13 +3,14 @@
 // keys of the notification engine.
 import type {Reciter, Rewayat, SurahMetadata} from '@/data/reciterData';
 import {whatsNewCandidate} from '../announcement';
-import {recitationKeysOf} from '../catalogDiff';
+import {recitationKeysOf, timingKeysOf} from '../catalogDiff';
 import {DEFAULT_NOTIFICATION_TYPE_PREFS} from '../prefsStore';
 import {
   CONTINUE_LISTENING_DELAY_DAYS,
   KAHF_FRIDAY_TRIGGER,
   NOTIFICATION_PRIORITY,
   RECITATION_SUMMARY_MIN_COUNT,
+  buildFollowAlongCandidates,
   buildRecitationCandidates,
   continueListeningCandidate,
   continueListeningTrigger,
@@ -327,8 +328,10 @@ function fakeCandidate(
 describe('pickNotification', () => {
   const followed = fakeCandidate('followed_recitation', 'followed', ['k-f']);
   const recitation = fakeCandidate('new_recitation', 'new', ['k-n']);
+  const followAlong = fakeCandidate('follow_along', 'follow-along', ['w|2']);
   const all: NotificationCandidate[] = [
     continueListeningCandidate(CONTINUE_TEXT),
+    followAlong,
     kahfFridayCandidate(),
     recitation,
     whatsNewCandidate('2026-10-sprint48'),
@@ -349,11 +352,12 @@ describe('pickNotification', () => {
     };
   }
 
-  it('the priority is type 1, 5, 2, 3, 4', () => {
+  it('the priority is type 1, 5, 2, then follow_along (#845), then 3, 4', () => {
     expect(NOTIFICATION_PRIORITY).toEqual([
       'followed_recitation',
       'whats_new',
       'new_recitation',
+      'follow_along',
       'kahf_friday',
       'continue_listening',
     ]);
@@ -741,6 +745,111 @@ describe('localDay', () => {
   });
 });
 
+describe('buildFollowAlongCandidates (#845)', () => {
+  /** A rewayah with follow-along on `timed` (an empty list: every listed surah). */
+  function timedRewayah(id: string, surahs: number[], timed: number[]) {
+    return {
+      ...rewayah(
+        id,
+        surahs.map(surah => ({surah})),
+      ),
+      has_timestamps: true,
+      timestamps_surah_list: timed,
+    };
+  }
+  const zaynab = reciter('r-zaynab', 'Zaynab', [
+    timedRewayah('w-z', [1, 2, 18], [18]),
+  ]);
+  const amina = reciter('r-amina', 'Amina', [
+    timedRewayah('w-a', [36, 67], [36, 67]),
+  ]);
+
+  it('gives nothing for no new key, and skips a key that is not in the catalog', () => {
+    expect(
+      buildFollowAlongCandidates({
+        newKeys: [],
+        reciters: [zaynab],
+        favoriteReciterIds: [],
+      }),
+    ).toEqual([]);
+    expect(
+      buildFollowAlongCandidates({
+        newKeys: ['w-gone|1', 'w-z|2'],
+        reciters: [zaynab],
+        favoriteReciterIds: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it('one surah: the single text, and a tap opens that recitation', () => {
+    const [candidate, ...rest] = buildFollowAlongCandidates({
+      newKeys: ['w-z|18'],
+      reciters: [zaynab, amina],
+      favoriteReciterIds: [],
+      formatReciterName: r => `name:${r.id}`,
+      formatSurahName: surah => `surah:${surah}`,
+    });
+    expect(rest).toEqual([]);
+    expect(candidate).toEqual({
+      type: 'follow_along',
+      title: {key: 'qariah:notifications.followAlong.title'},
+      body: {
+        key: 'qariah:notifications.followAlong.body',
+        params: {reciterName: 'name:r-zaynab', surahName: 'surah:18'},
+      },
+      target: {
+        kind: 'recitation',
+        reciterId: 'r-zaynab',
+        reciterSlug: 'r-zaynab-slug',
+        rewayahId: 'w-z',
+        surah: 18,
+      },
+      dedupeKey: 'follow_along:w-z|18',
+      coveredKeys: ['w-z|18'],
+    });
+  });
+
+  it('2 or more surahs: ONE summary that covers each key and opens the first surah', () => {
+    expect(RECITATION_SUMMARY_MIN_COUNT).toBe(2);
+    const candidates = buildFollowAlongCandidates({
+      newKeys: ['w-a|67', 'w-z|18', 'w-a|36'],
+      reciters: [zaynab, amina],
+      favoriteReciterIds: [],
+    });
+    expect(candidates).toHaveLength(1);
+    const [summary] = candidates;
+    // No favorite: the order of the reciter name, then the surah.
+    expect(summary.body).toEqual({
+      key: 'qariah:notifications.followAlongSummary.body',
+      params: {count: 3, reciterName: 'Amina', surahName: '36'},
+    });
+    expect(summary.target).toMatchObject({rewayahId: 'w-a', surah: 36});
+    expect([...summary.coveredKeys].sort()).toEqual([
+      'w-a|36',
+      'w-a|67',
+      'w-z|18',
+    ]);
+    expect(summary.dedupeKey).toBe('follow_along:summary:3:w-a|36');
+  });
+
+  it('a favorite reciter comes first: the summary names and opens her surah', () => {
+    const [summary] = buildFollowAlongCandidates({
+      newKeys: ['w-a|36', 'w-a|67', 'w-z|18'],
+      reciters: [zaynab, amina],
+      favoriteReciterIds: ['r-zaynab'],
+    });
+    expect(summary.body).toEqual({
+      key: 'qariah:notifications.followAlongSummary.body',
+      params: {count: 3, reciterName: 'Zaynab', surahName: '18'},
+    });
+    expect(summary.target).toMatchObject({
+      reciterId: 'r-zaynab',
+      rewayahId: 'w-z',
+      surah: 18,
+    });
+  });
+});
+
 describe('the text keys', () => {
   it('are unique and in the qariah:notifications namespace', () => {
     expect(new Set(NOTIFICATION_TEXT_KEYS).size).toBe(
@@ -765,6 +874,9 @@ describe('the text keys', () => {
         reciters: [r],
         favoriteReciterIds: favorite ? [r.id] : [],
       });
+    const timed = reciter('r-t', 'T', [
+      {...rewayah('w-t', [{surah: 1}, {surah: 2}]), has_timestamps: true},
+    ]);
     const candidates = [
       ...build(complete, true),
       ...build(complete, false),
@@ -774,6 +886,16 @@ describe('the text keys', () => {
       ...build(many, false),
       kahfFridayCandidate(),
       continueListeningCandidate(CONTINUE_TEXT),
+      ...buildFollowAlongCandidates({
+        newKeys: ['w-t|1'],
+        reciters: [timed],
+        favoriteReciterIds: [],
+      }),
+      ...buildFollowAlongCandidates({
+        newKeys: [...timingKeysOf([timed])],
+        reciters: [timed],
+        favoriteReciterIds: [],
+      }),
     ];
     const used = new Set(
       candidates.flatMap(c => [textKey(c.title), textKey(c.body)]),

@@ -40,6 +40,7 @@ export type HomeRowId =
   | 'honored'
   | 'paradise'
   | 'newly-added-recitations'
+  | 'follow-along-recitations' // #847: recitations with follow-along
   | 'full-recording';
 
 /** Per-row toggle for the Listen-tab home rows. */

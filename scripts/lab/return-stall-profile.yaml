@@ -1,0 +1,48 @@
+# @ai Qariah: PERF-09 set-up for a reciter profile. Opens Zaynab Talha (a complete recitation; the
+# first Qariah of the grid can lack the short surahs) and plays Ad-Duhaa (93) from the descending
+# list, so that short surahs follow (a track change about each minute), and leaves the mini player
+# on the profile.
+appId: com.qariah.app
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../.maestro/subflows/skip-onboarding.yaml
+- tapOn: '(Qariahs|Reciters)'
+- scrollUntilVisible:
+    element: '.*Zaynab Talha.*'
+    direction: DOWN
+    timeout: 120000
+    centerElement: true
+- tapOn: '.*Zaynab Talha.*'
+- extendedWaitUntil:
+    visible: '.*JUZ.*'
+    timeout: 20000
+# Descending order: Ad-Duhaa is then 22 rows down, not 93 (93 rows took more than 240 s).
+# Wait for the layout first: on the Galaxy A10s a tap on 'Desc' during the load selected 'Rev'.
+# The wait for An-Nas (the first row of the descending list) fails the flow when the order is
+# wrong, and return-stall.sh then runs the flow again.
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn: 'Desc'
+- extendedWaitUntil:
+    visible: '.*An-Nas.*'
+    timeout: 10000
+- scrollUntilVisible:
+    element: '.*Ad-Duhaa.*'
+    direction: DOWN
+    timeout: 240000
+    centerElement: true
+- tapOn: '.*Ad-Duhaa.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- runFlow:
+    when:
+      visible:
+        id: 'player-close'
+    commands:
+      - tapOn:
+          id: 'player-close'
+- extendedWaitUntil:
+    visible:
+      id: 'mini-player-play-pause'
+    timeout: 10000

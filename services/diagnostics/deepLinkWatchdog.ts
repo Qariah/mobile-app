@@ -48,6 +48,11 @@ function firstSegment(normalized: string): string {
 const REDIRECT_LANDINGS: Readonly<Record<string, readonly string[]>> = {
   player: [''],
   quran: ['mushaf'],
+  // The app shortcuts (services/shortcuts/appShortcuts.ts, 2026-11-11): a
+  // cold start lands on the tabs (pathname "/"), or on the reader.
+  'continue-listening': [''],
+  'continue-reading': ['mushaf'],
+  search: [''],
 };
 
 /**

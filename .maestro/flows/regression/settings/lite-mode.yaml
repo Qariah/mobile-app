@@ -1,0 +1,104 @@
+# SET-08 (Android) — Settings → Lite mode: the row, the chooser, and Lite mode after a
+# relaunch: the full player shows the Lite text card, and "Show text" shows the verse text.
+#
+# Lite mode is Android only (components/settings/liteModeSettingsItem.ts: no row on iOS).
+# The app reads the mode once for each process (services/lite/liteMode.ts), so a choice
+# applies at the next launch. The flow forces "On", so it passes on every phone, and it
+# ends on "Automatic", the default. On iOS, exclude the tag: --exclude-tags=android-only.
+appId: com.qariah.app
+tags:
+  - regression
+  - settings
+  - android-only
+---
+- launchApp:
+    clearState: true
+- runFlow: ../../../subflows/skip-onboarding.yaml
+
+# 1. The row shows the default, and the chooser has the three choices.
+- tapOn: 'Settings'
+- scrollUntilVisible:
+    element: 'Lite mode'
+    timeout: 20000
+- assertVisible: 'Now: Automatic.*'
+- tapOn: 'Lite mode'
+- assertVisible: 'Automatic'
+- assertVisible: 'Off'
+- tapOn: 'On'
+
+# 2. The choice applies at the next launch.
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn: 'Settings'
+- scrollUntilVisible:
+    element: 'Lite mode'
+    timeout: 20000
+- assertVisible: 'Now: On'
+
+# 3. In Lite mode the full player shows the text card until "Show text".
+# A long surah (Al-Mulk, the play-pause.yaml path): a short one ends during the flow, and the
+# notification card (NTF-11) then covers the player.
+- tapOn: '.*Listen'
+- tapOn: 'Surahs'
+- tapOn: 'Search surahs.*'
+- inputText: 'Mulk'
+- hideKeyboard
+- tapOn: '.*Al-Mulk.*'
+- waitForAnimationToEnd:
+    timeout: 3000
+- scrollUntilVisible:
+    element: '.*Zaynab Talha.*'
+    direction: DOWN
+    timeout: 30000
+    centerElement: true
+- tapOn: '.*Zaynab Talha.*'
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      notVisible:
+        id: 'player-close'
+    commands:
+      - tapOn:
+          id: 'mini-player-expand'
+      - waitForAnimationToEnd:
+          timeout: 5000
+- extendedWaitUntil:
+    visible:
+      id: 'lite-show-text'
+    timeout: 10000
+- assertVisible: 'Lite mode hides the verse text.*'
+- tapOn:
+    id: 'lite-show-text'
+- extendedWaitUntil:
+    notVisible:
+      id: 'lite-show-text'
+    timeout: 15000
+- tapOn:
+    id: 'player-close'
+
+# 4. Back to the default.
+- tapOn: 'Settings'
+- scrollUntilVisible:
+    element: 'Lite mode'
+    timeout: 20000
+- tapOn: 'Lite mode'
+- tapOn: 'Automatic'
+- stopApp
+- launchApp:
+    clearState: false
+# After a play, the background-playback prompt (S33) can open over the screen.
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: 'NOT NOW'
+    commands:
+      - tapOn: 'NOT NOW'
+- tapOn: 'Settings'
+- scrollUntilVisible:
+    element: 'Lite mode'
+    timeout: 20000
+- assertVisible: 'Now: Automatic.*'
+- stopApp

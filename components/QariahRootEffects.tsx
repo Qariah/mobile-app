@@ -32,6 +32,12 @@ import {
   NONBLOCKING_SPLASH_FLAG_V2,
   UNKNOWN_COLD_START_BOOT_PROPS,
 } from '@/services/bootSplash';
+import {
+  applyMountPump,
+  MOUNT_PUMP_FLAG,
+  mountPumpState,
+  startReturnFrameReport,
+} from '@/services/mountPump';
 import {qariahAnalytics} from '@/services/analytics/qariahEvents';
 import {setPlaybackHealthEnabled} from '@/services/diagnostics/playbackHealth';
 import {enableDiagnostics, diagNav} from '@/services/diagnostics/diagnostics';
@@ -68,8 +74,9 @@ function QariahPreConnectEffects(): null {
   //    connects analyticsService (AnalyticsConnector), so the first events
   //    already carry it. Skipped where the native module is absent (iOS), so
   //    iOS is unchanged.
-  // 2. The experiment controller (services/bootSplash) reads the flag
-  //    `nonblocking_splash_v2` and writes the marker for the NEXT cold start.
+  // 2. The non-blocking splash is the default. The controller
+  //    (services/bootSplash) reads the flag `nonblocking_splash_v2`, the
+  //    remote off switch, and writes the value for the NEXT cold start.
   //    This component only reports what the flag RESOLVED to. The build flag
   //    `nonBlockingSplash` is the hard-off; the controller writes OFF for it.
   useEffect(() => {
@@ -142,6 +149,27 @@ function QariahPreConnectEffects(): null {
   useEffect(() => {
     setPlaybackHealthEnabled(playbackHealthFlag === true);
   }, [playbackHealthFlag]);
+
+  // @ai Qariah (ANR floor work, class B) — the Android mount pump. OFF by
+  // default: `undefined` (flags not loaded, or no such flag) keeps it off, and
+  // the PostHog flag turns it on or off. Every change applies at once.
+  // (services/mountPump; a no-op on iOS, where the native module is absent.)
+  // The return-frame report (telemetry only): a slow first frame after a
+  // return sends `app_return_slow`, with the pump on or off.
+  useEffect(() => startReturnFrameReport(), []);
+  const mountPumpFlag = useFeatureFlag(MOUNT_PUMP_FLAG);
+  useEffect(() => {
+    applyMountPump(mountPumpFlag);
+    // The native side needs a moment to find the React Native dispatcher; the
+    // tag then says 'unavailable' when it could not (after an RN upgrade).
+    const timer = setTimeout(() => {
+      const state = mountPumpState();
+      if (Platform.OS !== 'android') return;
+      Sentry.setTag('mount_pump', state);
+      posthog?.register({mount_pump: state});
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [mountPumpFlag, posthog]);
 
   // Navigation breadcrumbs — any captured freeze/crash event then shows the
   // exact screen path that led there. No-op until diagnostics are enabled.

@@ -67,6 +67,7 @@
         <data android:mimeType="audio/*"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
+      <meta-data android:name="android.app.shortcuts" android:resource="@xml/qariah_shortcuts"/>
     </activity>
   </application>
 </manifest>

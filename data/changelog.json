@@ -37,7 +37,8 @@
         "The app keeps the splash until a restored Mushaf page is drawn, so no blank page shows",
         "The Mushaf keeps its line layout across launches and loads the word data faster",
         "The player keeps its position and its queue up to date while the app is in the background, so the return after a long listen does not freeze",
-        "Android: lighter now-playing bars that stop when their screen is not on view"
+        "Android: lighter now-playing bars that stop when their screen is not on view",
+        "Android: the app stops its screen animations while it is in the background, so it uses less battery when you are not looking at it"
       ],
       "fixes": [
         "iPhone: playback no longer freezes for a few seconds when a recitation starts",

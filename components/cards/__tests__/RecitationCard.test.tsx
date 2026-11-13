@@ -1,8 +1,10 @@
 // @ai-generated
 // Qariah (Sprint 48): the recitation card of the "Newly Added" Listen row.
 import React from 'react';
-import {fireEvent, render} from '@testing-library/react-native';
+import {StyleSheet} from 'react-native';
+import {fireEvent, render, renderHook} from '@testing-library/react-native';
 import {RecitationCard} from '../RecitationCard';
+import {useTheme} from '@/hooks/useTheme';
 import type {NewlyAddedRecitation} from '@/data/qariahReciterCollections';
 import type {Reciter, Rewayat} from '@/data/reciterData';
 
@@ -102,6 +104,16 @@ describe('RecitationCard', () => {
       />,
     );
     expect(getByText('ayah 255')).toBeTruthy();
+  });
+
+  it('draws the qariah line in textSecondary (#847, critique round 1, H4)', () => {
+    const {theme} = renderHook(() => useTheme()).result.current;
+    const {getByText} = render(
+      <RecitationCard recitation={full} onPress={jest.fn()} />,
+    );
+    expect(StyleSheet.flatten(getByText('Aisha Example').props.style)).toEqual(
+      expect.objectContaining({color: theme.colors.textSecondary}),
+    );
   });
 
   it('calls the press handler with its recitation', () => {

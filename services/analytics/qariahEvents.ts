@@ -60,6 +60,10 @@ export const QARIAH_ANALYTICS_EVENTS = {
   // @ai ANR hotfix v2 — the device became a boot risk (enrolled in the
   // `nonblocking_splash_v2` experiment). Fires once, when a device enrols.
   BOOT_RISK_ENROLLED: 'boot_risk_enrolled',
+  // @ai ANR floor work (class B) — the first frame after a return to the app
+  // took 1.5 s or more (Android). A leading signal for the return ANR: the
+  // ANR itself needs 5 s and a waiting input event, so it is rare.
+  APP_RETURN_SLOW: 'app_return_slow',
   // @ai v1 → v2 favorites restore funnel. The 3.2.0 rollout's declared PRIMARY
   // risk signal (~1,573 v1 users get their favorites back only on QF sign-in)
   // was effectively UNINSTRUMENTED: the sole instrument was a Sentry
@@ -98,6 +102,10 @@ export const QARIAH_ANALYTICS_EVENTS = {
   NOTIFICATION_PERMISSION_RESULT: 'notification_permission_result',
   NOTIFICATION_SCHEDULED: 'notification_scheduled',
   NOTIFICATION_OPENED: 'notification_opened',
+  // TECH_DEBT #369 (owner, 2026-11-12: "just count every time we publish to
+  // QF"): one event for each Reflection that QuranReflect accepts. It carries
+  // no property: no note text, no id, no verse key.
+  REFLECTION_PUBLISHED: 'reflection_published',
 } as const;
 
 // --- Onboarding funnel (S35.3) ---
@@ -211,6 +219,15 @@ export interface BootSplashFlagResolvedProps {
 }
 
 /** @ai The device became a boot risk (ANR hotfix v2). `reason` is the trigger. */
+export interface AppReturnSlowProps {
+  /** From the activity resume to the end of the first frame, in ms. */
+  frame_ms: number;
+  /** How long the app was in the background, in seconds. */
+  background_s: number;
+  /** 'on' | 'off' | 'unavailable': the mount pump at the resume. */
+  mount_pump: string;
+}
+
 export interface BootRiskEnrolledProps {
   reason: BootRiskReason;
   /** The boot-splash mode of THIS process (Android). Explicit, because the
@@ -523,7 +540,7 @@ export interface NotificationPermissionResultProps {
 
 /** A notice went into the schedule (a new one), or posted now. */
 export interface NotificationScheduledProps {
-  /** One of the five types of services/notifications/types.ts. */
+  /** One of the six types of services/notifications/types.ts. */
   type: string;
   trigger: 'immediate' | 'date' | 'weekly';
   /**
@@ -668,6 +685,14 @@ export const qariahAnalytics = {
   trackBootRiskEnrolled(props: BootRiskEnrolledProps): void {
     analyticsService.captureDiagnosticEvent(
       QARIAH_ANALYTICS_EVENTS.BOOT_RISK_ENROLLED,
+      {...props},
+    );
+  },
+
+  // @ai ANR floor work — a slow first frame after a return to the app.
+  trackAppReturnSlow(props: AppReturnSlowProps): void {
+    analyticsService.captureDiagnosticEvent(
+      QARIAH_ANALYTICS_EVENTS.APP_RETURN_SLOW,
       {...props},
     );
   },
@@ -825,6 +850,16 @@ export const qariahAnalytics = {
     analyticsService.captureDiagnosticEvent(
       QARIAH_ANALYTICS_EVENTS.NOTIFICATION_OPENED,
       {...props},
+    );
+  },
+
+  // --- QuranReflect (TECH_DEBT #369) ---
+
+  /** A Reflection was published to QuranReflect. No property, by design. */
+  trackReflectionPublished(): void {
+    analyticsService.captureDiagnosticEvent(
+      QARIAH_ANALYTICS_EVENTS.REFLECTION_PUBLISHED,
+      {},
     );
   },
 };

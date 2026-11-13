@@ -67,8 +67,15 @@ import java.util.concurrent.Executors
  * Sentry app-start span move earlier. That is NOT a faster boot. The log line
  * "boot splash dismissed" is the "app ready" moment in both arms.
  *
- * THE FLAG. Fail-closed. JS writes the PostHog value (marker present = on) for
- * the NEXT launch. A missing marker means today's behaviour. A lab build
+ * THE FLAG. Default ON since 2026-11 (ANR floor work). The treatment needs no
+ * marker: a fresh install and an update boot in it at the first launch. Only
+ * OFF_FILE gives today's behaviour. JS writes OFF_FILE for the NEXT launch
+ * when a good PostHog response says `control` or `false` (the remote off
+ * switch), and deletes it for any other good response. A failed or
+ * quota-limited flag request changes nothing. Reason for the default: in the
+ * field 57% of the users of a week made one cold start, and the old rule
+ * (marker written by launch N, used by launch N + 1) kept them in the blocking
+ * splash. A lab build
  * (BuildConfig.QARIAH_LAB) also accepts the launch intent extras
  * `qariah_lab_nonblocking_splash` (boolean) and `qariah_lab_splash_variant`
  * ("c1b": the content view stays INVISIBLE until dismiss) for a same-build A/B.
@@ -76,17 +83,12 @@ import java.util.concurrent.Executors
  * marker files, so a later real launcher tap uses it; JS then does not
  * overwrite it. `--es qariah_lab_splash_variant clear` removes the lab markers.
  *
- * V2 FLAG. The marker is FLAG_FILE ("..._v2.on"). The old flag key wrote
- * LEGACY_FLAG_FILE on builds 1975-2026. A new name makes sure that an old
- * marker has no effect after the upgrade. setEnabledForNextLaunch deletes the
- * legacy file each time it runs.
- *
- * TRANSIENT OFF. A failed or quota-limited flag request writes OFF with
- * setOffForNextLaunchKeepGuard. That function deletes the legacy marker and
- * the flag marker. It does not touch the crash-guard count or the fallback
- * marker. It writes TRANSIENT_OFF_FILE only when the flag marker existed. A good flag response uses setEnabledForNextLaunch. It
- * resets the guard when the value changes, EXCEPT when it turns the flag ON
- * after a transient off: then the guard state stays.
+ * OLD MARKERS. Builds before the default-ON change used FLAG_FILE
+ * ("..._v2.on", marker present = on), TRANSIENT_OFF_FILE (a failed request
+ * turned the flag off for one launch) and, on builds 1975-2026,
+ * LEGACY_FLAG_FILE. No build reads them now. setEnabledForNextLaunch deletes
+ * them each time it runs. A good flag response resets the crash guard only
+ * when it changes the stored value.
  *
  * BOOT RISK. BOOT_RISK_FILE marks a device that had a bad boot. JS sets it
  * (setBootRisk) when the splash stalls or the previous launch did not complete.
@@ -130,7 +132,10 @@ import java.util.concurrent.Executors
  * iOS is not affected. This module is Android-only.
  */
 object QariahBootSplash {
-  // @ai v2 marker: the old name stays only so that it can be deleted.
+  // @ai The remote off switch. Present = today's blocking splash at the next
+  // launch. Absent = the treatment (the default).
+  const val OFF_FILE = "qariah_boot_nonblocking_splash_v2.off"
+  // @ai Old markers: the names stay only so that they can be deleted.
   const val FLAG_FILE = "qariah_boot_nonblocking_splash_v2.on"
   const val LEGACY_FLAG_FILE = "qariah_boot_nonblocking_splash.on"
   const val BOOT_RISK_FILE = "qariah_boot_risk.on"
@@ -140,7 +145,7 @@ object QariahBootSplash {
   const val EXIT_API_TOO_LOW = -2
   const val EXIT_NO_PREVIOUS = -3
   const val FALLBACK_FILE = "qariah_boot_nonblocking_splash.fallback"
-  // @ai Set by a transient off; a good response deletes it.
+  // @ai Old marker (a transient off). Deleted, never read.
   const val TRANSIENT_OFF_FILE = "qariah_boot_nonblocking_splash_v2.transient-off"
   const val GUARD_FILE = "qariah_boot_nonblocking_splash.guard"
   // Lab builds only: a persisted lab arm (see resolveMode).
@@ -249,11 +254,10 @@ object QariahBootSplash {
       processStartWallMs = System.currentTimeMillis()
       appContext = application
       checkMarkers(application)
-      // Flag off (every control user): no guard work and no logo decode here.
+      // Remote off (OFF_FILE): no guard work and no logo decode here.
       // (Every mode still queues the process-state task at activity create.)
-      // A good flag response that turned the flag off deleted the guard state
-      // (setEnabledForNextLaunch). A transient off keeps it on purpose
-      // (setOffForNextLaunchKeepGuard).
+      // The good flag response that turned the flag off deleted the guard
+      // state (setEnabledForNextLaunch).
       if (flagOnAtStart) {
         io.execute { evaluateGuard(application) }
         if (!fallbackAtStart) startEarlyLogoDecode(application)
@@ -267,7 +271,8 @@ object QariahBootSplash {
     if (appStartChecked) return
     appStartChecked = true
     val d = dir(context)
-    flagOnAtStart = File(d, FLAG_FILE).exists()
+    // Default ON: only the remote off switch gives the blocking splash.
+    flagOnAtStart = !File(d, OFF_FILE).exists()
     fallbackAtStart = flagOnAtStart && File(d, FALLBACK_FILE).exists()
   }
 
@@ -339,64 +344,33 @@ object QariahBootSplash {
 
   /**
    * JS: store the remote flag value for the NEXT launch (background thread).
-   * A changed value also clears the crash-guard state, so an owner who turns
-   * the flag off and on again gets a fresh start. Exception: an ON after a
-   * transient off (TRANSIENT_OFF_FILE) keeps the guard state.
+   * enabled = false writes the remote off switch (OFF_FILE); enabled = true
+   * deletes it. A changed value also clears the crash-guard state, so an owner
+   * who turns the flag off and on again gets a fresh start. JS calls this only
+   * for a good flag response: a failed request keeps the stored value.
    */
   fun setEnabledForNextLaunch(context: Context?, enabled: Boolean) {
     val ctx = (context ?: appContext)?.applicationContext ?: return
     io.execute {
       try {
-        // @ai The legacy (v1) marker always goes, before any early return.
-        deleteQuietly(File(dir(ctx), LEGACY_FLAG_FILE))
+        val d = dir(ctx)
+        // @ai The old markers always go, before any early return. No build
+        // reads them now (see OLD MARKERS in the header).
+        deleteQuietly(File(d, LEGACY_FLAG_FILE))
+        deleteQuietly(File(d, FLAG_FILE))
+        deleteQuietly(File(d, TRANSIENT_OFF_FILE))
         // A lab build that persisted an arm keeps it; the remote flag must not
         // overwrite a lab experiment (lab builds only create this file).
-        if (File(dir(ctx), LAB_PERSIST_FILE).exists()) return@execute
-        val flag = File(dir(ctx), FLAG_FILE)
-        // @ai A transient off (setOffForNextLaunchKeepGuard) left this marker.
-        // A good response ends the transient state. If the good response turns
-        // the flag ON again, the guard state stays: the off was a network
-        // failure, not an owner change.
-        val transient = File(dir(ctx), TRANSIENT_OFF_FILE)
-        val wasTransient = transient.exists()
-        deleteQuietly(transient)
-        if (flag.exists() == enabled) return@execute
-        if (enabled) flag.createNewFile() else deleteQuietly(flag)
-        if (enabled && wasTransient) return@execute
+        if (File(d, LAB_PERSIST_FILE).exists()) return@execute
+        val off = File(d, OFF_FILE)
+        if (off.exists() == !enabled) return@execute
+        if (enabled) deleteQuietly(off) else off.createNewFile()
         guardDeaths = 0
-        deleteQuietly(File(dir(ctx), GUARD_FILE))
-        deleteQuietly(File(dir(ctx), FALLBACK_FILE))
+        deleteQuietly(File(d, GUARD_FILE))
+        deleteQuietly(File(d, FALLBACK_FILE))
       } catch (_: Throwable) {
-        // Fail closed: the stored value stays as it was.
+        // The stored value stays as it was.
       }
-    }
-  }
-
-  /**
-   * @ai JS: a TRANSIENT off (a failed or quota-limited flag request). Deletes
-   * only the flag marker. The crash-guard count and the fallback marker stay,
-   * so a flaky network cannot reset the guard. A good response uses
-   * setEnabledForNextLaunch, which does the full reset.
-   */
-  fun setOffForNextLaunchKeepGuard(context: Context?) {
-    try {
-      val ctx = (context ?: appContext)?.applicationContext ?: return
-      io.execute {
-        try {
-          deleteQuietly(File(dir(ctx), LEGACY_FLAG_FILE))
-          if (File(dir(ctx), LAB_PERSIST_FILE).exists()) return@execute
-          val flag = File(dir(ctx), FLAG_FILE)
-          // Record the transient state only when the flag was ON. The next
-          // good ON response then keeps the guard state (setEnabledForNextLaunch).
-          if (flag.exists()) {
-            File(dir(ctx), TRANSIENT_OFF_FILE).createNewFile()
-            deleteQuietly(flag)
-          }
-        } catch (_: Throwable) {
-          // Fail closed: the stored value stays as it was.
-        }
-      }
-    } catch (_: Throwable) {
     }
   }
 
@@ -409,9 +383,11 @@ object QariahBootSplash {
       // Lab persist-arm: with `--ez qariah_lab_persist true` the extra also
       // writes the markers, so a later REAL launcher tap (no extra) uses the
       // same arm. Opt-in, so the interleaved A/B runs (extra only) do not flip
-      // the markers between arms: a persisted "on" marker would start the early
-      // logo decode in Application.onCreate of the next CONTROL run. Variant
-      // "clear" removes the lab markers and hands the flag back to JS/PostHog.
+      // the markers between arms. (Since the default is ON, the early logo
+      // decode also starts in Application.onCreate of a lab-control run, unless
+      // OFF_FILE exists: persist the control arm for a clean control timing.)
+      // Variant "clear" removes the lab markers and hands the flag back to
+      // JS/PostHog.
       val clear = variant == "clear"
       if (clear || intent.getBooleanExtra(LAB_PERSIST_EXTRA, false)) {
         persistLabArm(activity, treatment, c1b, clear)
@@ -438,15 +414,17 @@ object QariahBootSplash {
     io.execute {
       try {
         val d = dir(ctx)
-        val flag = File(d, FLAG_FILE)
+        val off = File(d, OFF_FILE)
         val c1bFile = File(d, LAB_C1B_FILE)
         val persist = File(d, LAB_PERSIST_FILE)
-        // @ai A lab arm is a fresh start: no transient state is left.
+        // @ai A lab arm is a fresh start: no old marker is left.
         deleteQuietly(File(d, TRANSIENT_OFF_FILE))
+        deleteQuietly(File(d, FLAG_FILE))
         if (clear) {
-          deleteQuietly(flag); deleteQuietly(c1bFile); deleteQuietly(persist)
+          // Back to the default (the treatment) until JS writes the remote value.
+          deleteQuietly(off); deleteQuietly(c1bFile); deleteQuietly(persist)
         } else {
-          if (treatment) flag.createNewFile() else deleteQuietly(flag)
+          if (treatment) deleteQuietly(off) else off.createNewFile()
           if (c1b) c1bFile.createNewFile() else deleteQuietly(c1bFile)
           persist.createNewFile()
         }

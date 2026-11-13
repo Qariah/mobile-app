@@ -57,6 +57,35 @@ const DEFAULT_REDIRECT_URI = 'com.qariah.app:/quranoauth2redirect';
  * entirely, so /preferences calls 403'd post-auth even though sign-in succeeded.
  *
  * Source: https://api-docs.quran.foundation/docs/tutorials/oidc/user-apis-quickstart/
+ *
+ * SEM-S3 (Sprint 51, divergence audit 2026-10-24): the list holds only the
+ * scopes that a call of the app needs. Each scope and its calls: // @ai
+ *   openid          — GET {auth}/userinfo (`qfUserInfo.ts`), the id_token
+ *   offline_access  — the refresh_token grant (`qfOAuth.ts`)
+ *   user            — the user record from /userinfo (its email is the key
+ *                     of the v1 restore)
+ *   preference      — POST /auth/v1/preferences (`preferences.ts`)
+ *   reading_session — POST /auth/v1/reading-sessions (`readingSessions.ts`)
+ *   note.read       — GET /auth/v1/notes (`notes.ts` listNotes)
+ *   note.create     — POST /auth/v1/notes (`notes.ts` createNote)
+ *   note.update     — PATCH /auth/v1/notes/{id} (`notes.ts` updateNote)
+ *   note.delete     — DELETE /auth/v1/notes/{id} (`notes.ts` deleteNote)
+ *   post.read       — GET /v1/posts/my-posts (`postsRestore.ts`)
+ *   post.create     — POST /auth/v1/notes/{id}/publish (`notes.ts` publishNote)
+ *   post.update     — PATCH /v1/posts/{id}, the edit of a pulled reflection
+ *                     in place (TECH_DEBT #256, Sprint 51 Task 27)
+ *   post.delete     — DELETE /v1/posts/{id} (`notes.ts` unpublishNote)
+ * The community feed (GET /quran-reflect/v1/posts/feed) uses the
+ * client-credentials token and its own scopes (`qfClientCredentials.ts`),
+ * not this list.
+ *
+ * Removed in SEM-S3, because no call uses them: `collection`, `bookmark`,
+ * `goal`, `streak`, `post.like`, `post.save`, `comment.read`,
+ * `comment.create`, `comment.like`. A refresh sends no `scope`, so a session
+ * from before the change keeps its grants; only a new sign-in asks for the
+ * shorter list. Add a scope back in the same change as the call that needs
+ * it, and check the grant with a prelive sign-in (Hydra drops a scope that
+ * the client may not request, with no error).
  */
 const DEFAULT_SCOPES = [
   'openid',
@@ -64,10 +93,6 @@ const DEFAULT_SCOPES = [
   'user',
   'preference',
   'reading_session',
-  'collection',
-  'bookmark',
-  'goal',
-  'streak',
   // Sprint 18 — local notes + QF Notes sync + publish-to-QuranReflect.
   // Sprint 21 round-5.3 — swap bare `note` parent for granular children.
   // **Decisive evidence:** the round-5 instrumented build captured a
@@ -102,27 +127,13 @@ const DEFAULT_SCOPES = [
   // i.e., the user's own posts only. There is NO QF-side scope or
   // endpoint that grants read access to other users' posts via the SDK;
   // confirmed via runtime curl probe + scopes-reference walkthrough.
-  // Children we use: read (load reflections on a verse + post detail),
-  // create (publish a new reflection), update (edit existing body),
-  // delete (unpublish), like (toggle like on own reflection), save
-  // (forward-compat for the "Save for later" feature on QR if surfaced).
+  // Children we use: read (the user's own posts, for the posts pull),
+  // create (publish a new reflection), update (edit the body of a post in
+  // place), delete (unpublish). // @ai
   'post.read',
   'post.create',
   'post.update',
   'post.delete',
-  'post.like',
-  'post.save',
-  // Sprint 21 round-3 — comments on the user's own Reflections. We use
-  // these for the comment-thread display + composer surfaced from the
-  // reflection editor. Parent `comment` again is approval-gated; ship
-  // children. Per QF docs: comment.read = "Read QuranReflect posts'
-  // comments" (any user's, not just calling user's), comment.create =
-  // post a new comment, comment.like = like/unlike a comment. (No
-  // comment.update or comment.delete exposed — QR does not offer edit
-  // for comments.)
-  'comment.read',
-  'comment.create',
-  'comment.like',
 ];
 
 export interface QfOAuthConfig {

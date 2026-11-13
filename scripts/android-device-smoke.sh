@@ -21,8 +21,9 @@
 #
 #   --apk=PATH        install this release APK first (adb install -r). Omit to
 #                     smoke whatever is already installed.
-#   --serial=SERIAL   adb serial. Default: $ANDROID_SERIAL, else the first
-#                     connected device. (This repo's device is 8BNX1CU9Z.)
+#   --serial=SERIAL   adb serial. Default: $ANDROID_SERIAL, else the only
+#                     connected device (exit 2 when several are attached).
+#                     Pixel 3: 8BNX1CU9Z. Samsung A10s: R9AR20A7FPJ.
 #   --duration=SEC    seconds to observe after launch (default 15).
 #   --signature=REGEX extra crash signature to fail on (e.g. the Sentry culprit
 #                     string for the bug being fixed). Case-insensitive.
@@ -38,13 +39,25 @@ set -uo pipefail
 # a hardcoded /tmp is world-writable and is denied under the agent sandbox.
 TMP_BASE="${TMPDIR:-/tmp}"; TMP_BASE="${TMP_BASE%/}"
 
-# Serialize the single shared device (scripts/with-device-lock.sh). Re-exec under the
-# lock unless a parent already holds it (QARIAH_DEVICE_LOCK_HELD set) — so a parallel
-# boot-gate / triage-loop smoke / Maestro run can't collide on the one Pixel. Degrades
-# to running unlocked if the lock helper is somehow absent, and skips locking for --help.
+# Serialize the shared device (scripts/with-device-lock.sh). Re-exec under the
+# lock unless a parent already holds the lock for THIS device (QARIAH_DEVICE_LOCK_HELD
+# is a ':'-separated set of held names) — so a parallel boot-gate / triage-loop smoke /
+# Maestro run can't collide on a phone. A lock that a parent holds on another phone
+# does not count. Degrades to running unlocked if the lock helper is somehow absent,
+# and skips locking for --help. The lock must see --serial too, or with several
+# devices attached it cannot know which one to lock.
 case " $* " in *" -h "*|*" --help "*) _SKIP_LOCK=1 ;; *) _SKIP_LOCK="" ;; esac
-if [ -z "${QARIAH_DEVICE_LOCK_HELD:-}" ] && [ -z "$_SKIP_LOCK" ] && [ -x "$(dirname "$0")/with-device-lock.sh" ]; then
-  exec "$(dirname "$0")/with-device-lock.sh" --label="android-device-smoke" -- "$0" "$@"
+_LOCK_SERIAL=()
+_LOCK_NAME="${ANDROID_SERIAL:-}"
+for _a in "$@"; do case "$_a" in --serial=*) _LOCK_SERIAL=("$_a"); _LOCK_NAME="${_a#*=}" ;; esac; done
+_LOCK_HELD=""
+if [ -n "$_LOCK_NAME" ]; then
+  case ":${QARIAH_DEVICE_LOCK_HELD:-}:" in *":$_LOCK_NAME:"*) _LOCK_HELD=1 ;; esac
+elif [ -n "${QARIAH_DEVICE_LOCK_HELD:-}" ]; then
+  _LOCK_HELD=1   # no device named: the parent lock resolved the one attached device
+fi
+if [ -z "$_LOCK_HELD" ] && [ -z "$_SKIP_LOCK" ] && [ -x "$(dirname "$0")/with-device-lock.sh" ]; then
+  exec "$(dirname "$0")/with-device-lock.sh" ${_LOCK_SERIAL[@]+"${_LOCK_SERIAL[@]}"} --label="android-device-smoke" -- "$0" "$@"
 fi
 
 PKG="com.qariah.app"
@@ -66,8 +79,12 @@ for arg in "$@"; do
   esac
 done
 
-# Resolve serial.
+# Resolve serial. Take the attached device only when it is the only one.
 if [ -z "$SERIAL" ]; then
+  if [ "$(adb devices | awk 'NR>1 && $2=="device"{n++} END{print n+0}')" -gt 1 ]; then
+    echo "❌ several adb devices attached — pass --serial=SERIAL." >&2
+    exit 2
+  fi
   SERIAL="$(adb devices | awk 'NR>1 && $2=="device"{print $1; exit}')"
 fi
 if [ -z "$SERIAL" ]; then
@@ -86,8 +103,9 @@ fi
 if [ -n "$APK" ]; then
   [ -f "$APK" ] || { echo "❌ APK not found: $APK" >&2; exit 2; }
   echo "  installing $APK ..."
-  if ! "${ADB[@]}" install -r -d "$APK" >"$TMP_BASE/smoke-install.log" 2>&1; then
-    echo "❌ install failed:"; tail -5 "$TMP_BASE/smoke-install.log" >&2; exit 2
+  INSTALL_LOG="$TMP_BASE/smoke-install-$SERIAL.log"
+  if ! "${ADB[@]}" install -r -d "$APK" >"$INSTALL_LOG" 2>&1; then
+    echo "❌ install failed:"; tail -5 "$INSTALL_LOG" >&2; exit 2
   fi
 fi
 
@@ -107,7 +125,8 @@ sleep "$DURATION"
 # Optional: exercise a surface via deeplink, then observe a little longer.
 if [ -n "$LAUNCH_URL" ]; then
   echo "  opening deeplink: $LAUNCH_URL"
-  "${ADB[@]}" shell am start -a android.intent.action.VIEW -d "$LAUNCH_URL" >/dev/null 2>&1 || true
+  # -p: a device with two Qariah builds would otherwise show an app chooser.
+  "${ADB[@]}" shell am start -a android.intent.action.VIEW -d "$LAUNCH_URL" -p "$PKG" >/dev/null 2>&1 || true
   sleep 6
 fi
 

@@ -27,7 +27,10 @@ import {
   subscribeLiveCatalogLoaded,
 } from '@/services/liveCatalogSignal';
 import type {CatalogTaskResult, CatalogTaskSource} from './catalogTask';
-import {createCatalogSnapshotStore} from './catalogDiff';
+import {
+  createCatalogSnapshotStore,
+  createTimingSnapshotStore,
+} from './catalogDiff';
 import {isNotificationsHoldout} from './holdout';
 import type {NotificationCandidate} from './types';
 
@@ -239,10 +242,16 @@ export async function prepareNotifications(): Promise<void> {
   }
 }
 
-/** `true` when the snapshot store has a snapshot. Never throws. */
+/**
+ * `true` when both snapshots exist: the recitations and the follow-along
+ * (#845). Never throws.
+ */
 function hasStoredSnapshot(): boolean {
   try {
-    return createCatalogSnapshotStore().load() !== null;
+    return (
+      createCatalogSnapshotStore().load() !== null &&
+      createTimingSnapshotStore().load() !== null
+    );
   } catch {
     return false;
   }

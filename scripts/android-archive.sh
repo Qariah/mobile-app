@@ -42,6 +42,12 @@
 #   --clean     run ./gradlew clean before the release build
 #   --prod      force QF production env
 #   --prelive   force QF prelive env
+#   --lab       telemetry off: empty EXPO_PUBLIC_SENTRY_DSN and
+#               EXPO_PUBLIC_POSTHOG_API_KEY, no Sentry source-map upload.
+#               For a physical lab phone whose model real users also own
+#               (the Samsung A10s, SM-A107F), so lab runs never count as
+#               users (TECH_DEBT #222). The archive gets a "-lab" suffix.
+#               Not with --bundle or --upload: a store build keeps telemetry.
 #
 # Output:
 #   APK → android/app/build/outputs/apk/release/app-release.apk
@@ -90,6 +96,7 @@ BUNDLE=false
 CLEAN=false
 PROD_OVERRIDE=false
 PRELIVE_OVERRIDE=false
+LAB=false
 UPLOAD_TRACK=""
 for arg in "$@"; do
     case $arg in
@@ -105,6 +112,9 @@ for arg in "$@"; do
         --prelive)
             PRELIVE_OVERRIDE=true
             ;;
+        --lab)
+            LAB=true
+            ;;
         --upload=*)
             # Auto-invoke scripts/android-upload-play.sh after a successful
             # build. Implies --bundle (Play Console only accepts AABs).
@@ -113,7 +123,7 @@ for arg in "$@"; do
             ;;
         *)
             echo -e "${RED}❌ Unknown argument: $arg${NC}"
-            echo "Usage: ./scripts/android-archive.sh [--bundle] [--clean] [--prod|--prelive] [--upload=<internal|alpha|beta>]"
+            echo "Usage: ./scripts/android-archive.sh [--bundle] [--clean] [--prod|--prelive] [--lab] [--upload=<internal|alpha|beta>]"
             exit 1
             ;;
     esac
@@ -142,6 +152,11 @@ fi
 
 if [ "$PROD_OVERRIDE" = true ] && [ "$PRELIVE_OVERRIDE" = true ]; then
     echo -e "${RED}❌ --prod and --prelive are mutually exclusive.${NC}"
+    exit 1
+fi
+
+if [ "$LAB" = true ] && [ "$BUNDLE" = true ]; then
+    echo -e "${RED}❌ --lab builds a sideload APK only. A store build (--bundle / --upload) keeps telemetry.${NC}"
     exit 1
 fi
 
@@ -235,6 +250,20 @@ if [ "$QF_PROD" = true ]; then
 else
     echo -e "  QF env:    ${YELLOW}prelive${NC} (client ${EXPO_PUBLIC_QF_CLIENT_ID:-<unset>}) — staging data, not production"
     echo -e "             ${YELLOW}$QF_REASON${NC}"
+fi
+
+# Lab build: clear the telemetry keys AFTER .env.local is sourced, because
+# `set -a; source` above overwrites any value the caller's shell set. Metro
+# reads the empty values at bundle time, so Sentry and PostHog stay off.
+if [ "$LAB" = true ]; then
+    export EXPO_PUBLIC_SENTRY_DSN=
+    export EXPO_PUBLIC_POSTHOG_API_KEY=
+    export SENTRY_DISABLE_AUTO_UPLOAD=true
+    # BuildConfig.QARIAH_LAB: the launch extra qariah_lab_nonblocking_splash
+    # picks the splash arm (control/treatment) for an A/B in one build.
+    # Without the extra, the build behaves as production.
+    export ORG_GRADLE_PROJECT_qariahLab=true
+    echo -e "  Telemetry: ${YELLOW}OFF (--lab)${NC} — no Sentry, no PostHog, no source-map upload; splash A/B extra on"
 fi
 
 # Assert version sync (app.config.js source-of-truth vs Info.plist +
@@ -381,7 +410,9 @@ if [ -z "$ARCHIVE_VC" ]; then
 fi
 ARCHIVE_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)
 if mkdir -p "$RELEASES_DIR" 2>/dev/null; then
-    ARCHIVED_APK="$RELEASES_DIR/qariah-${ARCHIVE_VN:-unknown}-${ARCHIVE_VC:-0}-${ARCHIVE_SHA}.apk"
+    ARCHIVE_SUFFIX=""
+    [ "$LAB" = true ] && ARCHIVE_SUFFIX="-lab"
+    ARCHIVED_APK="$RELEASES_DIR/qariah-${ARCHIVE_VN:-unknown}-${ARCHIVE_VC:-0}-${ARCHIVE_SHA}${ARCHIVE_SUFFIX}.apk"
     if cp "$APK_PATH" "$ARCHIVED_APK" 2>/dev/null; then
         echo -e "${GREEN}🗄  Durable archive: $ARCHIVED_APK${NC}"
     else

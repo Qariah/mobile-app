@@ -7,6 +7,7 @@ import en from '@/i18n/locales/en/qariah.json';
 import ar from '@/i18n/locales/ar/qariah.json';
 import {NOTIFICATION_TEXT_KEYS} from '../types';
 import {
+  buildFollowAlongCandidates,
   buildRecitationCandidates,
   continueListeningCandidate,
   kahfFridayCandidate,
@@ -25,6 +26,7 @@ const CHANNEL_KEYS = [
   'qariah:notifications.channels.kahfFriday',
   'qariah:notifications.channels.continueListening',
   'qariah:notifications.channels.whatsNew',
+  'qariah:notifications.channels.followAlong',
 ];
 
 /**
@@ -139,6 +141,10 @@ describe('the rendered notices', () => {
   function builtTexts(): NotificationText[] {
     const single = reciter('r-a', 'A', [36]);
     const many = reciter('r-b', 'B', [1, 2, 3]);
+    const timed = {
+      ...many,
+      rewayat: many.rewayat.map(w => ({...w, has_timestamps: true})),
+    };
     const out = [
       ...buildRecitationCandidates({
         newKeys: ['r-a|r-a-w|36|1|10'],
@@ -162,6 +168,17 @@ describe('the rendered notices', () => {
       }),
       kahfFridayCandidate(),
       continueListeningCandidate({surahName: 'Yasin', reciterName: 'A'}),
+      // #845: one surah with follow-along, and the summary.
+      ...buildFollowAlongCandidates({
+        newKeys: ['r-b-w|2'],
+        reciters: [timed],
+        favoriteReciterIds: [],
+      }),
+      ...buildFollowAlongCandidates({
+        newKeys: ['r-b-w|1', 'r-b-w|2', 'r-b-w|3'],
+        reciters: [timed],
+        favoriteReciterIds: ['r-b'],
+      }),
     ];
     return out.flatMap(c => [c.title, ...(c.body ? [c.body] : [])]);
   }
@@ -171,9 +188,10 @@ describe('the rendered notices', () => {
     async language => {
       await instance.changeLanguage(language);
       const texts = builtTexts();
-      // A single notice of each recitation type, 2 summaries, Kahf and
-      // continue: 6 notices, each with a title and a body.
-      expect(texts).toHaveLength(12);
+      // A single notice of each recitation type, 2 summaries, Kahf,
+      // continue, and the 2 follow-along notices: 8 notices, each with a
+      // title and a body.
+      expect(texts).toHaveLength(16);
       for (const text of texts) {
         if (!('key' in text)) throw new Error('a built text is a key');
         // The keys are built at run time; the typed `t()` does not take them.

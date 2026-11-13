@@ -3,7 +3,7 @@
 #
 # WHY. A question (AskUserQuestion), a permission prompt or a crash in an unattended run
 # stalls the run, and nobody is told (owner, 2026-11-04). This hook files one `owner-queue`
-# `info` issue (scripts/owner-queue.mjs) so that the Steward sees it within 2 hours:
+# `info` issue (scripts/owner-queue.mjs) so that the Steward sees it within 4 hours:
 #   Notification   → "a run waits: <task>"   (the run waits on a prompt nobody answers)
 #   StopFailure    → "a run failed: <task>"  (the run died: an API error, a crash)
 #   SessionEnd     → "a run ended with no run-end: <task>"  (the session ended, and

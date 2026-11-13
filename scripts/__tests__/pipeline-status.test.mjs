@@ -10,7 +10,9 @@ import {fileURLToPath} from 'node:url';
 import {
   cardRollout,
   computeStatus,
+  newestPublicBeta,
   dueDates,
+  FLOW_KEYS,
   isLoopDraft,
   parseRunLines,
   recentRuns,
@@ -265,15 +267,149 @@ test('a READY build with no go WAITS, and it is a "needs you" item with the exac
   assert.match(stage(go, 'promote').details[0], /publishing 3905/);
 });
 
-test('a public beta older than the target is LATE, and AMBER overall', () => {
+// Owner rule (2026-11-09): an old public beta is not a problem when nothing
+// waits to go out.
+test('an old public beta with nothing READY is OK, not LATE', () => {
   const comments = [
     ...goodRuns(),
     ...promotionDone('3880', '2026-11-05T18:00:00Z'),
   ];
   const st = computeStatus(sources({comments}));
-  assert.equal(stage(st, 'promote').verdict, 'LATE');
+  const p = stage(st, 'promote');
+  assert.equal(p.verdict, 'OK');
+  assert.equal(p.details[0], 'nothing waits to go out');
+  assert.match(p.details[1], /last public beta 3880 .* by the Promoter/);
+  assert.doesNotMatch(st.overall.reason || '', /Promote is late/);
+  const flow = Object.fromEntries(st.flow.map(s => [s.key, s]));
+  assert.match(flow.promote.why, /^Nothing waits to go out\./);
+  assert.doesNotMatch(flow.promote.rule, /every \d+ days/);
+});
+
+test('an approved build that is not out 24 hours after the go is LATE', () => {
+  const comments = [
+    ...goodRuns(),
+    ...promotionDone('3890', '2026-11-08T18:00:00Z'),
+    comment(
+      `release-audit: READY public-beta 3905 commit=${SHA}`,
+      '2026-11-09T05:45:00Z',
+    ),
+    comment('owner-reply: go public-beta 3905', '2026-11-09T15:00:00Z'),
+  ];
+  const st = computeStatus(sources({comments}));
+  const p = stage(st, 'promote');
+  assert.equal(p.verdict, 'LATE');
+  assert.match(p.details[0], /3905 approved 29 h ago, not published/);
   assert.equal(st.overall.level, 'AMBER');
-  assert.match(st.overall.reason, /Promote is late: last public beta 3880/);
+  const flow = Object.fromEntries(st.flow.map(s => [s.key, s]));
+  assert.match(flow.promote.why, /You approved 3905 29 h ago/);
+  // Under 24 hours, the same approval is still "publishing".
+  const early = computeStatus(
+    sources({comments, now: Date.parse('2026-11-10T10:00:00Z')}),
+  );
+  assert.equal(stage(early, 'promote').verdict, 'OK');
+  assert.match(stage(early, 'promote').details[0], /publishing 3905/);
+});
+
+test('a public beta made by hand covers the READY builds up to its number', () => {
+  const comments = [
+    ...goodRuns(),
+    ...promotionDone('3890', '2026-11-08T18:00:00Z'),
+    comment(
+      `release-audit: READY public-beta 3895 commit=${SHA}`,
+      '2026-11-09T05:45:00Z',
+    ),
+  ];
+  const store = {
+    readAt: '2026-11-10T19:59:00Z',
+    ios: {
+      app: [
+        {
+          build: '3899',
+          version: '3.2.6',
+          uploadedAt: '2026-11-09T18:00:00Z',
+          internal: 'IN_BETA_TESTING',
+          external: 'IN_BETA_TESTING',
+          expired: false,
+        },
+      ],
+      beta: [],
+    },
+    android: {
+      internal: [],
+      beta: [{versionCodes: ['3899'], status: 'completed', name: '3899'}],
+      production: [],
+    },
+  };
+  const st = computeStatus(sources({comments, store}));
+  const p = stage(st, 'promote');
+  assert.equal(p.verdict, 'OK');
+  assert.match(p.details[1], /last public beta 3899 .*by hand/);
+  assert.equal(st.needsYou.counts.approvals, 0, 'no go for a covered build');
+  // A READY build above the hand build still waits for the go.
+  const newer = computeStatus(
+    sources({
+      store,
+      comments: [
+        ...comments,
+        comment(
+          `release-audit: READY public-beta 3905 commit=${SHA}`,
+          '2026-11-10T05:45:00Z',
+        ),
+      ],
+    }),
+  );
+  assert.equal(stage(newer, 'promote').verdict, 'WAITS');
+  assert.equal(newer.needsYou.counts.approvals, 1);
+});
+
+test('newestPublicBeta takes the higher build of the Promoter line and the stores', () => {
+  assert.equal(newestPublicBeta(null, []), null);
+  assert.deepEqual(
+    newestPublicBeta({build: '3890', at: '2026-11-08T18:00:00Z'}, [
+      {build: '3899', at: null, by: 'hand'},
+      {build: '3880', at: null, by: 'hand'},
+    ]),
+    {build: '3899', at: null, by: 'hand'},
+  );
+  assert.equal(
+    newestPublicBeta({build: '3900', at: 'x'}, [{build: '3899', by: 'hand'}])
+      .by,
+    'Promoter',
+  );
+});
+
+// 2026-11-11: a fixed Diagnostics Watch stayed LATE for a day after a manual rerun passed.
+test('collect: a manual run that passed after a failed scheduled run clears it', () => {
+  const failed = goodWorkflows();
+  failed['diagnostics-watch.yml'] = [
+    wfRun('2026-11-10T16:13:00Z', 'failure'),
+    wfRun('2026-11-09T16:13:00Z'),
+  ];
+  const late = computeStatus(sources({workflows: failed}));
+  assert.equal(stage(late, 'collect').verdict, 'LATE');
+  const fixed = computeStatus(
+    sources({
+      workflows: failed,
+      workflowsManual: {
+        'diagnostics-watch.yml': [wfRun('2026-11-10T18:00:00Z')],
+      },
+    }),
+  );
+  assert.equal(stage(fixed, 'collect').verdict, 'OK');
+  assert.ok(
+    stage(fixed, 'collect').details.some(d => /a manual run passed/.test(d)),
+    JSON.stringify(stage(fixed, 'collect').details),
+  );
+  // A manual run from before the failure does not clear it.
+  const older = computeStatus(
+    sources({
+      workflows: failed,
+      workflowsManual: {
+        'diagnostics-watch.yml': [wfRun('2026-11-10T10:00:00Z')],
+      },
+    }),
+  );
+  assert.equal(stage(older, 'collect').verdict, 'LATE');
 });
 
 test('collect: two failed snapshots are STUCK; no run for 30 hours is LATE', () => {
@@ -358,6 +494,9 @@ test('a P0 owner decision is first in "needs you" and makes the overall RED', ()
     actions: 1,
     approvals: 0,
     reviews: 1,
+    now: 2,
+    later: 0,
+    held: 0,
   });
   assert.equal(st.needsYou.stewardInfo, 1);
   assert.ok(
@@ -577,4 +716,232 @@ test('the CLI on the fixture file prints the status JSON', () => {
     text,
     /^pipeline 2026-11-10: RED · Audit stopped two due days in a row/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The flow of the Pipeline page (scripts/lib/pipeline-flow.mjs)
+// ---------------------------------------------------------------------------
+
+test('bug: a run line shows its date in Los Angeles, not the UTC date', () => {
+  // The auditor of 11-09 posts at 05:40Z on 11-10: 21:40 PT on 11-09. Before
+  // the fix the line read "11-10 21:40 PT", a UTC date with a PT time.
+  const st = computeStatus(sources());
+  const audit = stage(st, 'audit');
+  assert.equal(audit.who, 'Auditor · 2026-11-09 · 11-09 21:40 PT · SKIPPED');
+  assert.doesNotMatch(audit.who, /11-10 21:40/);
+  assert.equal(audit.last, '11-09 21:40 PT · SKIPPED');
+  assert.equal(audit.runs[0].when, '11-09 21:40');
+  assert.equal(audit.runs[1].when, '11-08 21:40');
+  // The same rule for a workflow run and a verdict.
+  const late = computeStatus(
+    sources({
+      workflows: {
+        ...goodWorkflows(),
+        'signals-snapshot.yml': [
+          wfRun('2026-11-10T05:30:00Z', 'failure'),
+          wfRun('2026-11-09T19:30:00Z'),
+        ],
+      },
+    }),
+  );
+  assert.match(
+    stage(late, 'collect').who,
+    /Signals snapshot 11-09 21:30 PT failure/,
+  );
+});
+
+test('the flow has 10 steps; the 8 stages are the same objects with the detail fields', () => {
+  const st = computeStatus(sources());
+  assert.deepEqual(
+    st.flow.map(s => s.key),
+    FLOW_KEYS,
+  );
+  assert.equal(st.stages.length, 8);
+  for (const s of st.stages)
+    assert.equal(st.flow.find(f => f.key === s.key).n, s.n);
+  const steward = st.flow.find(s => s.key === 'steward');
+  const go = st.flow.find(s => s.key === 'go');
+  assert.equal(steward.n, null);
+  assert.equal(go.n, null);
+  assert.equal(go.verdict, 'GATE');
+  assert.equal(go.verdictText, 'YOU');
+  // The side steps do not change the overall line.
+  assert.equal(st.overall.level, 'GREEN');
+  for (const s of st.flow) {
+    for (const k of ['sub', 'last', 'why', 'unblock', 'rule']) {
+      assert.equal(typeof s[k], 'string', `${s.key}.${k}`);
+      assert.ok(s[k].length > 0, `${s.key}.${k} is empty`);
+    }
+    assert.equal(typeof s.backlog.n, 'number', `${s.key}.backlog`);
+    assert.ok(Array.isArray(s.runs), `${s.key}.runs`);
+    assert.ok(Array.isArray(s.queue.items), `${s.key}.queue`);
+    for (const r of s.runs) assert.match(r.when, /^\d{2}-\d{2} \d{2}:\d{2}$/);
+  }
+  // The rows of the last 48 hours carry the PT time too.
+  for (const r of st.runs48h) assert.match(r.when, /^\d{2}-\d{2} \d{2}:\d{2}$/);
+});
+
+test('the fixture: hand builds, audit reasons, needs-you groups, rollout, close', () => {
+  const st = computeStatus(JSON.parse(readFileSync(FIXTURE, 'utf8')));
+  const by = Object.fromEntries(st.flow.map(s => [s.key, s]));
+  // Integrate: the auto-sprint built 3901; 3902 was built by hand after it.
+  assert.match(
+    by.integrate.details[0],
+    /newest internal beta 3\.2\.6 \(3902\), built by hand/,
+  );
+  assert.match(by.integrate.details[1], /from the auto-sprint 3901/);
+  assert.match(by.integrate.why, /3\.2\.6 \(3902\), was built by hand/);
+  assert.deepEqual(
+    by.integrate.queue.items.map(i => i.ref),
+    ['3.2.6 (3902)', '3.2.6 (3901)'],
+  );
+  assert.match(by.integrate.queue.items[1].title, /^From the auto-sprint/);
+  // Promote: the public beta 3880 went out by hand; the Promoter made none.
+  assert.match(
+    by.promote.why,
+    /The newest public beta is 3\.2\.6 \(3880\), published by hand/,
+  );
+  assert.equal(by.promote.lastRun, null);
+  // Audit: the reason of each verdict.
+  const v = by.audit.verdicts;
+  assert.deepEqual(
+    v.map(x => [x.build, x.result]),
+    [
+      ['3895', 'READY'],
+      ['3890', 'NOT READY'],
+    ],
+  );
+  assert.equal(v[1].reason, 'Disk floor: 21 GB free, 28 GB needed');
+  assert.deepEqual(v[1].tags, ['disk floor']);
+  assert.deepEqual(v[1].issues, [14]);
+  // Your go: READY 3895 waits.
+  assert.equal(by.go.backlog.n, 1);
+  assert.equal(by.go.queue.items[0].ref, '3895');
+  // Needs you: the approval and the P1 action are "now"; AUTH-13 waits for a build above 3902.
+  const ny = st.needsYou;
+  const n14 = ny.items.find(i => i.number === 14);
+  assert.equal(
+    n14.do,
+    'Run ~/.claude/bin/qariah-disk-report.sh, then delete the lines it marks SAFE.',
+  );
+  assert.deepEqual(n14.replies, [{text: 'done'}]);
+  assert.deepEqual(n14.blocks, ['audit', 'promote']);
+  assert.equal(n14.group, 'now');
+  const n15 = ny.items.find(i => i.number === 15);
+  assert.equal(n15.group, 'later');
+  assert.deepEqual(n15.notBefore, {
+    text: 'build>3902',
+    build: 3902,
+    date: null,
+    ready: false,
+  });
+  assert.equal(n15.do, 'Run case AUTH-13 on iOS and on Android');
+  assert.equal(
+    ny.items.find(i => i.type === 'approve').replies[0].text,
+    'owner-reply: go public-beta 3895',
+  );
+  assert.deepEqual(
+    ny.held.map(h => h.number),
+    [16],
+  );
+  assert.equal(ny.counts.held, 1);
+  assert.equal(ny.counts.later, 1);
+  assert.equal(ny.counts.now, 3); // #11 (decision), #14 (action), the approval
+  // Ramp: each platform.
+  assert.equal(st.rollout.ios.build, '3772');
+  assert.equal(st.rollout.android.percent, 50);
+  assert.equal(
+    by.ramp.sub,
+    'iOS 3.2.3 (3772) phased day 6 · Android vc3763 50 %',
+  );
+  // Close: the issues by the build that fixes them.
+  assert.deepEqual(by.close.fixedByBuild, [
+    {build: '3901', count: 1, issues: [{number: 13, title: 'Fixed in 3901'}]},
+  ]);
+  assert.equal(by.close.queue.items[0].ref, '3901');
+  // The stores answered.
+  assert.deepEqual(st.builds.errors, []);
+});
+
+test('a store that does not answer gives a plain line, and no hand build', () => {
+  const st = computeStatus(
+    sources({
+      store: {
+        errors: ['Google Play: Play 403 on POST edits'],
+        ios: null,
+        android: null,
+      },
+    }),
+  );
+  const integrate = st.flow.find(s => s.key === 'integrate');
+  assert.match(
+    integrate.queue.empty,
+    /The stores did not answer: Google Play: Play 403/,
+  );
+  assert.match(integrate.why, /could not read the stores/);
+  assert.deepEqual(st.builds.errors, ['Google Play: Play 403 on POST edits']);
+});
+
+test('the Steward step: STUCK after two failed runs; LATE when items wait and no run for 8 h', () => {
+  const q = issueBody => ({
+    number: 31,
+    title: 'Pick a name',
+    labels: ['owner-queue', 'decision'],
+    body: issueBody,
+    created_at: '2026-11-10T00:00:00Z',
+    updated_at: '2026-11-10T00:00:00Z',
+    html_url: 'https://example.test/i/31',
+  });
+  const two = [
+    run('steward', '2026-11-10', 'FAILED', '2026-11-10T17:00:00Z'),
+    run('steward', '2026-11-10', 'FAILED', '2026-11-10T19:00:00Z'),
+  ];
+  const stuck = computeStatus(
+    sources({
+      comments: [...goodRuns(), ...two],
+      issues: [q('## Reply\n\nA | B')],
+    }),
+  );
+  assert.equal(stuck.flow.find(s => s.key === 'steward').verdict, 'STUCK');
+  assert.equal(stuck.overall.level, 'AMBER');
+  const late = computeStatus(
+    sources({
+      comments: [
+        ...goodRuns(),
+        run('steward', '2026-11-10', 'DONE', '2026-11-10T08:00:00Z'),
+      ],
+      issues: [q('## Reply\n\nA | B')],
+    }),
+  );
+  const s = late.flow.find(x => x.key === 'steward');
+  assert.equal(s.verdict, 'LATE');
+  assert.deepEqual(
+    s.queue.items.map(i => i.ref),
+    ['#31'],
+  );
+  const ok = computeStatus(sources());
+  assert.equal(ok.flow.find(x => x.key === 'steward').verdict, 'IDLE');
+});
+
+test('the audit texts: the reason in brackets, the blocker title in full', () => {
+  const st = computeStatus(JSON.parse(readFileSync(FIXTURE, 'utf8')));
+  const audit = st.flow.find(s => s.key === 'audit');
+  // The newest verdict of the fixture is READY 3895: no reason in brackets.
+  assert.match(audit.why, /Its verdict was READY for 3895\./);
+  const late = computeStatus({
+    ...JSON.parse(readFileSync(FIXTURE, 'utf8')),
+    comments: JSON.parse(readFileSync(FIXTURE, 'utf8')).comments.filter(
+      c => !/^release-audit: READY/.test(c.body),
+    ),
+  });
+  const a = late.flow.find(s => s.key === 'audit');
+  assert.match(
+    a.why,
+    /NOT READY for 3890 \(Disk floor: 21 GB free, 28 GB needed\)\./,
+  );
+  assert.match(
+    a.unblock,
+    /^#14: Free 11 GB on the Mac for the Auditor\. The next run/,
+  );
+  assert.doesNotMatch(a.unblock, /…\./);
 });

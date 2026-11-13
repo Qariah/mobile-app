@@ -101,8 +101,13 @@ const ghJson = (args) => {
 // ---------------------------------------------------------------- 1. CLAUDE.md rotation
 const claude = show('CLAUDE.md', { required: true });
 const datedEntries = (claude.match(/^20\d\d-\d\d-\d\d — /gm) || []).length;
-const hasCollapsed = /^## Dated history \(collapsed/m.test(claude);
-const hasConsolidated = /^## Standing rules \(consolidated/m.test(claude);
+// Since 2026-11-08 the collapsed history lives in docs/operations/claude-md-history.md and the
+// standing rules live in one file per theme; CLAUDE.md keeps the index and the newest entry.
+const historyDoc = show('docs/operations/claude-md-history.md');
+const hasCollapsed = /^## Dated history \(collapsed/m.test(historyDoc);
+const indexed = [...claude.matchAll(/docs\/operations\/standing-rules\/([a-z0-9-]+\.md)/g)].map((m) => m[1]);
+const missingThemes = [...new Set(indexed)].filter((f) => !show(`docs/operations/standing-rules/${f}`));
+const hasConsolidated = /^## Standing rules \(consolidated/m.test(claude) && indexed.length > 0 && missingThemes.length === 0;
 const claudeKb = Math.round(claude.length / 1024);
 
 if (datedEntries > 3 || !hasCollapsed || !hasConsolidated) {
@@ -110,9 +115,14 @@ if (datedEntries > 3 || !hasCollapsed || !hasConsolidated) {
     'high',
     'CLAUDE.md rotation',
     `${datedEntries} full dated entries (convention: <=3); ` +
-      `collapsed-history section ${hasCollapsed ? 'present' : 'ABSENT'}; ` +
-      `consolidated-standing-rules section ${hasConsolidated ? 'present' : 'ABSENT'}; ${claudeKb} KB.`
+      `collapsed-history file ${hasCollapsed ? 'present' : 'ABSENT'}; ` +
+      `standing-rules index and theme files ${hasConsolidated ? 'present' : 'ABSENT'}${missingThemes.length ? ' (missing: ' + missingThemes.join(', ') + ')' : ''}; ${claudeKb} KB.`
   );
+}
+
+if (claude.length > 50 * 1024) {
+  note('medium', 'CLAUDE.md size',
+    `${claudeKb} KB (budget: 50 KB). CLAUDE.md loads in each session: move text to docs/operations/claude-md-history.md or a theme file.`);
 }
 
 // ---------------------------------------------------------------- 2. Branch model vs reality

@@ -8,12 +8,19 @@
 //   __qariahNotificationsDev.logScheduled()
 //   __qariahNotificationsDev.forgetSnapshotKeys(['<key>'])  // then force the job
 //   __qariahNotificationsDev.post('kahf_friday')            // a notice to tap
+//   __qariahNotificationsDev.stageFollowAlong('<rewayah id>', [2])
+//     // a foreground check of the live catalog, with follow-along on surah 2
+//     // of that rewayah (#845)
 // or from adb with a DEV link (the not-found route leaves at once):
 //   adb shell am start -a android.intent.action.VIEW \
 //     -d 'qariah://dev-notifications?cmd=post&args=%5B%22kahf_friday%22%5D'
 // (`args` is a URL-encoded JSON array). Each result goes to the log.
 import {Linking} from 'react-native';
-import {notificationsStorage, createCatalogSnapshotStore} from './catalogDiff';
+import {
+  notificationsStorage,
+  createCatalogSnapshotStore,
+  createTimingSnapshotStore,
+} from './catalogDiff';
 import {
   LAST_CATALOG_VERSION_KEY,
   CATALOG_CHECK_PENDING_KEY,
@@ -29,6 +36,7 @@ import {
   readNotificationsHoldoutArm,
 } from './holdout';
 import {NOTIFICATIONS_HOLDOUT_ENROLLMENT_KEY} from './holdoutEnrollment';
+import type {Reciter} from '@/data/reciterData';
 import type {NotificationCandidate} from './types';
 
 function expoNotifications(): typeof import('expo-notifications') {
@@ -79,7 +87,9 @@ const tools = {
   snapshotKeys: (limit = 20) => {
     const keys = [...(createCatalogSnapshotStore().load() ?? [])];
     console.log(
-      `[notifications][dev] snapshot (${keys.length}): ${JSON.stringify(keys.slice(0, limit))}`,
+      `[notifications][dev] snapshot (${keys.length}): ${JSON.stringify(
+        keys.slice(0, limit),
+      )}`,
     );
     return keys.slice(0, limit);
   },
@@ -104,6 +114,64 @@ const tools = {
       `[notifications][dev] forgot ${keys.length} key(s), saved: ${saved}`,
     );
     return saved;
+  },
+  // The #845 commands return their result and log nothing: the DEV link
+  // handler logs each result (`handleDevLink`), and the JS debugger shows it.
+  /** The size and the keys of the follow-along snapshot (#845; the first `limit`). */
+  timingKeys: (limit = 20) => {
+    const snapshot = createTimingSnapshotStore().load();
+    if (!snapshot) return null;
+    return {size: snapshot.size, keys: [...snapshot].slice(0, limit)};
+  },
+  /**
+   * Removes `rewayahId|surah` keys from the follow-along snapshot, as
+   * `forgetSnapshotKeys` does for recitations: the next check that sees
+   * follow-along on those surahs finds them "new".
+   */
+  forgetTimingKeys: (keys: string[]) => {
+    const store = createTimingSnapshotStore();
+    const snapshot = store.load();
+    if (!snapshot) return false;
+    keys.forEach(key => snapshot.delete(key));
+    const saved = store.save(snapshot);
+    notificationsStorage.remove(LAST_CATALOG_VERSION_KEY);
+    notificationsStorage.remove(CATALOG_CHECK_PENDING_KEY);
+    useNotificationPrefsStore.getState().setLastNotifiedDay(null);
+    return saved;
+  },
+  /**
+   * A staged catalog (#845): runs the foreground check on a copy of the
+   * catalog in memory, where the rewayah `rewayahId` has
+   * `has_timestamps: true` and `timestamps_surah_list: surahs` (an empty
+   * array means every listed surah). The catalog in memory does not change.
+   * The first run of a build saves the follow-along baseline; a later run
+   * that adds a surah posts the notice (clear the daily limit first).
+   */
+  stageFollowAlong: async (rewayahId: string, surahs: number[]) => {
+    const {RECITERS} =
+      require('@/data/reciterData') as typeof import('@/data/reciterData');
+    let found = false;
+    const catalog: Reciter[] = RECITERS.map(reciter => ({
+      ...reciter,
+      rewayat: (reciter.rewayat ?? []).map(rewayah => {
+        if (rewayah.id !== rewayahId) return rewayah;
+        found = true;
+        return {
+          ...rewayah,
+          has_timestamps: true,
+          timestamps_surah_list: [...surahs],
+        };
+      }),
+    }));
+    if (!found) return {error: `no rewayah ${rewayahId}`};
+    const {runQariahCatalogTask} =
+      require('./catalogTask') as typeof import('./catalogTask');
+    const result = await runQariahCatalogTask('foreground', {catalog});
+    return {
+      status: result.status,
+      newTimingKeys: result.check?.newTimingKeys ?? [],
+      posted: result.check?.posted?.dedupeKey ?? null,
+    };
   },
   /** The favorite reciter ids ("follow" = favorite). */
   favorites: () => {

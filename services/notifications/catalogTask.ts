@@ -15,9 +15,10 @@
 // Before any download, the body checks what can stop a post: MMKV, the
 // holdout, the permission, the preferences and the favorites. Each one stops
 // the run with its own status, records no version and downloads nothing. A
-// holdout user, or a user with no permission, also loses the stored snapshot:
-// the first check after a "yes" is a first check, so it never announces the
-// recitations of the months without permission.
+// holdout user, or a user with no permission, also loses the stored snapshots
+// (the recitations and the follow-along of #845): the first check after a
+// "yes" is a first check, so it never announces the recitations or the
+// follow-along of the months without permission.
 //
 // `backgroundTask.ts` requires this module lazily, so its imports are not on
 // the cold-start path. The run never throws: each failure is a status.
@@ -36,6 +37,7 @@ import {
 import {recordBackgroundRun} from './backgroundRunReport';
 import {
   createCatalogSnapshotStore,
+  createTimingSnapshotStore,
   notificationsStorage,
   type CatalogSnapshotStore,
 } from './catalogDiff';
@@ -70,7 +72,8 @@ export type CatalogTaskSource = 'background' | 'foreground';
  *   stored snapshot is removed.
  * - `no_catalog_source`: no catalog URL is configured. Nothing done.
  * - `version_unavailable`: `catalog-version.json` did not load. Nothing done.
- * - `version_unchanged`: the version of the last check, and nothing held back.
+ * - `version_unchanged`: the version of the last check, nothing held back,
+ *   and both snapshots exist.
  * - `catalog_unavailable`: the catalog did not load, or it is empty.
  * - `favorites_unavailable`: the favorites store did not read its value, so
  *   a followed recitation would get the wrong type. Nothing saved or posted.
@@ -126,7 +129,10 @@ export interface CatalogTaskDeps {
    */
   extraCandidates?: () => readonly NotificationCandidate[];
   /** The other deps of `runCatalogCheck` (tests). */
-  checkDeps?: Pick<CatalogCheckDeps, 'snapshotStore' | 'prefs' | 'now'>;
+  checkDeps?: Pick<
+    CatalogCheckDeps,
+    'snapshotStore' | 'timingSnapshotStore' | 'prefs' | 'now'
+  >;
   /** Default: `CATALOG_TASK_FETCH_TIMEOUT_MS`. */
   fetchTimeoutMs?: number;
   /**
@@ -302,12 +308,14 @@ function recordCheck(
   }
 }
 
-/** Removes the snapshot and the records of the last check (holdout, no permission). */
+/** Removes the snapshots and the records of the last check (holdout, no permission). */
 function forgetSnapshot(
   storage: KeyValueStorage,
   snapshotStore: CatalogSnapshotStore,
+  timingStore: CatalogSnapshotStore,
 ): void {
   snapshotStore.clear();
+  timingStore.clear();
   safeRemove(storage, LAST_CATALOG_VERSION_KEY);
   safeRemove(storage, CATALOG_CHECK_PENDING_KEY);
   safeRemove(storage, CATALOG_NOTICE_HELD_SINCE_KEY);
@@ -353,13 +361,15 @@ async function runOnce(
   const storage = deps.storage ?? notificationsStorage;
   const snapshotStore =
     deps.checkDeps?.snapshotStore ?? createCatalogSnapshotStore(storage);
+  const timingStore =
+    deps.checkDeps?.timingSnapshotStore ?? createTimingSnapshotStore(storage);
 
   // What can stop a post comes first: no download for a run that cannot post.
   if (!snapshotStore.isAvailable()) {
     return {source, status: 'storage_unavailable'};
   }
   if ((deps.isHoldout ?? isNotificationsHoldout)()) {
-    forgetSnapshot(storage, snapshotStore);
+    forgetSnapshot(storage, snapshotStore, timingStore);
     return {source, status: 'holdout'};
   }
   const tracked = trackTextMissing(deps.notifier ?? defaultNotifier());
@@ -370,7 +380,7 @@ async function runOnce(
     return {source, status: 'permission_unavailable'};
   }
   if (permission !== 'granted') {
-    forgetSnapshot(storage, snapshotStore);
+    forgetSnapshot(storage, snapshotStore, timingStore);
     return {source, status: 'no_permission'};
   }
   const prefsSource = deps.checkDeps?.prefs ?? notificationPrefsSource;
@@ -408,7 +418,11 @@ async function runOnce(
       const unchanged =
         safeGet(storage, LAST_CATALOG_VERSION_KEY) === String(doc.version);
       const pending = safeGet(storage, CATALOG_CHECK_PENDING_KEY) === '1';
-      if (unchanged && !pending && snapshotStore.load() !== null) {
+      // Both snapshots: the first run of a build with follow-along (#845)
+      // downloads once, so its follow-along baseline is the catalog of now.
+      const snapshotsExist =
+        snapshotStore.load() !== null && timingStore.load() !== null;
+      if (unchanged && !pending && snapshotsExist) {
         if (extra.length === 0) {
           return {source, status: 'version_unchanged', catalogVersion};
         }
@@ -442,6 +456,7 @@ async function runOnce(
     heldSinceStorage: storage,
     ...deps.checkDeps,
     snapshotStore,
+    timingSnapshotStore: timingStore,
     prefs: prefsSource,
   });
   const textMissing = check.status === 'post_failed' && tracked.textMissing();
@@ -477,6 +492,7 @@ function report(result: CatalogTaskResult): void {
           ? {catalog_version: result.catalogVersion}
           : {}),
         new_keys: result.check?.newKeys.length ?? 0,
+        new_timing_keys: result.check?.newTimingKeys.length ?? 0,
         held_back: result.check?.heldBackKeys.length ?? 0,
         ...(result.check?.posted
           ? {posted_type: result.check.posted.type}
@@ -493,6 +509,7 @@ function report(result: CatalogTaskResult): void {
       result.check
         ? {
             newKeys: result.check.newKeys.length,
+            newTimingKeys: result.check.newTimingKeys.length,
             heldBackKeys: result.check.heldBackKeys.length,
             posted: result.check.posted?.dedupeKey ?? null,
           }

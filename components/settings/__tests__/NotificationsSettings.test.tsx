@@ -1,6 +1,6 @@
 // @ai-generated
 // Qariah (Sprint 48, S48.7, Task 17): the Settings → Notifications page.
-// - The five switches show the values of the prefs store, in the page order.
+// - The six switches show the values of the prefs store, in the page order.
 // - A toggle writes the store.
 // - The banner shows when the system permission is off. Its button asks while
 //   the system can still ask (`canAskAgain`), else it opens the system
@@ -137,6 +137,7 @@ const DENIED = {
 const TITLES = [
   enQariah.settings.notifications.followedRecitation,
   enQariah.settings.notifications.newRecitation,
+  enQariah.settings.notifications.followAlong,
   enQariah.settings.notifications.kahfFriday,
   enQariah.settings.notifications.continueListening,
   enQariah.settings.notifications.whatsNew,
@@ -174,10 +175,11 @@ afterEach(async () => {
 });
 
 describe('Notifications settings page', () => {
-  it('renders the five switches in the page order with the store values', async () => {
+  it('renders the six switches in the page order with the store values', async () => {
     useNotificationPrefsStore.setState({
       new_recitation: false,
       continue_listening: false,
+      follow_along: false,
     });
     await renderPage();
 
@@ -201,8 +203,32 @@ describe('Notifications settings page', () => {
     expect(
       screen.getByTestId('notification-switch-whats_new').props.value,
     ).toBe(true);
+    // #845: the follow-along switch, after "New recitations".
+    expect(
+      screen.getByTestId('notification-switch-follow_along').props.value,
+    ).toBe(false);
+    expect(
+      screen.getByText(enQariah.settings.notifications.followAlongDesc),
+    ).toBeTruthy();
     // The app name is filled in the description.
     expect(screen.getByText('When Qariah adds a new recitation')).toBeTruthy();
+  });
+
+  it('the follow-along switch turns the type off and on (#845)', async () => {
+    await renderPage();
+    fireEvent(
+      screen.getByTestId('notification-switch-follow_along'),
+      'valueChange',
+      false,
+    );
+    expect(useNotificationPrefsStore.getState().follow_along).toBe(false);
+    expect(useNotificationPrefsStore.getState().new_recitation).toBe(true);
+    fireEvent(
+      screen.getByTestId('notification-switch-follow_along'),
+      'valueChange',
+      true,
+    );
+    expect(useNotificationPrefsStore.getState().follow_along).toBe(true);
   });
 
   it('writes the store when a switch is toggled', async () => {

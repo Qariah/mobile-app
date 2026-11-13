@@ -4,12 +4,19 @@
 import type {Reciter, Rewayat, SurahMetadata} from '@/data/reciterData';
 import {
   CATALOG_SNAPSHOT_KEY,
+  TIMING_SNAPSHOT_KEY,
   createCatalogSnapshotStore,
+  createTimingSnapshotStore,
   diffCatalog,
+  diffTimingCoverage,
   listRecitations,
+  listTimingCoverage,
   recitationKey,
   recitationKeysOf,
   snapshotAfter,
+  timingKey,
+  timingKeyOfRecitation,
+  timingKeysOf,
 } from '../catalogDiff';
 import type {KeyValueStorage} from '../types';
 
@@ -362,5 +369,140 @@ describe('createCatalogSnapshotStore', () => {
       newKeys: [],
       isFirstCheck: true,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #845: the follow-along coverage
+
+/** A rewayah with `has_timestamps` and `timestamps_surah_list` (undefined: no list). */
+function timed(
+  id: string,
+  surahList: (number | null)[],
+  hasTimestamps: boolean | undefined,
+  list?: number[],
+): Rewayat {
+  return {
+    ...rewayah(id, surahList),
+    ...(hasTimestamps === undefined ? {} : {has_timestamps: hasTimestamps}),
+    ...(list === undefined ? {} : {timestamps_surah_list: list}),
+  };
+}
+
+describe('timingKeysOf (the rule of r2HasSurah)', () => {
+  it('keys a covered surah as rewayahId|surah', () => {
+    expect(timingKey('w1', 18)).toBe('w1|18');
+    expect([
+      ...timingKeysOf([reciter('r1', [timed('w1', [1, 18], true, [18])])]),
+    ]).toEqual(['w1|18']);
+  });
+
+  it('an empty timestamps_surah_list means every listed surah', () => {
+    expect([
+      ...timingKeysOf([reciter('r1', [timed('w1', [1, 2, 114], true, [])])]),
+    ]).toEqual(['w1|1', 'w1|2', 'w1|114']);
+  });
+
+  it('a missing timestamps_surah_list means every listed surah too', () => {
+    expect([
+      ...timingKeysOf([reciter('r1', [timed('w1', [36, 67], true)])]),
+    ]).toEqual(['w1|36', 'w1|67']);
+  });
+
+  it('no has_timestamps, or has_timestamps false: no key, whatever the list says', () => {
+    expect(
+      timingKeysOf([
+        reciter('r1', [
+          timed('w1', [1, 2], false, [1, 2]),
+          timed('w2', [1, 2], undefined, [1]),
+        ]),
+      ]).size,
+    ).toBe(0);
+  });
+
+  it('a timed surah that the rewayah does not list gives no key (nothing to follow)', () => {
+    expect([
+      ...timingKeysOf([reciter('r1', [timed('w1', [1, 18], true, [18, 36])])]),
+    ]).toEqual(['w1|18']);
+  });
+
+  it('skips null and repeated entries, and keeps rewayat apart', () => {
+    const coverage = listTimingCoverage([
+      reciter('r1', [timed('w1', [1, null, 1, 2], true, [])]),
+      reciter('r2', [timed('w2', [1], true, [1])]),
+    ]);
+    expect(coverage.map(entry => entry.key)).toEqual(['w1|1', 'w1|2', 'w2|1']);
+    expect(coverage[2]).toMatchObject({surah: 1});
+    expect(coverage[2].reciter.id).toBe('r2');
+    expect(coverage[2].rewayah.id).toBe('w2');
+  });
+
+  it('maps a recitation key to the timing key of its surah', () => {
+    expect(timingKeyOfRecitation('r1|w1|18||')).toBe('w1|18');
+    expect(timingKeyOfRecitation('r1|w1|2|1|141')).toBe('w1|2');
+    expect(timingKeyOfRecitation('not-a-key')).toBeNull();
+  });
+});
+
+describe('diffTimingCoverage', () => {
+  it('first check (no snapshot): nothing is new', () => {
+    expect(diffTimingCoverage(null, new Set(['w1|1']))).toEqual({
+      newKeys: [],
+      isFirstCheck: true,
+    });
+  });
+
+  it('an empty snapshot IS a baseline (unlike the recitations)', () => {
+    expect(diffTimingCoverage(new Set(), new Set(['w1|1', 'w1|2']))).toEqual({
+      newKeys: ['w1|1', 'w1|2'],
+      isFirstCheck: false,
+    });
+  });
+
+  it('add, remove, re-add: only the first add is new (with snapshotAfter)', () => {
+    let snapshot: Set<string> = new Set(['w1|1']);
+    const added = new Set(['w1|1', 'w1|2']);
+    expect(diffTimingCoverage(snapshot, added).newKeys).toEqual(['w1|2']);
+    snapshot = snapshotAfter(snapshot, added, []);
+    const removed = new Set(['w1|1']);
+    expect(diffTimingCoverage(snapshot, removed).newKeys).toEqual([]);
+    snapshot = snapshotAfter(snapshot, removed, []);
+    expect(snapshot.has('w1|2')).toBe(true);
+    expect(diffTimingCoverage(snapshot, added).newKeys).toEqual([]);
+  });
+});
+
+describe('createTimingSnapshotStore', () => {
+  it('keeps its snapshot under its own key, apart from the recitations', () => {
+    const storage = fakeStorage();
+    const recitations = createCatalogSnapshotStore(storage);
+    const timing = createTimingSnapshotStore(storage);
+    expect(TIMING_SNAPSHOT_KEY).not.toBe(CATALOG_SNAPSHOT_KEY);
+    expect(recitations.save(new Set(['r1|w1|1||']))).toBe(true);
+    expect(timing.load()).toBeNull();
+    expect(timing.save(new Set(['w1|1']))).toBe(true);
+    expect(storage.data.has(TIMING_SNAPSHOT_KEY)).toBe(true);
+    expect(timing.load()).toEqual(new Set(['w1|1']));
+    expect(recitations.load()).toEqual(new Set(['r1|w1|1||']));
+    timing.clear();
+    expect(timing.load()).toBeNull();
+    expect(recitations.load()).toEqual(new Set(['r1|w1|1||']));
+  });
+
+  it('keeps an empty snapshot (a baseline with no follow-along)', () => {
+    const storage = fakeStorage();
+    const timing = createTimingSnapshotStore(storage);
+    expect(timing.save(new Set())).toBe(true);
+    expect(timing.load()).toEqual(new Set());
+  });
+
+  it('save gives false when the storage is not available', () => {
+    const storage = fakeStorage();
+    const timing = createTimingSnapshotStore({
+      ...storage,
+      isAvailable: () => false,
+    });
+    expect(timing.save(new Set())).toBe(false);
+    expect(storage.data.size).toBe(0);
   });
 });

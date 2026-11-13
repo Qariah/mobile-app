@@ -26,6 +26,11 @@
 // The state is flat (one top-level key for each type), not a map: zustand's
 // default shallow merge then gives a type that a later version adds its default
 // value, and the guard's deferred-write merge works key by key.
+//
+// So a new type needs no new `NOTIFICATION_PREFS_VERSION`: `follow_along`
+// (#845) came with version 1, and a stored version-1 value without it reads
+// as ON, with the stored toggles kept. Do not raise the version without a
+// `migrate`: zustand then drops the stored value and keeps the defaults.
 import * as Sentry from '@sentry/react-native';
 import {create} from 'zustand';
 import {persist} from 'zustand/middleware';
@@ -47,6 +52,7 @@ export const DEFAULT_NOTIFICATION_TYPE_PREFS: NotificationTypePrefs = {
   kahf_friday: true,
   continue_listening: true,
   whats_new: true,
+  follow_along: true,
 };
 
 export interface NotificationPrefsState extends NotificationTypePrefs {

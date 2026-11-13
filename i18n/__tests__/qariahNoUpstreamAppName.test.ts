@@ -11,9 +11,14 @@ import path from 'path';
 
 const I18N = path.resolve(__dirname, '..');
 
-/** Keys that name Bayaan on purpose (the credits, a tafsir title). */
+/**
+ * Keys that name Bayaan on purpose (the credits, a tafsir title, and the
+ * release notes: 3.1.3 "Qariah, rebuilt on Bayaan" and Bayaan's own releases
+ * 2.0 to 2.2 in data/changelog.json, review pack section Q).
+ */
 const ALLOWED = [
   /^qariah\.credits\.bayaan/,
+  /^qariah\.changelog\./,
   /^home\.tafseerNames\./,
   /^settings\.credits\./,
 ];

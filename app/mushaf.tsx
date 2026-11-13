@@ -496,22 +496,32 @@ export function MushafToolbar() {
         {t('toolbar.stop')}
       </Stack.Toolbar.Button>
       <Stack.Toolbar.Spacer />
+      {/* @ai-start Qariah (UX critique 2026-11-11): VoiceOver labels. The
+       * skip buttons had none, and the pause button said only the verse. The
+       * verse is now its hint. */}
       <Stack.Toolbar.Button
         icon="backward.end.fill"
         onPress={handlePrev}
         disabled={verseNavDisabled} // @ai
+        accessibilityLabel={t('playerBar.previousAyah')}
       />
       <Stack.Toolbar.Button
         icon={isPlaying ? 'pause.fill' : 'play.fill'}
         onPress={handlePlayPause}
-        disabled={isLoading}>
+        disabled={isLoading}
+        accessibilityLabel={
+          isPlaying ? t('common:actions.pause') : t('common:actions.play')
+        }
+        accessibilityHint={verseLabel || undefined}>
         {verseLabel}
       </Stack.Toolbar.Button>
       <Stack.Toolbar.Button
         icon="forward.end.fill"
         onPress={handleNext}
         disabled={verseNavDisabled} // @ai
+        accessibilityLabel={t('playerBar.nextAyah')}
       />
+      {/* @ai-end */}
       <Stack.Toolbar.Spacer />
       <Stack.Toolbar.Button icon="ellipsis.circle" onPress={handleOptions}>
         {t('toolbar.options')}

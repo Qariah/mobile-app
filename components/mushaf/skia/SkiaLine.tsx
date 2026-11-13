@@ -45,6 +45,7 @@ import {
   getArabicTextWeightStrokeWidth,
 } from '@/utils/skiaTextWeight';
 import {disposeAfterPendingDraws} from '@/utils/skiaDeferredDispose';
+import {useLineWordMark} from './wordMark'; // @ai Qariah (#847)
 
 const lineParStyle = {
   textHeightBehavior: TextHeightBehavior.DisableAll,
@@ -453,6 +454,20 @@ const SkiaLine: React.FC<SkiaLineProps> = ({
     lineHeight,
   ]); // @ai
 
+  // @ai Qariah (#847): the word being recited, under the text (wordMark.tsx).
+  const wordMark = useLineWordMark({
+    paragraph,
+    pageNumber,
+    lineIndex,
+    textIdentity,
+    textColor,
+    xPos,
+    yPos,
+    adjustedYPos,
+    lineHeight,
+    fontSize,
+  });
+
   if (!paragraph) return null;
 
   if (bgRects) {
@@ -469,6 +484,7 @@ const SkiaLine: React.FC<SkiaLineProps> = ({
             color={rect.color}
           />
         ))}
+        {wordMark /* @ai */}
         {strokeParagraph && (
           <Paragraph
             paragraph={strokeParagraph}
@@ -489,6 +505,7 @@ const SkiaLine: React.FC<SkiaLineProps> = ({
 
   return (
     <Group>
+      {wordMark /* @ai */}
       {strokeParagraph && (
         <Paragraph
           paragraph={strokeParagraph}

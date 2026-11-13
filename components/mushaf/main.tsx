@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {useRouter, useNavigation} from 'expo-router';
 import {useTheme} from '@/hooks/useTheme';
+import {useMushafWordTracking} from '@/hooks/useMushafWordTracking'; // @ai Qariah (#847)
 import {useReadingThemeColors} from '@/hooks/useReadingThemeColors';
 import {Ionicons, Feather} from '@expo/vector-icons';
 import {mushafShareUrl, shareUrl} from '@/utils/shareUtils';
@@ -66,6 +67,7 @@ import {
 import type {RewayahId} from '@/services/rewayah/RewayahIdentity'; // @ai
 import {useMushafAutoPageTurn} from '@/hooks/useMushafAutoPageTurn';
 import {MushafPlayerBar} from './MushafPlayerBar';
+import {evenHitSlop, headerIconSize} from './mushafHitSlop'; // @ai Qariah
 import SkiaPage from './skia/SkiaPage';
 import QCFPage from './qcf/QCFPage';
 import ReadingPageView from './reading/ReadingPageView';
@@ -682,6 +684,8 @@ export default function MushafViewer({
   const rewayahFallbackFrom = useMushafSettingsStore(
     s => s.rewayahFallbackFrom,
   ); // @ai
+  // @ai Qariah (#847): the word mark, in the Skia page and scroll views only.
+  useMushafWordTracking(mushafRenderer !== 'qcf_v2' && viewMode === 'mushaf');
   const isVertical = scrollDirection === 'vertical';
   // @ai Qariah: the continuous views and the reading view report no page draw;
   // Listen renders after them (services/mushaf/readerRestoreGate.ts).
@@ -1719,6 +1723,7 @@ export default function MushafViewer({
                       <Pressable
                         style={styles.headerIcon}
                         onPress={onPress}
+                        hitSlop={HEADER_ICON_HIT_SLOP} // @ai Qariah
                         accessibilityRole="button"
                         accessibilityLabel={t('mushaf.settings')}
                         testID="mushaf-settings-button">
@@ -1849,6 +1854,13 @@ export default function MushafViewer({
   );
   // @ai-end
 }
+// @ai-end
+
+// @ai-start Qariah (UX critique 2026-11-11): Mushaf settings in the header
+// is 34 pt (padding 6, icon 22). It sits at the end of its 44 pt header slot
+// and in the middle of the header row, so it grows the same on each side to
+// 44 pt and stays in the slot: no change on screen (mushafHitSlop.ts).
+const HEADER_ICON_HIT_SLOP = evenHitSlop(headerIconSize(moderateScale));
 // @ai-end
 
 // @ai Sprint 52 Task 8: height of the iOS 26 Stack toolbar over the panel.

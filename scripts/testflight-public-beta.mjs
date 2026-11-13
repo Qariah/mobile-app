@@ -20,13 +20,27 @@
 //   node scripts/testflight-public-beta.mjs --train=3.2.3
 //       read only: can TestFlight still take builds of this marketing version?
 //
-// Env: APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_ISSUER_ID (.env.local).
+// Key settings: APP_STORE_CONNECT_API_KEY_ID and APP_STORE_CONNECT_ISSUER_ID from
+// the environment, then from `.env.local` (this checkout, then the main
+// checkout); the private key from APP_STORE_CONNECT_API_KEY_P8_B64 or
+// ~/.appstoreconnect/private_keys/AuthKey_<id>.p8 (scripts/lib/asc-client.mjs,
+// ascKeySettings). The script finds them itself. Until 2026-11-12 it read the
+// environment only, and the publish guard admits the `--apply` step only as the
+// plain `node scripts/testflight-public-beta.mjs ...` command, with no
+// `--env-file`, variable or `source` in front. So the Promoter could not run it,
+// and public beta 4487 stopped before the Public Beta group (#865).
 // Exit 0 = done, 1 = an API error or the build is not ready, 2 = usage error.
 
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {IOS_BUNDLE_ID} from './lib/app-ids.mjs';
-import {ascGet, ascJwt, ascPost, resolveAppId} from './lib/asc-client.mjs';
+import {
+  ascGet,
+  ascJwtFromSettings,
+  ascKeySettings,
+  ascPost,
+  resolveAppId,
+} from './lib/asc-client.mjs';
 
 const BUNDLE_ID = IOS_BUNDLE_ID;
 const GROUP = 'Public Beta';
@@ -43,6 +57,15 @@ const OPEN_STATES = new Set([
   'INVALID_BINARY',
   'DEVELOPER_REJECTED',
 ]);
+
+/**
+ * The App Store Connect path that finds a TestFlight group by name.
+ * `/v1/apps/{id}/betaGroups` no longer accepts `filter[name]` (HTTP 400 on
+ * 2026-11-08, public beta 4419), so the lookup uses the top-level
+ * `/v1/betaGroups` with `filter[app]` and `filter[name]`.
+ */
+export const betaGroupPath = (appId, name) =>
+  `/v1/betaGroups?filter[app]=${encodeURIComponent(appId)}&filter[name]=${encodeURIComponent(name)}&limit=5`;
 
 /** @returns {boolean} true when TestFlight cannot take more builds of this version. */
 export const trainClosed = state => Boolean(state) && !OPEN_STATES.has(state);
@@ -155,10 +178,7 @@ async function apply(build, whatsNew, jwt) {
   }
 
   if (!s.groups.includes(GROUP)) {
-    const g = await ascGet(
-      `/v1/apps/${s.appId}/betaGroups?filter[name]=${encodeURIComponent(GROUP)}&limit=5`,
-      jwt,
-    );
+    const g = await ascGet(betaGroupPath(s.appId, GROUP), jwt);
     const group = (g.data || []).find(x => x.attributes?.name === GROUP);
     if (!group) throw new Error(`no TestFlight group "${GROUP}"`);
     const r = await fetch(
@@ -200,7 +220,8 @@ async function main() {
       .filter(Boolean)
       .map(m => [m[1], m[2] ?? true]),
   );
-  const jwt = ascJwt();
+  const settings = ascKeySettings();
+  const jwt = ascJwtFromSettings(settings);
   if (typeof flags.train === 'string') {
     console.log(JSON.stringify(await trainState(flags.train, jwt)));
     return;
@@ -214,7 +235,7 @@ async function main() {
   if (flags['wait-minutes']) {
     const end = Date.now() + Number(flags['wait-minutes']) * 60000;
     for (;;) {
-      const s = await readState(flags.build, ascJwt());
+      const s = await readState(flags.build, ascJwtFromSettings(settings));
       if (s.found && s.processing === 'VALID') break;
       if (Date.now() > end) {
         console.error(

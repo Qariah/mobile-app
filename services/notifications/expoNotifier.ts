@@ -32,8 +32,9 @@ function notificationsModule(): NotificationsModule {
  * One Android channel for each type, so the user can turn off one type in the
  * system settings. The name comes from `nameKeys`: the first key that exists
  * wins, then `defaultName` (English). The `qariah:notifications.channels.*`
- * keys (review pack rows 354–358) give the name; the toggle names of the
- * Notifications page (`qariah:settings.notifications.*`) stay as a fallback.
+ * keys (review pack rows 354–358, and 629 for `follow_along`) give the name;
+ * the toggle names of the Notifications page (`qariah:settings.notifications.*`)
+ * stay as a fallback.
  */
 export const NOTIFICATION_CHANNELS: Record<
   NotificationType,
@@ -78,6 +79,14 @@ export const NOTIFICATION_CHANNELS: Record<
       'qariah:settings.notifications.whatsNew',
     ],
     defaultName: 'New features',
+  },
+  follow_along: {
+    id: 'qariah-follow-along',
+    nameKeys: [
+      'qariah:notifications.channels.followAlong',
+      'qariah:settings.notifications.followAlong',
+    ],
+    defaultName: 'New follow-along', // #845
   },
 };
 

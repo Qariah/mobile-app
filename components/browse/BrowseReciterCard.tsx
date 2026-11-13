@@ -90,7 +90,9 @@ function createStyles(theme: Theme, width: number, height: number) {
     reciterInfo: {
       fontSize: moderateScale(9),
       fontFamily: 'Manrope-Regular',
-      color: Color(theme.colors.textSecondary).alpha(0.5).toString(),
+      // @ai Qariah (UX critique 2026-11-11): full textSecondary. At 50 % the
+      // 9 pt caption was 2.96:1 on the card (3.02:1 dark); now 12.2:1 and 8.5:1.
+      color: theme.colors.textSecondary,
       lineHeight: moderateScale(12),
       includeFontPadding: false,
       flexShrink: 1,

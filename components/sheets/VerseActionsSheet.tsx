@@ -737,7 +737,15 @@ export const VerseActionsSheet = (props: SheetProps<'verse-actions'>) => {
   }, [activeScreen]);
 
   const handleOnClose = useCallback(() => {
-    setActiveScreen(null);
+    // @ai-start
+    // No LayoutAnimation on close (#876). The library calls onClose in the
+    // task that unmounts the sheet's React Native Modal, so an animation
+    // configured here also covers that unmount. On iOS, when "Play from
+    // Here" started playback at the same time, the animation lost the
+    // removal of the Modal host: UIKit kept the Modal's empty full-screen
+    // view on top, and the Mushaf ignored every touch until a restart.
+    setActiveScreenRaw(null);
+    // @ai-end
     useVerseSelectionStore.getState().clearSelection();
     useMushafVerseSelectionStore.getState().clearSelection();
   }, []);

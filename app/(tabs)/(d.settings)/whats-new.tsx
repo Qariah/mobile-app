@@ -9,6 +9,7 @@ import {ChangelogEntry} from '@/types/changelog';
 // @ai-start
 import {useTranslation} from 'react-i18next';
 // @ai-end
+import {localizeChangelogEntry} from '@/i18n/qariahChangelog'; // @ai Qariah
 
 // @ai-start
 export default function WhatsNewScreen() {
@@ -17,8 +18,11 @@ export default function WhatsNewScreen() {
   const styles = createStyles(theme);
 
   // Get the latest changelog entry
+  // @ai Qariah: in the UI language (i18n/qariahChangelog.ts).
   const latestChangelog =
-    changelogData.length > 0 ? (changelogData[0] as ChangelogEntry) : null;
+    changelogData.length > 0
+      ? localizeChangelogEntry(changelogData[0] as ChangelogEntry)
+      : null;
 
   if (!latestChangelog) {
     return (

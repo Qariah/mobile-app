@@ -105,6 +105,7 @@ const branding = {
   homeRowConfig: [
     // ----- Visible rows -----
     {id: 'continue-listening', enabled: true}, // resume row — auto-hides until the first recitation plays
+    {id: 'follow-along-recitations', enabled: true}, // #847: title "Follow Along"; recitations with follow-along; hidden until 3 qariahs have it
     {id: 'newly-added-recitations', enabled: true}, // Section title "Newly Added Recitations"; auto-hide while no recitation has an `added_at`
     {id: 'rewayat', enabled: true}, // Section title "Browse by Rewaya"
     {id: 'country', enabled: true}, // Section title "Browse by Country"

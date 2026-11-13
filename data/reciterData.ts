@@ -41,6 +41,8 @@ export interface Rewayat {
   surah_metadata?: SurahMetadata[];
   has_timestamps?: boolean;
   timestamps_surah_list?: number[];
+  /** Qariah (#846): the timing file revision, one number or `{"<surah>": n}`; see `services/timestamps/timestampRevision.ts`. */
+  timestamps_rev?: number | Record<string, number> | null; // @ai
   /** Arabic rewayah name from qariah-ops-console; the last fallback of `getCatalogRewayahLabel`. */
   name_ar?: string | null;
 }

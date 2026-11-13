@@ -31,4 +31,13 @@ describe('linkTargetReached', () => {
     expect(linkTargetReached('/quran/18', 'quran/18')).toBe(true);
     expect(linkTargetReached('/', 'quran/18')).toBe(false);
   });
+
+  // The app shortcuts (services/shortcuts/appShortcuts.ts, 2026-11-11).
+  it('counts the landings of the app shortcut links', () => {
+    expect(linkTargetReached('/', 'continue-listening')).toBe(true);
+    expect(linkTargetReached('/mushaf', 'continue-reading')).toBe(true);
+    expect(linkTargetReached('/', 'continue-reading')).toBe(false);
+    expect(linkTargetReached('/', 'search')).toBe(true);
+    expect(linkTargetReached('/mushaf', 'search')).toBe(false);
+  });
 });

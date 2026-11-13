@@ -228,7 +228,7 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
   initialRewayatId: initialRewayatIdProp,
 }) => {
   const {theme} = useTheme();
-  const {t} = useTranslation('player');
+  const {t} = useTranslation(['player', 'common', 'qariah']); // @ai Qariah: the a11y labels
   const styles = createSharedStyles(theme);
   const insets = useSafeAreaInsets();
   const bottomInset = useBottomInset();
@@ -362,14 +362,21 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                     }),
                   );
                 }}
-                hitSlop={8}>
+                hitSlop={8}
+                accessibilityRole="button" // @ai Qariah: VoiceOver label
+                accessibilityLabel={t('common:actions.share')}>
                 <Feather
                   name="share"
                   size={moderateScale(20)}
                   color={theme.colors.text}
                 />
               </Pressable>
-              <Pressable onPress={() => setShowSearch(true)} hitSlop={8}>
+              {/* @ai Qariah: VoiceOver label */}
+              <Pressable
+                onPress={() => setShowSearch(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('common:actions.search')}>
                 <Feather
                   name="search"
                   size={moderateScale(20)}
@@ -1296,7 +1303,15 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                           marginTop: moderateScale(4),
                         },
                       ]}
-                      onPress={toggleShowLovedOnly}>
+                      onPress={toggleShowLovedOnly}
+                      // @ai-start Qariah: TalkBack and VoiceOver
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'qariah:a11y.reciterProfile.lovedOnly',
+                      )}
+                      accessibilityState={{selected: showLovedOnly}}
+                      // @ai-end
+                    >
                       <Animated.View style={heartAnimatedStyle}>
                         <HeartIcon
                           size={moderateScale(22)}
@@ -1311,7 +1326,15 @@ const ReciterProfileContent: React.FC<ReciterProfileProps> = ({
                     </Pressable>
                     <Pressable
                       style={styles.viewModeButton}
-                      onPress={toggleViewMode}>
+                      onPress={toggleViewMode}
+                      // @ai-start Qariah: TalkBack and VoiceOver
+                      accessibilityRole="button"
+                      accessibilityLabel={t(
+                        'qariah:a11y.reciterProfile.gridView',
+                      )}
+                      accessibilityState={{selected: viewMode === 'card'}}
+                      // @ai-end
+                    >
                       <Feather
                         name={viewMode === 'card' ? 'list' : 'grid'}
                         size={moderateScale(16)}

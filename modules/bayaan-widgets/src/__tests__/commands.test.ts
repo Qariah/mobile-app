@@ -3,6 +3,7 @@ import {
   parseQueuedCommands,
   selectFreshCommands,
   QueuedWidgetCommand,
+  WIDGET_SHORTCUT_TARGETS, // @ai
 } from '../commands';
 
 const NOW = 1_791_460_800_000;
@@ -66,6 +67,49 @@ describe('parseQueuedCommands', () => {
     expect(parseQueuedCommands(json)).toHaveLength(1);
   });
 });
+
+// @ai-start
+// Qariah (2026-11-11): the iOS App Shortcuts queue `openShortcut`.
+describe('openShortcut', () => {
+  it('accepts the three shortcut screens and nothing else', () => {
+    for (const target of WIDGET_SHORTCUT_TARGETS) {
+      expect(isWidgetCommand({type: 'openShortcut', target})).toBe(true);
+    }
+    expect(isWidgetCommand({type: 'openShortcut', target: 'settings'})).toBe(
+      false,
+    );
+    expect(isWidgetCommand({type: 'openShortcut'})).toBe(false);
+  });
+
+  it('keeps the last shortcut next to the last play, in order', () => {
+    const queued: QueuedWidgetCommand[] = [
+      {
+        command: {type: 'openShortcut', target: 'search'},
+        enqueuedAt: NOW - 4_000,
+      },
+      {command: {type: 'playReciter', reciterId: 'a'}, enqueuedAt: NOW - 3_000},
+      {
+        command: {type: 'openShortcut', target: 'continue-reading'},
+        enqueuedAt: NOW - 2_000,
+      },
+    ];
+    expect(selectFreshCommands(queued, NOW)).toEqual([
+      {type: 'playReciter', reciterId: 'a'},
+      {type: 'openShortcut', target: 'continue-reading'},
+    ]);
+  });
+
+  it('drops a shortcut older than a minute', () => {
+    const queued: QueuedWidgetCommand[] = [
+      {
+        command: {type: 'openShortcut', target: 'search'},
+        enqueuedAt: NOW - 61_000,
+      },
+    ];
+    expect(selectFreshCommands(queued, NOW)).toEqual([]);
+  });
+});
+// @ai-end
 
 describe('selectFreshCommands', () => {
   // @ai-start

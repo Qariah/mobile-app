@@ -86,12 +86,14 @@ type RowText = {
   title:
     | 'qariah:settings.notifications.followedRecitation'
     | 'qariah:settings.notifications.newRecitation'
+    | 'qariah:settings.notifications.followAlong'
     | 'qariah:settings.notifications.kahfFriday'
     | 'qariah:settings.notifications.continueListening'
     | 'qariah:settings.notifications.whatsNew';
   description:
     | 'qariah:settings.notifications.followedRecitationDesc'
     | 'qariah:settings.notifications.newRecitationDesc'
+    | 'qariah:settings.notifications.followAlongDesc'
     | 'qariah:settings.notifications.kahfFridayDesc'
     | 'qariah:settings.notifications.continueListeningDesc'
     | 'qariah:settings.notifications.whatsNewDesc';
@@ -108,6 +110,12 @@ const ROWS: ReadonlyArray<{type: NotificationType} & RowText> = [
     type: 'new_recitation',
     title: 'qariah:settings.notifications.newRecitation',
     description: 'qariah:settings.notifications.newRecitationDesc',
+  },
+  // #845: a surah of a qariah gets follow-along.
+  {
+    type: 'follow_along',
+    title: 'qariah:settings.notifications.followAlong',
+    description: 'qariah:settings.notifications.followAlongDesc',
   },
   {
     type: 'kahf_friday',

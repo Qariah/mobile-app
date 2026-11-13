@@ -66,43 +66,63 @@
   },
   {
    "id": 7,
+   "body": "release-audit: NOT READY public-beta 3890 commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\n# Release Auditor — public beta candidate 3.2.6 (3890)\n\n**Verdict: NOT READY.** One gate fails: the disk floor. The Mac has 21 GB free and a build needs 28 GB, so the release builds did not run.\n\n## 2. What Omar must do\n\n- #14 — free at least 7 GB on the Mac, then reply `done`.",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-05T05:40:00Z",
+   "updated_at": "2026-11-05T05:40:00Z",
+   "html_url": "https://example.test/c/7"
+  },
+  {
+   "id": 8,
+   "body": "run-health task=auditor date=2026-11-04 status=DONE build=3890 toolCalls=12 minutes=3",
+   "user": {
+    "login": "acme"
+   },
+   "created_at": "2026-11-05T05:41:00Z",
+   "updated_at": "2026-11-05T05:41:00Z",
+   "html_url": "https://example.test/c/8"
+  },
+  {
+   "id": 9,
    "body": "release-audit: READY public-beta 3895 commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "user": {
     "login": "acme"
    },
    "created_at": "2026-11-07T05:45:00Z",
    "updated_at": "2026-11-07T05:45:00Z",
-   "html_url": "https://example.test/c/7"
+   "html_url": "https://example.test/c/9"
   },
   {
-   "id": 8,
+   "id": 10,
    "body": "run-health task=auditor date=2026-11-06 status=DONE build=3895 toolCalls=12 minutes=3",
    "user": {
     "login": "acme"
    },
    "created_at": "2026-11-07T05:46:00Z",
    "updated_at": "2026-11-07T05:46:00Z",
-   "html_url": "https://example.test/c/8"
+   "html_url": "https://example.test/c/10"
   },
   {
-   "id": 9,
+   "id": 11,
    "body": "run-health task=steward date=2026-11-10 status=DONE build=none toolCalls=12 minutes=3",
    "user": {
     "login": "acme"
    },
    "created_at": "2026-11-10T17:03:00Z",
    "updated_at": "2026-11-10T17:03:00Z",
-   "html_url": "https://example.test/c/9"
+   "html_url": "https://example.test/c/11"
   },
   {
-   "id": 10,
+   "id": 12,
    "body": "<!-- daily-card date=2026-11-10 sections=triage host=cloud -->\n```text\nRollout\n  iOS 3.2.3 (3772) phased day 6 ≈50%,\n    ADVANCING\n  Android vc3763 50% inProgress (mirror of\n    iOS rung)\n\nBUILDS\n```",
    "user": {
     "login": "acme"
    },
    "created_at": "2026-11-10T19:10:00Z",
    "updated_at": "2026-11-10T19:10:00Z",
-   "html_url": "https://example.test/c/10"
+   "html_url": "https://example.test/c/12"
   }
  ],
  "issues": [
@@ -122,11 +142,70 @@
    "html_url": "https://example.test/i/11"
   },
   {
+   "number": 14,
+   "title": "Free 11 GB on the Mac for the Auditor",
+   "body": "<!-- owner-queue:audit-3890-disk -->\n\n- kind: action\n- priority: P1\n- run: auditor\n- do: Run ~/.claude/bin/qariah-disk-report.sh, then delete the lines it marks SAFE.\n- blocks: audit,promote\n\n**Impact:** the Auditor needs 28 GB free to build; it had 21 GB.\n\n## Reply\n\ndone",
+   "labels": [
+    "owner-queue",
+    "action",
+    "priority:P1",
+    "escalated"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-10T02:00:00Z",
+   "updated_at": "2026-11-10T02:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/14"
+  },
+  {
+   "number": 15,
+   "title": "Ops team runs AUTH-13 on the next internal beta",
+   "body": "<!-- owner-queue:auth-13 -->\n\n- kind: action\n- not-before: build>3902\n\n**Impact:** a new sign-in shows a shorter consent screen.\n\n**Run case AUTH-13 on iOS and on Android** (the regression test plan):\n\n## Reply\n\nAUTH-13 pass | AUTH-13 fail: <step and what the app showed>",
+   "labels": [
+    "owner-queue",
+    "action"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-10T18:00:00Z",
+   "updated_at": "2026-11-10T18:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/15"
+  },
+  {
+   "number": 16,
+   "title": "[TestFlight audio] No audio and no reciter photos",
+   "body": "",
+   "labels": [
+    "bug",
+    "testflight",
+    "needs-decision"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-03T15:00:00Z",
+   "updated_at": "2026-11-03T15:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/16"
+  },
+  {
+   "number": 17,
+   "title": "[Anomaly] Freezes (ANR) worse on Android",
+   "body": "",
+   "labels": [
+    "anomaly"
+   ],
+   "assignees": [],
+   "created_at": "2026-11-10T07:00:00Z",
+   "updated_at": "2026-11-10T07:00:00Z",
+   "closed_at": null,
+   "html_url": "https://example.test/i/17"
+  },
+  {
    "number": 12,
    "title": "A crash on start",
    "body": "",
    "labels": [
-    "investigate"
+    "investigate",
+    "incident:cold-start-hang"
    ],
    "assignees": [],
    "created_at": "2026-10-01T00:00:00Z",
@@ -163,6 +242,17 @@
    "html_url": "https://example.test/p/21"
   },
   {
+   "number": 23,
+   "title": "chore: a hygiene sweep report",
+   "draft": true,
+   "head": {
+    "ref": "chore/hygiene"
+   },
+   "labels": [],
+   "created_at": "2026-11-03T00:00:00Z",
+   "html_url": "https://example.test/p/23"
+  },
+  {
    "number": 22,
    "title": "fix: a loop draft",
    "draft": true,
@@ -177,7 +267,97 @@
  "rollout": {
   "active": true,
   "release": "3.2.3",
-  "startedAt": "2026-11-01"
+  "build": 3763,
+  "startedAt": "2026-11-01",
+  "platforms": {
+   "ios": {
+    "current": {
+     "version": "3.2.3",
+     "build": 3772,
+     "state": "READY_FOR_SALE (phased release ACTIVE)",
+     "phasedRelease": "ACTIVE, day 6"
+    }
+   },
+   "android": {
+    "current": {
+     "versionCode": 3763,
+     "status": "inProgress",
+     "userFraction": 0.5,
+     "since": "2026-11-09T02:20Z"
+    }
+   }
+  }
+ },
+ "store": {
+  "readAt": "2026-11-10T19:59:00Z",
+  "ios": {
+   "app": [
+    {
+     "build": "3880",
+     "version": "3.2.6",
+     "uploadedAt": "2026-11-03T18:00:00Z",
+     "internal": "IN_BETA_TESTING",
+     "external": "IN_BETA_TESTING",
+     "expired": false
+    },
+    {
+     "build": "3772",
+     "version": "3.2.3",
+     "uploadedAt": "2026-11-01T13:14:00Z",
+     "internal": "IN_BETA_TESTING",
+     "external": "READY_FOR_BETA_SUBMISSION",
+     "expired": false
+    }
+   ],
+   "beta": [
+    {
+     "build": "3902",
+     "version": "3.2.6",
+     "uploadedAt": "2026-11-10T15:00:00Z",
+     "internal": "IN_BETA_TESTING",
+     "external": "READY_FOR_BETA_SUBMISSION",
+     "expired": false
+    },
+    {
+     "build": "3901",
+     "version": "3.2.6",
+     "uploadedAt": "2026-11-09T23:30:00Z",
+     "internal": "IN_BETA_TESTING",
+     "external": "READY_FOR_BETA_SUBMISSION",
+     "expired": false
+    }
+   ]
+  },
+  "android": {
+   "internal": [
+    {
+     "versionCodes": [
+      "3902"
+     ],
+     "status": "completed",
+     "name": "3902"
+    }
+   ],
+   "beta": [
+    {
+     "versionCodes": [
+      "3880"
+     ],
+     "status": "completed",
+     "name": "3880"
+    }
+   ],
+   "production": [
+    {
+     "versionCodes": [
+      "3763"
+     ],
+     "status": "inProgress",
+     "name": "3763"
+    }
+   ]
+  },
+  "errors": []
  },
  "policy": {
   "runLimits": {

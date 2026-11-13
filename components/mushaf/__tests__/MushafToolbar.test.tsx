@@ -108,6 +108,8 @@ interface ButtonProps {
   icon?: string;
   disabled?: boolean;
   children?: unknown;
+  accessibilityLabel?: string; // @ai
+  accessibilityHint?: string; // @ai
 }
 
 let renderer: TestRenderer.ReactTestRenderer | null = null;
@@ -216,6 +218,60 @@ describe('verse label', () => {
     expect(playPause().children).toBe('Al-Baqarah');
   });
 });
+
+// @ai-start Qariah (UX critique 2026-11-11): VoiceOver reads each button of
+// the active toolbar by what it does. The skip buttons had no label, and the
+// pause button said only the verse ("Ya-Sin 36:10"), not "Pause".
+describe('VoiceOver labels', () => {
+  const playing = {
+    playbackState: 'playing',
+    currentSurah: 36,
+    currentAyah: 10,
+    currentVerseKey: '36:10',
+    currentVerseKeys: ['36:10'],
+    currentVerseLabel: '36:10',
+    numberingMode: 'hafs',
+  };
+
+  it('labels the skip buttons', () => {
+    setPlayer(playing);
+    expect(button('backward.end.fill').accessibilityLabel).toBe(
+      'Previous ayah',
+    );
+    expect(button('forward.end.fill').accessibilityLabel).toBe('Next ayah');
+  });
+
+  it('says "Pause" while it plays, with the verse as the hint', () => {
+    setPlayer(playing);
+    expect(playPause().icon).toBe('pause.fill');
+    expect(playPause().accessibilityLabel).toBe('Pause');
+    expect(playPause().accessibilityHint).toBe('Ya-Sin 36:10');
+  });
+
+  it('says "Play" while it is paused', () => {
+    setPlayer({...playing, playbackState: 'paused'});
+    expect(playPause().icon).toBe('play.fill');
+    expect(playPause().accessibilityLabel).toBe('Play');
+    expect(playPause().accessibilityHint).toBe('Ya-Sin 36:10');
+  });
+
+  it('keeps the labels when there is no verse tracking', () => {
+    setPlayer({
+      playbackState: 'playing',
+      currentSurah: 67,
+      currentAyah: 0,
+      numberingMode: 'disabled',
+    });
+    expect(button('backward.end.fill').accessibilityLabel).toBe(
+      'Previous ayah',
+    );
+    expect(playPause().accessibilityLabel).toBe('Pause');
+    expect(playPause().accessibilityHint).toBe(
+      'Al-Mulk · Verse tracking unavailable',
+    );
+  });
+});
+// @ai-end
 
 describe('notices', () => {
   it('a refused playback request is surfaced', () => {

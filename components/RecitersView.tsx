@@ -64,6 +64,10 @@ import {
 import {SuperCategory} from '@/types/adhkar';
 import branding, {type HomeRow, type HomeRowId} from '@/config/branding';
 import {NewlyAddedRecitationsRow} from '@/components/listen/NewlyAddedRecitationsRow';
+import {
+  FollowAlongRecitationsRow,
+  useFollowAlongRecitations,
+} from '@/components/listen/FollowAlongRecitationsRow'; // @ai Qariah (#847)
 // Qariah (TECH_DEBT #314): RTL-correct rows with the real item layout.
 import {RtlRowFlatList} from '@/components/listen/RtlRowFlatList';
 import {bootMark} from '@/services/diagnostics/bootMarks'; // @ai Qariah
@@ -683,6 +687,8 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
     [sessionSeed, registryLoaded],
   );
   const rewayatTypes = useMemo(() => getAllRewayatTypes(), []);
+  // @ai Qariah (#847): recitations with follow-along, once 3 qariahs have it.
+  const followAlongRecitations = useFollowAlongRecitations(sessionSeed + 14);
 
   // Qariah reciter collections. A curated row hides while its list is empty.
   const honoredReciters = useMemo(
@@ -990,6 +996,15 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
         />
       ) : null,
 
+    // @ai Qariah (#847): recitations with follow-along, not qariahs.
+    'follow-along-recitations':
+      followAlongRecitations.length > 0 ? (
+        <FollowAlongRecitationsRow
+          recitations={followAlongRecitations}
+          cardWidth={shelf?.cardWidth}
+        />
+      ) : null,
+
     // Recitations, not reciters: the row renders nothing when no recitation is dated.
     // @ai
     'newly-added-recitations': (
@@ -1035,6 +1050,12 @@ function RecitersView({onReciterPress}: RecitersViewProps) {
 
       {homeRowConfig
         .filter(row => row.enabled)
+        // @ai Qariah (#847): a hidden Follow Along row takes no Lite slot.
+        .filter(
+          row =>
+            row.id !== 'follow-along-recitations' ||
+            followAlongRecitations.length > 0,
+        )
         // @ai Qariah (Lite option firstScreen): the first screen first.
         .slice(0, liteFirstScreenOnly ? LITE_FIRST_SCREEN_ROWS : undefined)
         .map(row => (

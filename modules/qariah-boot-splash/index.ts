@@ -36,7 +36,6 @@ interface NativeShape {
   dismiss(): void;
   setEnabledForNextLaunch(enabled: boolean): void;
   getMode(): string;
-  setOffForNextLaunchKeepGuard?(): void;
   setBootRisk?(): void;
   getBootRisk?(): boolean;
   getPreviousProcessInfo?(): Promise<PreviousProcessInfo | null>;
@@ -58,24 +57,16 @@ export function dismissBootOverlay(): void {
   }
 }
 
-/** Store the remote flag value. It applies at the NEXT cold start. */
+/**
+ * Store the remote flag value. It applies at the NEXT cold start. The default
+ * is ON: false writes the remote off switch, true deletes it. Call it only for
+ * a good flag response; a failed request must keep the stored value.
+ */
 export function setNonBlockingSplashForNextLaunch(enabled: boolean): void {
   try {
     native?.setEnabledForNextLaunch(enabled);
   } catch {
-    /* fail closed: the stored value stays as it was */
-  }
-}
-
-/**
- * A transient OFF for the NEXT launch (a failed or quota-limited flag request).
- * It deletes only the flag marker; the crash-guard count and the fallback stay.
- */
-export function setNonBlockingSplashOffKeepGuard(): void {
-  try {
-    native?.setOffForNextLaunchKeepGuard?.();
-  } catch {
-    /* fail closed: the stored value stays as it was */
+    /* the stored value stays as it was */
   }
 }
 

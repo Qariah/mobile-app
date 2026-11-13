@@ -6,7 +6,7 @@
 // slot. The container owns the inset; the button must not add it.
 import React from 'react';
 import {StyleSheet} from 'react-native';
-import {render} from '@testing-library/react-native';
+import {fireEvent, render} from '@testing-library/react-native';
 import {BackButton} from '../BackButton';
 
 jest.mock('react-native-safe-area-context', () => ({
@@ -59,5 +59,14 @@ describe('BackButton', () => {
       },
     );
     expect(withCallerStyle.length).toBeGreaterThan(0);
+  });
+
+  // @ai Qariah (UX critique 2026-11-11): the Mushaf back button had no label.
+  it('has a label for TalkBack and VoiceOver', () => {
+    const onPress = jest.fn();
+    const {getByRole} = render(<BackButton onPress={onPress} />);
+    const button = getByRole('button', {name: 'Back'});
+    fireEvent.press(button);
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

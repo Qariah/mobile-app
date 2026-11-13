@@ -20,18 +20,11 @@ class QariahBootSplashModule : Module() {
     }
 
     // Store the remote PostHog flag value. It applies at the NEXT cold start.
+    // false writes the remote off switch; true deletes it (the default is ON).
     Function("setEnabledForNextLaunch") { enabled: Boolean ->
       QariahBootSplash.setEnabledForNextLaunch(
         appContext.reactContext ?: appContext.currentActivity,
         enabled
-      )
-    }
-
-    // @ai A transient off (failed or quota-limited flag request): deletes
-    // only the flag marker; the crash-guard state stays.
-    Function("setOffForNextLaunchKeepGuard") {
-      QariahBootSplash.setOffForNextLaunchKeepGuard(
-        appContext.reactContext ?: appContext.currentActivity
       )
     }
 

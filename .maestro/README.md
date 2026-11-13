@@ -8,10 +8,15 @@ The **same** YAML runs on a local attached device and on BrowserStack App Automa
 ```bash
 export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 export PATH="$HOME/.maestro/bin:$HOME/Library/Android/sdk/platform-tools:$PATH"
-# Serialize the single device (see "Device contention" below) — always for automated runs:
-scripts/with-device-lock.sh --label="smoke" -- maestro test .maestro/flows/smoke/
-scripts/with-device-lock.sh --label="smoke" -- maestro test .maestro/flows/smoke/00-launch.yaml
+# Lock the device (see "Device contention" below) — always for automated runs. Name the serial
+# twice: to the lock and to Maestro (Maestro does not read ANDROID_SERIAL).
+S=8BNX1CU9Z   # Pixel 3; the Samsung A10s is R9AR20A7FPJ; `adb devices` lists the rest
+scripts/with-device-lock.sh --serial=$S --label="smoke" -- maestro --device $S test .maestro/flows/smoke/
+scripts/with-device-lock.sh --serial=$S --label="smoke" -- maestro --device $S test .maestro/flows/smoke/00-launch.yaml
 ```
+
+The Samsung A10s (32-bit only) needs an `armeabi-v7a` build: `SIDELOAD_ARCHS=armeabi-v7a bash scripts/android-archive.sh --lab`.
+Smoke passed 4 of 4 on it on 2026-10-26 (`planning/samsung-a10s-device-plan.md`).
 
 ### iOS simulator
 
@@ -56,7 +61,7 @@ scripts/iphone-device-test.sh QP-04 QP-09          # case ids map to their flows
   `a11y <png>` (a box on each element that VoiceOver can reach), `alert accept`, `lock`,
   `orientation landscape`, `open qariah://…`. Start WebDriverAgent first: `scripts/iphone/wda.sh start`.
 
-## Device contention (there is ONE Pixel)
+## Device contention (one lock for each device: Pixel 3, Samsung A10s, emulator)
 
 `qariah-boot-gate-verify`, the daily `qariah-triage-loop` smoke, and any Maestro run all drive the same device. Two at once collide — the worst case is gotcha #7 (the Maestro gRPC instrumentation wedge). **Wrap every device command in the lock:**
 
@@ -64,7 +69,7 @@ scripts/iphone-device-test.sh QP-04 QP-09          # case ids map to their flows
 scripts/with-device-lock.sh --label="what-this-is" -- <adb|maestro command>
 ```
 
-`scripts/with-device-lock.sh` is a dependency-free cross-process mutex (atomic `mkdir` — macOS has no `flock`): exactly one holder at a time, auto-released on exit, a dead holder is reclaimed, and a blocked caller prints who holds it. It auto-detects the single serial and exports `ANDROID_SERIAL`. It's **re-entrant** (`QARIAH_DEVICE_LOCK_HELD`), so you can hold it for a whole session and still call scripts that self-lock — `scripts/android-device-smoke.sh` self-locks, so the triage loop is already covered. For a multi-command session, hold it once: `scripts/with-device-lock.sh --label="boot-gate" -- bash` then work in that subshell.
+`scripts/with-device-lock.sh` is a dependency-free cross-process mutex (atomic `mkdir` — macOS has no `flock`): exactly one holder at a time, auto-released on exit, a dead holder is reclaimed, and a blocked caller prints who holds it. It takes `--serial`, else an exported `ANDROID_SERIAL`, else the single attached device, and exports `ANDROID_SERIAL`; with several devices and no serial it stops and lists them. It's **re-entrant** (`QARIAH_DEVICE_LOCK_HELD`), so you can hold it for a whole session and still call scripts that self-lock — `scripts/android-device-smoke.sh` self-locks, so the triage loop is already covered. For a multi-command session, hold it once: `scripts/with-device-lock.sh --label="boot-gate" -- bash` then work in that subshell.
 
 ## Run on BrowserStack (Stage 1/2 — matrix)
 
@@ -91,7 +96,7 @@ The first full run was on the Pixel 3 `8BNX1CU9Z` on 2026-06-30 (smoke 4/4, regr
   - `player/playlist-session-restore` (UPG-04, TECH_DEBT #271, 2026-10-18). It plays a surah from a playlist, kills the app, relaunches it and taps Play; on Android it waits for the full-player time to pass 0:35 (a 0:15 check passed on the defective build when the pause came late). It fails on the stock 2579 build and passes with the fix on the `qariah_pixel_7` emulator. On iOS it runs the path but cannot read the time (the full player sheet is one a11y element), and it taps the first Browse All cell by point because iOS merges that grid into one element.
   - **New in Sprint 48 (post-sprint Step 6.5, 2026-10-20, build 3.2.2 (3356)):** `listen/newly-added` (LST-06) and `settings/notifications` (NTF-01). The Sprint 48 Tier 2 run (smoke 4/4 and regression 9/9 on the emulator and on the iPhone 16 Pro simulator, iOS 18.2) came before them. Both new flows PASS on the emulator `qariah_pixel_7` (API 34, release APK) and on the iPhone 16 Pro simulator (iOS 18.2, Release build), all from `86cb24f8`. The Android `listen/newly-added` run passed after an emulator reboot (see "Slow emulator" below).
     - `listen/newly-added` reads the accessibility label of the first Newly Added card with `subflows/recitation-card-label.js` (English: `Play <surah>, <range>, by <reciter>`), taps the card, and checks that the mini player names that surah and reciter. Android only: the full player opens and shows the range of the card. On iOS the full player sheet is one a11y element. The flow does not check where the ayah list starts: the list follows the audio.
-    - `settings/notifications` opens Settings → Notifications, checks the 5 switches (`notification-switch-<type>`), turns the Al-Kahf switch OFF, force-quits (`stopApp`, then `launchApp` without clearState), and checks that it stays OFF. A holdout arm hides the row: then the flow logs `NTF-01 SKIPPED` and ends green. `clearState` removes the arm, so about 15% of runs enroll in the holdout; run the flow again. The `checked` selector works on both platforms (checked on the iOS 18.2 simulator on 2026-10-20).
+    - `settings/notifications` opens Settings → Notifications, checks the 6 switches (`notification-switch-<type>`), turns the Al-Kahf switch OFF, force-quits (`stopApp`, then `launchApp` without clearState), and checks that it stays OFF. A holdout arm hides the row: then the flow logs `NTF-01 SKIPPED` and ends green. `clearState` removes the arm, so about 15% of runs enroll in the holdout; run the flow again. The `checked` selector works on both platforms (checked on the iOS 18.2 simulator on 2026-10-20).
   - **New for #781 (2026-11-07):** `player/clear-cache-stops` and `player/clear-cache-replay` (QP-08, tag `android-only`). Each one starts from `clearState`, plays Al-Mulk by Zaynab Talha with `subflows/play-al-mulk.yaml`, and clears the cache with `subflows/clear-cache-android.yaml`; the replay flow then plays again and checks Pause. The agent reads `dumpsys` after each flow (case catalog QP-08). Both PASS on the Pixel 3 (3.2.4 (3943)) and on the Galaxy A10s (3.2.4 (3948)). Three flow faults that the 3936 audit found are in the subflows: the confirm button is `android:id/button1` (a text tap on "Clear" hits the card button behind the dialog), the "Success" dialog needs a tap on "OK", and the search keeps "Mulk" (erase it before `inputText`). A fourth fault: `pressKey: back` from the Al-Mulk page goes to "All Surahs", not to the Listen root, so the "Surahs" tap is conditional.
   - **Slow emulator (2026-10-20).** The `qariah_pixel_7` AVD has 2 GB of guest RAM. Under load, a clearState launch took 39 s to show the first screen (60 s once, with an app ANR dialog), so `subflows/skip-onboarding.yaml` now waits 60 s. While audio plays, the player screen never settles, so a tap that starts audio sets `waitToSettleTimeoutMs: 1000`; without it, one tap waited more than 10 min and the Maestro driver timed out on screenshots. When the emulator is slow (load average above 10 in `adb shell uptime`, or a "System UI isn't responding" dialog), reboot it (`adb reboot`) and wait until the load is below 3 before a run.
   - **WIP (tag `wip`, excluded from the green gate):** `search/system-playlist` (SRC-03) — a curated-playlist tap navigates/plays rather than opening a titled detail; needs a `testID` + confirmed target.

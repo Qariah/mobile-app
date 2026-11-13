@@ -207,6 +207,8 @@ modules/bayaan-widgets/android/src/main/assets/fonts/ScheherazadeNew-Regular.ttf
 !.claude/skills/
 !.claude/scheduled-tasks/
 !.claude/hooks/
+# The committed agent types (the Sonnet runner for mechanical work).
+!.claude/agents/
 # Committed hook wiring: the publish guard and run limits run in every checkout.
 !.claude/settings.json
 # The committed prompt of the cloud triage routine (docs/operations/cloud-triage.md).

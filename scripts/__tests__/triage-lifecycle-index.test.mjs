@@ -45,7 +45,9 @@ import {tmpdir} from 'node:os';
 import {delimiter, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
+  PLAY_WINDOW_DAYS,
   playIndex,
+  playIntervalParams,
   recencyForClose,
   resetIndexCachesForTests,
   sentryIndex,
@@ -291,6 +293,98 @@ describe('playIndex — completeness', () => {
     );
     assert.equal(result.complete, false);
   });
+
+  // 2026-11-09: without an interval, Play returned the issues of one day only,
+  // so the closing passes skipped almost every open Play issue.
+  it('asks for a dated window in UTC on every page', async () => {
+    const {urls} = await withFakes(
+      {env: PLAY_ENV, respond: play(PLAY_OK)},
+      playIndex,
+    );
+    const search = urls.filter(u => u.includes('errorIssues:search'));
+    assert.equal(search.length, 1);
+    const q = new URL(search[0]).searchParams;
+    for (const k of ['startTime', 'endTime']) {
+      for (const part of ['year', 'month', 'day']) {
+        assert.match(
+          q.get(`interval.${k}.${part}`) || '',
+          /^\d+$/,
+          `${k}.${part}`,
+        );
+      }
+      assert.equal(q.get(`interval.${k}.timeZone.id`), 'UTC');
+    }
+  });
+
+  it('reads every page, and is complete after the last one', async () => {
+    const pageOf = (id, next) =>
+      Response.json({
+        errorIssues: [
+          {
+            name: `apps/com.example/errorIssues/${id}`,
+            lastErrorReportTime: '2026-10-01T00:00:00Z',
+            lastAppVersion: {versionCode: '2027'},
+          },
+        ],
+        ...(next ? {nextPageToken: next} : {}),
+      });
+    const {result, urls} = await withFakes(
+      {
+        env: PLAY_ENV,
+        respond: url =>
+          url.href === PLAY_TOKEN_URL
+            ? Response.json({access_token: 'test-token'})
+            : url.searchParams.get('pageToken') === 'p2'
+            ? pageOf('second', '')
+            : pageOf('first', 'p2'),
+      },
+      playIndex,
+    );
+    assert.equal(result.complete, true);
+    assert.deepEqual(Object.keys(result.idx).sort(), ['first', 'second']);
+    const search = urls.filter(u => u.includes('errorIssues:search'));
+    assert.equal(search.length, 2);
+    assert.ok(
+      new URL(search[1]).searchParams.get('interval.startTime.year'),
+      'the second page keeps the window',
+    );
+  });
+
+  it('is incomplete, with a warning, when the pages do not end', async () => {
+    const {result, warnings} = await withFakes(
+      {
+        env: PLAY_ENV,
+        respond: play(() =>
+          Response.json({errorIssues: [], nextPageToken: 'again'}),
+        ),
+      },
+      playIndex,
+    );
+    assert.equal(result.complete, false);
+    assert.ok(warnings.some(w => /more than \d+ pages/.test(w)));
+  });
+});
+
+describe('playIntervalParams', () => {
+  it('spans PLAY_WINDOW_DAYS days and ends today, in UTC', () => {
+    const now = Date.parse('2026-11-09T05:00:00Z');
+    const q = playIntervalParams(now);
+    const date = k =>
+      Date.UTC(
+        Number(q.get(`interval.${k}.year`)),
+        Number(q.get(`interval.${k}.month`)) - 1,
+        Number(q.get(`interval.${k}.day`)),
+      );
+    assert.equal(date('endTime'), Date.parse('2026-11-09T00:00:00Z'));
+    assert.equal(
+      (date('endTime') - date('startTime')) / 86400000,
+      PLAY_WINDOW_DAYS,
+    );
+    assert.ok(
+      PLAY_WINDOW_DAYS >= 30,
+      'the window must be longer than quiet-days',
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -376,6 +470,20 @@ describe('recencyForClose — an incomplete index never lets a pass close', () =
     // A complete index may say "quiet" about an id it does not hold.
     assert.deepEqual(result[1], {rec: null, skip: false});
     assert.deepEqual(warnings, []);
+  });
+
+  it('does not skip a Play id that is absent from a complete index', async () => {
+    const {result} = await withFakes(
+      {env: PLAY_ENV, respond: play(PLAY_OK)},
+      async () => [
+        await recencyForClose(playMarker),
+        await recencyForClose({source: 'play-vitals', id: 'gone'}),
+      ],
+    );
+    assert.equal(result[0].skip, false);
+    assert.equal(result[0].rec.newestVersionCode, 2027);
+    // Absent from a complete window: resolve-on-quiet reads this as quiet.
+    assert.deepEqual(result[1], {rec: null, skip: false});
   });
 
   it('does not skip a source that has no index (PostHog)', async () => {

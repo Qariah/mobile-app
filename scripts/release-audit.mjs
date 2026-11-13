@@ -240,7 +240,7 @@ async function main() {
         : `${notReadyLine({action, build})} commit=${commit}`;
     const ask =
       verdict === 'READY'
-        ? `\n\n---\n\n**To publish, add this exact comment on this issue:**\n\n\`\`\`\n${approvalReply({action, build})}\n\`\`\`\n\nThe reply is valid for 7 days. The Promoter reads it within 2 hours (7am to 11pm PT). To stop after a reply: \`owner-reply: cancel ${build}\`.`
+        ? `\n\n---\n\n**To publish, add this exact comment on this issue:**\n\n\`\`\`\n${approvalReply({action, build})}\n\`\`\`\n\nThe reply is valid for 7 days. The Promoter reads it at 08:00 and 23:00 PT. To stop after a reply: \`owner-reply: cancel ${build}\`.`
         : '';
     const body = `${first}\n\n${report}${ask}`;
     if (flags['dry-run']) {

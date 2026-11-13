@@ -192,6 +192,36 @@ export async function sentryIndex() {
   return (_sentryIndex = {idx, complete});
 }
 
+// The Play search window. Without an `interval`, errorIssues:search returns
+// only the issues of the most recent day: on 2026-11-09 it returned 1 issue,
+// and 111 for the last 30 days. The index then missed almost every open issue,
+// and resolve-on-quiet skipped them all, so 98 quiet ANR issues stayed open.
+// Ask for a fixed window and read every page. An id that is absent from a
+// complete index had no report in PLAY_WINDOW_DAYS days, so it is quiet.
+// Play keeps about 60 days of error data: on 2026-11-09 windows of 60, 90 and
+// 180 days all returned the same 185 issues. A longer window adds nothing.
+export const PLAY_WINDOW_DAYS = 60;
+const PLAY_MAX_PAGES = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The `interval` query parameters for the last `days` days, as dates in UTC.
+// Play rejects a named time zone such as America/Los_Angeles (HTTP 400).
+export function playIntervalParams(
+  nowMs = Date.now(),
+  days = PLAY_WINDOW_DAYS,
+) {
+  const params = new URLSearchParams();
+  const put = (key, d) => {
+    params.set(`interval.${key}.year`, String(d.getUTCFullYear()));
+    params.set(`interval.${key}.month`, String(d.getUTCMonth() + 1));
+    params.set(`interval.${key}.day`, String(d.getUTCDate()));
+    params.set(`interval.${key}.timeZone.id`, 'UTC');
+  };
+  put('startTime', new Date(nowMs - days * DAY_MS));
+  put('endTime', new Date(nowMs));
+  return params;
+}
+
 export async function playIndex() {
   if (_playIndex) return _playIndex;
   const idx = {};
@@ -208,34 +238,49 @@ export async function playIndex() {
   try {
     const token = await mintPlayToken(sa, {scope: 'reporting'});
     const PKG = process.env.PLAY_PACKAGE || ANDROID_PACKAGE_NAME;
-    // Pull a generous page; the lifecycle pass needs the recency, not the cap.
-    const res = await fetch(
-      `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PKG}/errorIssues:search?pageSize=100`,
-      {headers: {Authorization: `Bearer ${token}`}},
-    );
-    if (!res.ok) {
-      const detail = await res
-        .text()
-        .then(t => t.slice(0, 200))
-        .catch(() => '');
-      console.warn(
-        `  ⚠ Play error-issue search failed: HTTP ${res.status}. Recency for Play is missing.${detail ? ` ${detail}` : ''}`,
+    const base = playIntervalParams();
+    base.set('pageSize', '100');
+    let pageToken = '';
+    let pages = 0;
+    do {
+      const q = new URLSearchParams(base);
+      if (pageToken) q.set('pageToken', pageToken);
+      const res = await fetch(
+        `https://playdeveloperreporting.googleapis.com/v1beta1/apps/${PKG}/errorIssues:search?${q}`,
+        {headers: {Authorization: `Bearer ${token}`}},
       );
-      return (_playIndex = {idx, complete: false});
-    }
-    const data = await res.json();
-    for (const i of data.errorIssues || []) {
-      const id = String(i.name || '')
-        .split('/')
-        .pop();
-      idx[id] = {
-        lastSeenMs: Date.parse(i.lastErrorReportTime) || 0,
-        newestVersionCode:
-          Number(
-            i.lastAppVersion?.versionCode ?? i.firstAppVersion?.versionCode,
-          ) || 0,
-        users: Number(i.distinctUsers) || 0,
-      };
+      if (!res.ok) {
+        const detail = await res
+          .text()
+          .then(t => t.slice(0, 200))
+          .catch(() => '');
+        console.warn(
+          `  ⚠ Play error-issue search failed: HTTP ${res.status}. Recency for Play is missing.${detail ? ` ${detail}` : ''}`,
+        );
+        return (_playIndex = {idx, complete: false});
+      }
+      const data = await res.json();
+      for (const i of data.errorIssues || []) {
+        const id = String(i.name || '')
+          .split('/')
+          .pop();
+        idx[id] = {
+          lastSeenMs: Date.parse(i.lastErrorReportTime) || 0,
+          newestVersionCode:
+            Number(
+              i.lastAppVersion?.versionCode ?? i.firstAppVersion?.versionCode,
+            ) || 0,
+          users: Number(i.distinctUsers) || 0,
+        };
+      }
+      pageToken = data.nextPageToken || '';
+      pages++;
+    } while (pageToken && pages < PLAY_MAX_PAGES);
+    if (pageToken) {
+      console.warn(
+        `  ⚠ Play error-issue search has more than ${PLAY_MAX_PAGES} pages. Recency for Play is incomplete.`,
+      );
+      complete = false;
     }
   } catch (e) {
     console.warn(
@@ -528,11 +573,11 @@ async function main() {
       }
       const {rec, skip} = await recencyForClose(issue.marker);
       if (skip) continue; // incomplete index: "not found" proves nothing
-      // Conservatism: if we can't find the signal in the source at all, it may
-      // be a stale/aged-out id (Play ids churn across windows). Treat
-      // "not found" as quiet ONLY for Sentry (where a missing shortId in the
-      // issue pull is a strong quiet signal); for Play, a missing id is ambiguous
-      // (the id may have rotated) → skip, don't close.
+      // "Not found" in a complete index is quiet. For Sentry, the issue pull
+      // holds every shortId. For Play, the index holds every issue with a
+      // report in the last PLAY_WINDOW_DAYS days, so an absent id had no
+      // report in that window. (Before 2026-11-09 the Play query had no
+      // window and held one day only, so this pass skipped a missing Play id.)
       let quiet, lastSeenMs;
       if (rec) {
         lastSeenMs = rec.lastSeenMs;
@@ -542,21 +587,23 @@ async function main() {
           rec.status &&
           rec.status !== 'unresolved';
         quiet = lastSeenMs < quietCutoff || handledAtSource;
-      } else if (issue.marker.source === 'sentry') {
+      } else {
         quiet = true;
         lastSeenMs = 0;
-      } else {
-        continue; // Play id not found → ambiguous, skip
       }
       if (!quiet) continue;
+      const since =
+        lastSeenMs || issue.marker.source !== 'play-vitals'
+          ? `quiet since ${fmtDate(lastSeenMs)}`
+          : `quiet for more than ${PLAY_WINDOW_DAYS} days`;
       const reason =
         `Auto-closing: the source signal (\`${issue.marker.source}:${issue.marker.id}\`) has been ` +
-        `**quiet since ${fmtDate(lastSeenMs)}** (no events in the last ${QUIET_DAYS} days` +
+        `**${since}** (no events in the last ${QUIET_DAYS} days` +
         `${rec && rec.status && rec.status !== 'unresolved' ? `, and is \`${rec.status}\` at source` : ''}). ` +
         `Closed by \`scripts/triage-lifecycle.mjs\` (resolve-on-quiet). **This will reopen automatically ` +
         `if the same signature recurs on a newer build** (reopen-on-recurrence pass).`;
       console.log(
-        `   ${DRY_RUN ? 'WOULD close' : 'close'} #${issue.number} — quiet since ${fmtDate(lastSeenMs)}`,
+        `   ${DRY_RUN ? 'WOULD close' : 'close'} #${issue.number} — ${since}`,
       );
       ghClose(issue.number, reason);
       closes++;

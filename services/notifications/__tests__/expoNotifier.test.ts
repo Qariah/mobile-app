@@ -213,7 +213,9 @@ describe('the Android channels', () => {
     await notifier.schedule(followedCandidate(), {kind: 'immediate'});
     const calls = mockNotifications.setNotificationChannelAsync.mock
       .calls as unknown as [string, {name: string; importance: number}][];
-    expect(calls).toHaveLength(5);
+    // Six types: follow_along (#845) has its own channel.
+    expect(calls).toHaveLength(6);
+    expect(calls.map(([id]) => id)).toContain('qariah-follow-along');
     expect(calls.map(([id]) => id)).toEqual(
       Object.values(NOTIFICATION_CHANNELS).map(channel => channel.id),
     );

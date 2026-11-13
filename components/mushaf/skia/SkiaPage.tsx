@@ -66,6 +66,7 @@ import {
 } from './verseHighlightLayers';
 import {usePlaybackBand} from './playbackBand';
 import {usePlaybackBasmalaSurah} from '@/store/mushafPlayerStore'; // @ai
+import {usePlaybackWordLit} from '@/store/mushafWordMarkStore'; // @ai Qariah (#847)
 import {useVerseUnitDragSelect, type LineCharHit} from './verseUnitDragSelect';
 // @ai-end
 import {
@@ -309,6 +310,8 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
   // @ai — the surah whose basmala is being recited (the intro before its
   // first verse): its basmallah line is painted as a recited verse is.
   const basmalaSurah = usePlaybackBasmalaSurah();
+  // @ai Qariah (#847): a timed word is lit, so the ayah tint is hidden.
+  const wordLit = usePlaybackWordLit();
 
   // Paragraph references for hit testing
   const paragraphMapRef = useRef<Map<number, ParagraphInfo>>(new Map());
@@ -727,6 +730,7 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
       bookmarkColor: BOOKMARK_HIGHLIGHT_COLOR,
       highlightColors: HIGHLIGHT_COLORS,
       playbackColor: playbackBgColor,
+      playbackTintHidden: wordLit, // @ai Qariah (#847)
       selectionColor: selectionBgColor,
     });
     return layers ?? EMPTY_BG_MAP;
@@ -742,6 +746,7 @@ const SkiaPage: React.FC<SkiaPageProps> = ({
     highlightRows, // @ai
     playbackBand, // @ai
     basmalaSurah, // @ai
+    wordLit, // @ai Qariah (#847)
     playbackBgColor,
     selectedVerseKeys,
     selectedRewayah, // @ai

@@ -5,9 +5,13 @@
 // A snapshot is the set of recitation keys of a catalog (`RecitationKey`). The
 // background check compares the keys of the catalog that it just read with the
 // last snapshot, and keeps the new snapshot in MMKV.
+//
+// The follow-along notice (#845) has a second snapshot with the same rules:
+// the surahs with follow-along (`TimingKey`), in its own MMKV key
+// (`TIMING_SNAPSHOT_KEY`). See "Follow-along coverage" below.
 import {createMMKV, type MMKV} from 'react-native-mmkv';
 import type {Reciter, Rewayat, SurahMetadata} from '@/data/reciterData';
-import type {KeyValueStorage, RecitationKey} from './types';
+import type {KeyValueStorage, RecitationKey, TimingKey} from './types';
 
 const ADDED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -144,9 +148,100 @@ export function snapshotAfter(
 }
 
 // ---------------------------------------------------------------------------
+// Follow-along coverage (#845)
+//
+// The same rules as the recitations: the first check saves a baseline and
+// announces nothing; a key that the snapshot has is never new again, also
+// after the catalog removed it and lists it again (`snapshotAfter`); a
+// held-back key stays out of the saved snapshot. One difference: an empty
+// coverage IS a baseline. The check runs only on a catalog with recitations
+// (`empty_catalog` stops it before), and the live catalog has no follow-along
+// before the first surah gets it: without an empty baseline, that first
+// surah would only make the baseline, and nobody would hear of it.
+
+/** One surah with follow-along. */
+export interface TimingEntry {
+  key: TimingKey;
+  reciter: Reciter;
+  rewayah: Rewayat;
+  surah: number;
+}
+
+/** The key of one surah with follow-along (see `TimingKey`). */
+export function timingKey(rewayahId: string, surah: number): TimingKey {
+  return `${rewayahId}|${surah}`;
+}
+
+/** The rewayah and the surah of a recitation key (`reciterId|rewayahId|surah|from|to`). */
+export function timingKeyOfRecitation(key: RecitationKey): TimingKey | null {
+  const parts = key.split('|');
+  if (parts.length !== 5) return null;
+  const surah = Number(parts[2]);
+  return Number.isInteger(surah) ? timingKey(parts[1], surah) : null;
+}
+
+/**
+ * Each surah with follow-along, in catalog order, each key once. The listed
+ * surahs of each rewayah (`surah_list`; integers only) that `r2HasSurah` of
+ * `services/timestamps/TimestampFetchService.ts` accepts: the rewayah has
+ * `has_timestamps: true`, and its `timestamps_surah_list` names the surah or
+ * is missing or empty (then every listed surah has follow-along).
+ */
+export function listTimingCoverage(
+  reciters: readonly Reciter[],
+): TimingEntry[] {
+  const out: TimingEntry[] = [];
+  const seen = new Set<TimingKey>();
+  for (const reciter of reciters ?? []) {
+    if (!reciter || typeof reciter.id !== 'string') continue;
+    for (const rewayah of reciter.rewayat ?? []) {
+      if (!rewayah || typeof rewayah.id !== 'string') continue;
+      if (rewayah.has_timestamps !== true) continue;
+      const list = Array.isArray(rewayah.timestamps_surah_list)
+        ? rewayah.timestamps_surah_list
+        : [];
+      const covered = list.length === 0 ? null : new Set(list);
+      for (const surah of rewayah.surah_list ?? []) {
+        if (typeof surah !== 'number' || !Number.isInteger(surah)) continue;
+        if (covered && !covered.has(surah)) continue;
+        const key = timingKey(rewayah.id, surah);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({key, reciter, rewayah, surah});
+      }
+    }
+  }
+  return out;
+}
+
+/** The follow-along snapshot of a catalog: the key of each covered surah. */
+export function timingKeysOf(reciters: readonly Reciter[]): Set<TimingKey> {
+  return new Set(listTimingCoverage(reciters).map(entry => entry.key));
+}
+
+/**
+ * Compares two follow-along snapshots. With no previous snapshot, nothing is
+ * new (the first check). An empty previous snapshot is a baseline (see the
+ * note above), unlike `diffCatalog`.
+ */
+export function diffTimingCoverage(
+  prev: ReadonlySet<TimingKey> | null,
+  next: ReadonlySet<TimingKey>,
+): CatalogDiff {
+  if (!prev) return {newKeys: [], isFirstCheck: true};
+  const newKeys: TimingKey[] = [];
+  for (const key of next) {
+    if (!prev.has(key)) newKeys.push(key);
+  }
+  return {newKeys, isFirstCheck: false};
+}
+
+// ---------------------------------------------------------------------------
 // The snapshot store
 
 export const CATALOG_SNAPSHOT_KEY = 'qariah-notif-catalog-snapshot';
+/** The follow-along snapshot (#845), in the same MMKV instance. */
+export const TIMING_SNAPSHOT_KEY = 'qariah-notif-timing-snapshot';
 /** The format of the stored value. A value in another format is no snapshot. */
 const SNAPSHOT_FORMAT = 1;
 const NOTIFICATIONS_MMKV_ID = 'qariah-notifications';
@@ -189,7 +284,8 @@ export interface CatalogSnapshotStore {
   load(): Set<RecitationKey> | null;
   /**
    * Keeps `keys`. Gives `true` only when a read-back gives the written value.
-   * Gives `false` for an empty set (not kept, see `diffCatalog`), when the
+   * Gives `false` for an empty set (not kept, see `diffCatalog`; the
+   * follow-along store keeps one, see `createTimingSnapshotStore`), when the
    * storage is not available, when the write throws, and when the read-back
    * differs (for example a full disk). On `false`, post nothing.
    */
@@ -206,6 +302,25 @@ export interface CatalogSnapshotStore {
 export function createCatalogSnapshotStore(
   storage: KeyValueStorage = notificationsStorage,
 ): CatalogSnapshotStore {
+  return createSnapshotStore(storage, CATALOG_SNAPSHOT_KEY, false);
+}
+
+/**
+ * The follow-along snapshot (#845): the same store under
+ * `TIMING_SNAPSHOT_KEY`, and an empty set is kept (an empty coverage is a
+ * baseline, see `diffTimingCoverage`).
+ */
+export function createTimingSnapshotStore(
+  storage: KeyValueStorage = notificationsStorage,
+): CatalogSnapshotStore {
+  return createSnapshotStore(storage, TIMING_SNAPSHOT_KEY, true);
+}
+
+function createSnapshotStore(
+  storage: KeyValueStorage,
+  storageKey: string,
+  keepEmpty: boolean,
+): CatalogSnapshotStore {
   const isAvailable = (): boolean => {
     try {
       return storage.isAvailable ? storage.isAvailable() : true;
@@ -218,7 +333,7 @@ export function createCatalogSnapshotStore(
     load() {
       let raw: string | undefined;
       try {
-        raw = storage.getString(CATALOG_SNAPSHOT_KEY);
+        raw = storage.getString(storageKey);
       } catch {
         return null;
       }
@@ -242,18 +357,18 @@ export function createCatalogSnapshotStore(
       }
     },
     save(keys) {
-      if (keys.size === 0 || !isAvailable()) return false;
+      if ((keys.size === 0 && !keepEmpty) || !isAvailable()) return false;
       const value = JSON.stringify({v: SNAPSHOT_FORMAT, keys: [...keys]});
       try {
-        storage.set(CATALOG_SNAPSHOT_KEY, value);
-        return storage.getString(CATALOG_SNAPSHOT_KEY) === value;
+        storage.set(storageKey, value);
+        return storage.getString(storageKey) === value;
       } catch {
         return false;
       }
     },
     clear() {
       try {
-        storage.remove(CATALOG_SNAPSHOT_KEY);
+        storage.remove(storageKey);
       } catch {
         // Nothing to do.
       }

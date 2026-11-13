@@ -4,8 +4,8 @@
 // scripts/check-fix-has-test.mjs
 // ------------------------------
 // Does a fix PR carry a test, or one written reason why none is possible?
-// The rule is in scripts/lib/fix-has-test.mjs (CLAUDE.md "Verification &
-// testing", 2026-11-06). Run it before `gh pr ready`:
+// The rule is in scripts/lib/fix-has-test.mjs (docs/operations/standing-rules/verification-testing.md,
+// 2026-11-06). Run it before `gh pr ready`:
 //
 //   node scripts/check-fix-has-test.mjs --pr=<n> [--json]
 //   node scripts/check-fix-has-test.mjs            # the PR of the current branch

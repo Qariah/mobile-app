@@ -349,6 +349,13 @@ export async function handleWidgetCommand(
       setAdhkarPlaybackFromWidget(command.playing);
       return;
     }
+    // Qariah (2026-11-11): an iOS App Shortcut opens its screen.
+    case 'openShortcut': {
+      const {openAppShortcutRoute} =
+        require('@/services/shortcuts/appShortcuts') as typeof import('@/services/shortcuts/appShortcuts');
+      await openAppShortcutRoute(command.target);
+      return;
+    }
     // @ai-end
   }
 }

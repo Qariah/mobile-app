@@ -276,6 +276,10 @@ export function incidentByKey(key) {
 // ---------------------------------------------------------------------------
 // Shared gh wrapper.
 // ---------------------------------------------------------------------------
+// Node stops a child at 1 MiB of output by default (ENOBUFS). On 2026-11-10
+// the 300 closed issues with their bodies were 1.11 MB, and triage-lifecycle
+// failed in Diagnostics Watch. 64 MiB is the limit of scripts/lib/triage-common.mjs.
+export const GH_MAX_BUFFER = 64 * 1024 * 1024;
 export function gh(args, {input} = {}) {
   try {
     return execFileSync('gh', args, {
@@ -283,9 +287,13 @@ export function gh(args, {input} = {}) {
       input,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: GH_MAX_BUFFER,
     }).trim();
   } catch (e) {
-    const msg = (e.stderr || e.stdout || e.message || '').toString();
+    const msg =
+      e.code === 'ENOBUFS'
+        ? `output above ${GH_MAX_BUFFER} bytes`
+        : (e.stderr || e.stdout || e.message || '').toString();
     throw new Error(`gh ${args.join(' ')} failed: ${msg.slice(0, 400)}`);
   }
 }

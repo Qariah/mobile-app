@@ -68,6 +68,7 @@ import {
 } from './verseHighlightLayers';
 import {usePlaybackBand} from './playbackBand';
 import {usePlaybackBasmalaSurah} from '@/store/mushafPlayerStore'; // @ai
+import {usePlaybackWordLit} from '@/store/mushafWordMarkStore'; // @ai Qariah (#847)
 import {useVerseUnitDragSelect, type LineCharHit} from './verseUnitDragSelect';
 // @ai-end
 import {type MushafLayoutMetrics, canvasBottomOverflow} from '../constants'; // @ai
@@ -400,6 +401,8 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
     // @ai — the surah whose basmala is being recited (the intro before its
     // first verse): its basmallah line is painted as a recited verse is.
     const basmalaSurah = usePlaybackBasmalaSurah();
+    // @ai Qariah (#847): a timed word is lit, so the ayah tint is hidden.
+    const wordLit = usePlaybackWordLit();
 
     // ── Hit testing ────────────────────────────────────────
     // @ai — the line and character under a touch point (this renderer's
@@ -553,6 +556,7 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
         bookmarkColor: BOOKMARK_HIGHLIGHT_COLOR,
         highlightColors: HIGHLIGHT_COLORS,
         playbackColor: playbackBgColor,
+        playbackTintHidden: wordLit, // @ai Qariah (#847)
         selectionColor: selectionBgColor,
       });
       return layers ?? EMPTY_BG_MAP;
@@ -568,6 +572,7 @@ const MushafPageContent: React.FC<MushafPageContentProps> = React.memo(
       highlightRows, // @ai
       playbackBand, // @ai
       basmalaSurah, // @ai
+      wordLit, // @ai Qariah (#847)
       playbackBgColor,
       selectedVerseKeys,
       selectedRewayah, // @ai

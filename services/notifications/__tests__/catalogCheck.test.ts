@@ -11,7 +11,9 @@ import {
 } from '../catalogCheck';
 import {
   CATALOG_SNAPSHOT_KEY,
+  TIMING_SNAPSHOT_KEY,
   createCatalogSnapshotStore,
+  createTimingSnapshotStore,
   recitationKeysOf,
 } from '../catalogDiff';
 import {localDay} from '../localDay';
@@ -139,13 +141,15 @@ function device(
       holdout: false,
       notifier,
       snapshotStore: createCatalogSnapshotStore(storage),
+      timingSnapshotStore: createTimingSnapshotStore(storage),
       heldSinceStorage: storage,
       prefs,
       now,
       ...extra,
     });
   const snapshot = () => createCatalogSnapshotStore(storage).load();
-  return {storage, prefs, notifier, check, snapshot};
+  const timingSnapshot = () => createTimingSnapshotStore(storage).load();
+  return {storage, prefs, notifier, check, snapshot, timingSnapshot};
 }
 
 /** A device after its first check of `BASE` (the baseline). */
@@ -355,6 +359,7 @@ describe('runCatalogCheck', () => {
       status: 'storage_unavailable',
       posted: null,
       newKeys: [],
+      newTimingKeys: [],
       heldBackKeys: [],
     });
     expect(d.prefs.read).not.toHaveBeenCalled();
@@ -572,5 +577,279 @@ describe('one notice a day in total (TECH_DEBT #328)', () => {
       expect(off.heldBackKeys).toEqual([]);
       expect(heldSince(d)).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #845: the follow-along notice. Its own snapshot (`TIMING_SNAPSHOT_KEY`),
+// with the rules of the recitation snapshot.
+
+/** `reciter(id, surahs)` with follow-along: `timed` is `timestamps_surah_list` ([] = every surah). */
+function timedReciter(id: string, surahs: number[], timed: number[]): Reciter {
+  const base = reciter(id, surahs);
+  return {
+    ...base,
+    rewayat: base.rewayat.map(w => ({
+      ...w,
+      has_timestamps: true,
+      timestamps_surah_list: timed,
+    })),
+  };
+}
+
+// Thursday 2026-10-22 (not a Friday: no Al-Kahf day).
+const DAY3 = new Date(2026, 9, 22, 10, 0);
+
+describe('runCatalogCheck: follow-along (#845)', () => {
+  it('the first check saves the follow-along baseline and announces nothing', async () => {
+    const d = device();
+    const catalog = [
+      timedReciter(FAVORITE, [1, 18], [18]),
+      reciter(OTHER, [2]),
+    ];
+    const result = await d.check(catalog, DAY1);
+    expect(result).toMatchObject({status: 'first_check', newTimingKeys: []});
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|18']));
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+  });
+
+  it('a build that adds follow-along (a recitation snapshot, no timing snapshot): a baseline first, then a notice', async () => {
+    const d = await deviceWithBaseline();
+    d.storage.remove(TIMING_SNAPSHOT_KEY);
+    const one = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    const first = await d.check(one, DAY1);
+    expect(first).toMatchObject({status: 'nothing_new', newTimingKeys: []});
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|1']));
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+
+    const two = [
+      timedReciter(FAVORITE, [1], [1]),
+      timedReciter(OTHER, [2], [2]),
+    ];
+    const second = await d.check(two, DAY2);
+    expect(second.status).toBe('posted');
+    expect(second.posted?.coveredKeys).toEqual(['other-w|2']);
+  });
+
+  it('an empty coverage is a baseline: the first surah with follow-along gives ONE notice, the same catalog again none', async () => {
+    const d = await deviceWithBaseline();
+    // BASE has no follow-along: the baseline is an empty set, and it is kept.
+    expect(d.timingSnapshot()).toEqual(new Set());
+
+    const next = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    const result = await d.check(next, DAY1);
+    expect(result).toMatchObject({
+      status: 'posted',
+      newKeys: [],
+      newTimingKeys: ['fav-w|1'],
+    });
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+    expect(result.posted).toEqual({
+      type: 'follow_along',
+      title: {key: 'qariah:notifications.followAlong.title'},
+      body: {
+        key: 'qariah:notifications.followAlong.body',
+        params: {reciterName: 'Reciter fav', surahName: '1'},
+      },
+      // A tap opens the recitation.
+      target: {
+        kind: 'recitation',
+        reciterId: FAVORITE,
+        reciterSlug: FAVORITE,
+        rewayahId: 'fav-w',
+        surah: 1,
+      },
+      dedupeKey: 'follow_along:fav-w|1',
+      coveredKeys: ['fav-w|1'],
+    });
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|1']));
+    expect(d.prefs.markNotifiedToday).toHaveBeenCalledWith(DAY1);
+
+    const again = await d.check(next, DAY2);
+    expect(again.status).toBe('nothing_new');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('remove and re-add: a surah that loses follow-along and gets it again is not announced again', async () => {
+    const d = await deviceWithBaseline();
+    const timed = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    expect((await d.check(timed, DAY1)).status).toBe('posted');
+
+    // The catalog drops the timings: the key stays in the snapshot.
+    const removed = await d.check(BASE, DAY2);
+    expect(removed.status).toBe('nothing_new');
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|1']));
+
+    // They come back: nothing new.
+    const readded = await d.check(timed, DAY3);
+    expect(readded).toMatchObject({status: 'nothing_new', newTimingKeys: []});
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('an empty timestamps_surah_list with has_timestamps: true means every listed surah', async () => {
+    const catalog = [reciter(FAVORITE, [1, 18, 36]), reciter(OTHER, [2])];
+    const d = device();
+    expect((await d.check(catalog, DAY1)).status).toBe('first_check');
+
+    const next = [timedReciter(FAVORITE, [1, 18, 36], []), reciter(OTHER, [2])];
+    const result = await d.check(next, DAY1);
+    expect(result.status).toBe('posted');
+    expect(result.posted?.type).toBe('follow_along');
+    expect([...(result.posted?.coveredKeys ?? [])].sort()).toEqual([
+      'fav-w|1',
+      'fav-w|18',
+      'fav-w|36',
+    ]);
+  });
+
+  it('2 or more surahs give ONE summary; a favorite reciter first', async () => {
+    const d = await deviceWithBaseline();
+    const next = [
+      timedReciter(FAVORITE, [1], [1]),
+      timedReciter(OTHER, [2], [2]),
+    ];
+    // OTHER is the favorite here, so her surah leads.
+    const result = await d.check(next, DAY1, {favoriteReciterIds: [OTHER]});
+    expect(result.status).toBe('posted');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+    expect(result.posted).toMatchObject({
+      type: 'follow_along',
+      title: {key: 'qariah:notifications.followAlong.title'},
+      body: {
+        key: 'qariah:notifications.followAlongSummary.body',
+        params: {count: 2, reciterName: 'Reciter other', surahName: '2'},
+      },
+      target: {kind: 'recitation', rewayahId: 'other-w', surah: 2},
+    });
+    expect([...(result.posted?.coveredKeys ?? [])].sort()).toEqual([
+      'fav-w|1',
+      'other-w|2',
+    ]);
+  });
+
+  it('one notice a day: follow-along waits behind a new recitation and posts the next day', async () => {
+    const d = await deviceWithBaseline();
+    const next = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2, 67])];
+
+    const day1 = await d.check(next, DAY1);
+    expect(day1.status).toBe('posted');
+    expect(day1.posted?.type).toBe('new_recitation');
+    expect(day1.heldBackKeys).toEqual(['fav-w|1']);
+    expect(d.timingSnapshot()?.has('fav-w|1')).toBe(false);
+
+    // The same day: the daily limit.
+    const later = await d.check(next, DAY1);
+    expect(later.status).toBe('not_posted');
+    expect(later.heldBackKeys).toEqual(['fav-w|1']);
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+
+    const day2 = await d.check(next, DAY2);
+    expect(day2.status).toBe('posted');
+    expect(day2.posted?.type).toBe('follow_along');
+    expect(d.timingSnapshot()?.has('fav-w|1')).toBe(true);
+
+    expect((await d.check(next, DAY3)).status).toBe('nothing_new');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(2);
+  });
+
+  it('a surah whose recitation is new in the same check: only the recitation notice, no follow-along later', async () => {
+    const d = device();
+    const base = [timedReciter(FAVORITE, [1, 18], []), reciter(OTHER, [2])];
+    expect((await d.check(base, DAY1)).status).toBe('first_check');
+
+    // Surah 36 comes with follow-along (the list is empty: every surah).
+    const next = [timedReciter(FAVORITE, [1, 18, 36], []), reciter(OTHER, [2])];
+    const result = await d.check(next, DAY1);
+    expect(result).toMatchObject({
+      status: 'posted',
+      newKeys: ['fav|fav-w|36||'],
+      newTimingKeys: [],
+    });
+    expect(result.posted?.type).toBe('followed_recitation');
+    expect(d.timingSnapshot()?.has('fav-w|36')).toBe(true);
+
+    expect((await d.check(next, DAY2)).status).toBe('nothing_new');
+    expect(d.notifier.schedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('the switch off: no notice, and the surahs are dropped (none when it is on again)', async () => {
+    const d = await deviceWithBaseline({prefs: {follow_along: false}});
+    const next = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    const off = await d.check(next, DAY1);
+    expect(off).toMatchObject({status: 'not_posted', heldBackKeys: []});
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|1']));
+
+    d.prefs.state.follow_along = true;
+    expect((await d.check(next, DAY2)).status).toBe('nothing_new');
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+  });
+
+  it('a holdout user gets nothing, and the surahs are dropped', async () => {
+    const d = await deviceWithBaseline();
+    const next = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    const result = await d.check(next, DAY1, {holdout: true});
+    expect(result.status).toBe('not_posted');
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+    expect(d.timingSnapshot()).toEqual(new Set(['fav-w|1']));
+  });
+
+  it('a timing snapshot that does not save: no post, and the picked recitation waits too', async () => {
+    const d = device();
+    const base = [timedReciter(FAVORITE, [1, 18], []), reciter(OTHER, [2])];
+    expect((await d.check(base, DAY1)).status).toBe('first_check');
+    // Surah 36 comes with follow-along: the check picks the recitation and
+    // writes the new timing key (a change, so the write must verify).
+    const next = [timedReciter(FAVORITE, [1, 18, 36], []), reciter(OTHER, [2])];
+    const fullDisk = createTimingSnapshotStore({
+      ...d.storage,
+      set: () => undefined, // MMKV drops the write
+    });
+    const result = await d.check(next, DAY1, {timingSnapshotStore: fullDisk});
+    expect(result.status).toBe('save_failed');
+    expect(d.notifier.schedule).not.toHaveBeenCalled();
+    expect(d.prefs.markNotifiedToday).not.toHaveBeenCalled();
+    // The recitation that the check picked is out of the snapshot again.
+    expect(d.snapshot()?.has('fav|fav-w|36||')).toBe(false);
+    expect(d.timingSnapshot()?.has('fav-w|36')).toBe(false);
+
+    const retry = await d.check(next, DAY1);
+    expect(retry.status).toBe('posted');
+    expect(retry.posted?.type).toBe('followed_recitation');
+    expect(retry.posted?.coveredKeys).toEqual(['fav|fav-w|36||']);
+  });
+
+  it('a failed post holds the follow-along surah back, and the next check posts it once', async () => {
+    const d = await deviceWithBaseline();
+    const next = [timedReciter(FAVORITE, [1], [1]), reciter(OTHER, [2])];
+    d.notifier.schedule.mockRejectedValueOnce(new Error('native'));
+    const failed = await d.check(next, DAY1);
+    expect(failed).toMatchObject({
+      status: 'post_failed',
+      heldBackKeys: ['fav-w|1'],
+    });
+    expect(d.timingSnapshot()?.has('fav-w|1')).toBe(false);
+
+    const retry = await d.check(next, DAY1);
+    expect(retry.status).toBe('posted');
+    expect(retry.posted?.type).toBe('follow_along');
+    expect((await d.check(next, DAY2)).status).toBe('nothing_new');
+  });
+
+  it('a timing store that is not available: no follow-along, the recitations as before', async () => {
+    const d = await deviceWithBaseline();
+    const unavailable = createTimingSnapshotStore({
+      ...d.storage,
+      isAvailable: () => false,
+    });
+    const next = [timedReciter(FAVORITE, [1, 18], [1]), reciter(OTHER, [2])];
+    const result = await d.check(next, DAY1, {
+      timingSnapshotStore: unavailable,
+    });
+    expect(result).toMatchObject({
+      status: 'posted',
+      newKeys: ['fav|fav-w|18||'],
+      newTimingKeys: [],
+    });
+    expect(result.posted?.type).toBe('followed_recitation');
   });
 });

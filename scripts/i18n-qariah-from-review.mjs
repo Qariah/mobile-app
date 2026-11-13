@@ -5,17 +5,21 @@
  * (planning/pass-c/arabic-review/ui-strings.csv). Nobody types the Arabic by
  * hand: a reviewer changes the CSV, and this script writes the JSON.
  *
- *   node scripts/i18n-qariah-from-review.mjs                       # A–P
+ *   node scripts/i18n-qariah-from-review.mjs                       # A–Q
  *   node scripts/i18n-qariah-from-review.mjs --check               # exit 1 if stale
  *   node scripts/i18n-qariah-from-review.mjs --section=U           # U (Task 6)
  *   node scripts/i18n-qariah-from-review.mjs --section=U --check
  *   node scripts/i18n-qariah-from-review.mjs --section=U --dry-run # print only
  *
- * Sections A–P: the `qariah:` keys go to i18n/locales/en/qariah.json (column
+ * Sections A–Q: the `qariah:` keys go to i18n/locales/en/qariah.json (column
  * "English") and i18n/locales/ar/qariah.json (column "Reviewer: correction"
- * when it is filled, else "Suggested Arabic").
+ * when it is filled, else "Suggested Arabic"). Section Q (2026-11-08) is the
+ * What's New changelog: `qariah:changelog.<version key>.<field>`, one row
+ * for each string of data/changelog.json that the screen shows
+ * (i18n/qariahChangelog.ts reads it; its English is a copy of the JSON, and
+ * i18n/__tests__/qariahChangelog.test.ts checks the copy).
  *
- * The A–P output also holds two catalog sheets of the pack (Sprint 47 Task 8):
+ * The A–Q output also holds two catalog sheets of the pack (Sprint 47 Task 8):
  *   - countries.csv → `qariah:countries.<ISO code>`, for example
  *     `countries.DZ` (the code is in the "Key" cell: "algeria (DZ)"; "XJ" is
  *     the synthetic code of data/countryISO.ts). i18n/qariahCatalog.ts maps
@@ -397,13 +401,13 @@ function setPath(tree, key, value, rowNumber) {
   }
 }
 
-/** Sections A–P → the `qariah` namespace. */
+/** Sections A–Q → the `qariah` namespace. */
 function buildQariahNamespace(rows) {
   const en = {};
   const ar = {};
   const skipped = [];
   for (const row of rows) {
-    if (!/^[A-P]$/.test(row.section)) continue;
+    if (!/^[A-Q]$/.test(row.section)) continue;
     const [ns, key] = row.key.split(':');
     if (ns !== 'qariah' || !key) {
       fail(`row ${row.number}: "${row.key}" is not a qariah: key`);
@@ -740,9 +744,10 @@ function main() {
   const dryRun = args.includes('--dry-run');
   const section =
     args.find(a => a.startsWith('--section='))?.slice('--section='.length) ??
-    'A-P';
-  if (section !== 'A-P' && section !== 'U') {
-    fail(`unknown --section=${section} (use A-P or U)`);
+    'A-Q';
+  // 'A-P' is the name from before section Q (2026-11-08).
+  if (section !== 'A-Q' && section !== 'A-P' && section !== 'U') {
+    fail(`unknown --section=${section} (use A-Q or U)`);
   }
 
   const rows = readRows();
@@ -750,7 +755,7 @@ function main() {
   const outputs = [];
   let skipped = qariah.skipped;
   let notes = [];
-  if (section === 'A-P') {
+  if (section !== 'U') {
     notes = [
       ...addCountries(qariah.en, qariah.ar),
       ...addCatalogRewayat(qariah.en, qariah.ar),

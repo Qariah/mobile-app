@@ -22,6 +22,15 @@ const KEEPS_RECITER: Record<string, string> = {
     "the famous reciters of the qira'at are the imams, men of the early centuries",
 };
 
+/**
+ * `qariah:changelog.*` (review pack section Q) is the English of
+ * data/changelog.json, the release notes as each release shipped them. The app
+ * shows data/changelog.json itself and uses the copy only to check that an
+ * Arabic text is current (i18n/qariahChangelog.ts), so the copy keeps the
+ * words of the old releases.
+ */
+const CHANGELOG_COPY = 'qariah:changelog.';
+
 const RECITER_WORD = /\b(reciters?|qaris?)\b/i;
 // i18n placeholders such as {{reciter}} name a value, not a word on screen.
 const PLACEHOLDER = /{{[^}]*}}/g;
@@ -59,7 +68,8 @@ describe('the English UI says "Qariah(s)" (#535)', () => {
     const found = Object.entries(english)
       .filter(([, value]) => saysReciter(value))
       .map(([key]) => key.replace(PLURAL_SUFFIX, ''))
-      .filter(key => !(key in KEEPS_RECITER));
+      .filter(key => !(key in KEEPS_RECITER))
+      .filter(key => !key.startsWith(CHANGELOG_COPY));
     expect([...new Set(found)].sort()).toEqual([]);
   });
 

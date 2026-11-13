@@ -2,6 +2,13 @@ import branding from '@/config/branding';
 import {RECITERS, type Rewayat} from '@/data/reciterData';
 import {timestampDatabaseService} from './TimestampDatabaseService';
 import type {AyahTimestamp} from '@/types/timestamps';
+// @ai-start
+import {
+  timestampFileQuery,
+  timestampRevisionFor,
+  toAyahTimestamp,
+} from './timestampRevision'; // Qariah (#846)
+// @ai-end
 
 // RFC-015 — fork-supplied timestamp CDN base. Absent from `branding.js`
 // → fallback to Bayaan's production CDN (byte-equivalent to the
@@ -112,10 +119,22 @@ class TimestampFetchService {
     return rw.timestamps_surah_list.includes(surahNumber);
   }
 
+  // @ai-start
+  /**
+   * Qariah (#846): the catalog's timing revision for this surah (the
+   * `timestamps_rev` field of the rewayah row), or null when the catalog has
+   * no row for the rewayah.
+   */
+  revision(rewayatId: string, surahNumber: number): number | null {
+    return timestampRevisionFor(this.findRewayat(rewayatId), surahNumber);
+  }
+  // @ai-end
+
   async fetchAndCache(
     rewayatId: string,
     surahNumber: number,
   ): Promise<AyahTimestamp[] | null> {
+    const rev = this.revision(rewayatId, surahNumber) ?? 0; // @ai Qariah (#846)
     // RFC-019 — a fork-supplied bundled (`'local'`) dataset wins over R2
     // (Open question 3), but ONLY when the coverage allow-list claims this
     // surah AND the provider returns a well-shaped array. Writing source
@@ -149,6 +168,7 @@ class TimestampFetchService {
           surahNumber,
           local,
           'local',
+          rev, // @ai
         );
         return local;
       }
@@ -170,7 +190,11 @@ class TimestampFetchService {
     const padded = String(surahNumber).padStart(3, '0');
     // The CDN serves these as `immutable` for a year, so a changed file needs a
     // new URL to get past HTTP caches. Bump with every regeneration.
-    const url = `${R2_BASE}/${rewayatId}/${padded}.json?v=${TIMESTAMP_DATA_VERSION}`;
+    // @ai-start
+    // Qariah (#846): a catalog revision above 0 adds `&r=<revision>`, so a
+    // corrected file gets a new URL too.
+    const url = `${R2_BASE}/${rewayatId}/${padded}.json?${timestampFileQuery(TIMESTAMP_DATA_VERSION, rev)}`;
+    // @ai-end
 
     try {
       const res = await fetch(url);
@@ -188,14 +212,19 @@ class TimestampFetchService {
         );
         return null;
       }
-      const data = raw as AyahTimestamp[];
+      // @ai-start
+      // Qariah (#846): keep the five ayah fields only. A published file can
+      // carry more keys (word times); they are not kept in memory.
+      const data = (raw as AyahTimestamp[]).map(toAyahTimestamp);
 
       await timestampDatabaseService.writeTimestamps(
         rewayatId,
         surahNumber,
         data,
         'r2',
+        rev,
       );
+      // @ai-end
 
       return data;
     } catch (error) {

@@ -184,15 +184,36 @@ export const qariahFeatureFlags = {
    * @ai Qariah (ANR investigation WS-C, hypothesis H1) — Android non-blocking
    * boot splash. When active, the app window draws at once and a native
    * overlay keeps the splash look until the app is ready, so a BACK/VOLUME key
-   * during a long boot no longer ANRs with "No focused window". Local
-   * hard-off: the runtime activation is ALSO gated by the PostHog multivariate
-   * flag `nonblocking_splash_v2` (only variant `treatment` arms; fails closed;
-   * applies at the NEXT cold start because MainActivity reads it before JS
-   * runs; since 2026-11-03 every Android device gets `treatment` — see
-   * services/bootSplash). iOS is unaffected. Flip to false to
-   * hard-disable in the next build. See modules/qariah-boot-splash.
+   * during a long boot no longer ANRs with "No focused window". It is the
+   * DEFAULT on Android since 2026-11 (the ANR floor work): a fresh install and
+   * an update use it at the first launch, with no flag response. The PostHog
+   * multivariate flag `nonblocking_splash_v2` is the remote off switch: the
+   * variant `control` (or the value false) from a good response turns it off
+   * at the NEXT cold start, because MainActivity reads the marker before JS
+   * runs; a failed flag request changes nothing (see services/bootSplash).
+   * Keep that flag with no condition except the platform: PostHog also
+   * answers false when no condition matches, and false is the off switch.
+   * iOS is unaffected. Flip to false to hard-disable from the second launch
+   * of the next build. See modules/qariah-boot-splash.
    */
-  nonBlockingSplash: true, // v2; gated further by `nonblocking_splash_v2`
+  nonBlockingSplash: true, // v2; default ON, `nonblocking_splash_v2` = remote off
+
+  /**
+   * @ai Qariah (ANR floor work, class B) — Android mount pump. While the app
+   * is in the background, React Native queues each UI change that JS sends,
+   * and it applies the whole queue in the first frame on return. After a long
+   * listen that frame can last seconds: the window has no input focus, and
+   * Android reports an ANR. The pump (modules/qariah-mount-pump) applies the
+   * queue about once a second in the background, so the return frame has no
+   * queue. OFF by default: the lab result is mixed (25 minutes: 1,330 ms to
+   * 669 ms on a Galaxy A10s; 60 minutes: no difference), so the PostHog flag
+   * `background_mount_pump` turns it on for an experiment and off again, at
+   * once (services/mountPump). It fails safe: when the React Native internals
+   * that it calls are not there, the app behaves as before. iOS is unaffected
+   * (iOS has no such queue). This build flag is the hard-off: false removes
+   * the remote switch too.
+   */
+  backgroundMountPump: true, // v2; OFF until the PostHog flag `background_mount_pump` turns it on
 } as const;
 
 export type QariahFeatureFlag = keyof typeof qariahFeatureFlags;

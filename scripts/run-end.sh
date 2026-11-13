@@ -92,7 +92,7 @@ esac
 # The limits ended with this command (the hook wrote <sid>.last.json). From here the
 # session writes its report and ends. It does no follow-up work: the run-limits hook
 # denies a write in this session for 24 h (RUN OVER). A question or a finding goes to
-# the owner queue, where the Steward answers it within 2 hours.
+# the owner queue, where the Steward answers it within 4 hours.
 run_over() {
   if [ "$tool_calls" = unknown ]; then
     echo "run-end: WARN the run-limits hook did not see this run (no .last.json for $task). The RUN OVER rule is not armed for this session."

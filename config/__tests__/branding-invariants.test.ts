@@ -34,14 +34,22 @@ describe('branding invariants (config/branding.js)', () => {
     expect(recitations.enabled).toBe(true);
   });
 
-  it('homeRowConfig shows "Newly Added Recitations" second, right after Continue Listening (owner, 2026-10-20)', () => {
+  it('homeRowConfig shows "Follow Along" (recitations) right after Continue Listening, then "Newly Added Recitations" (owner: 2026-10-20, and #847 option C on 2026-11-12)', () => {
     const visible = branding.homeRowConfig
       .filter((row: {enabled: boolean}) => row.enabled)
       .map((row: {id: string}) => row.id);
-    expect(visible.slice(0, 2)).toEqual([
+    expect(visible.slice(0, 3)).toEqual([
       'continue-listening',
+      'follow-along-recitations',
       'newly-added-recitations',
     ]);
+  });
+
+  it('the upstream "Follow Along" row of qariahs stays off (#847: Qariah lists recitations)', () => {
+    const upstream = branding.homeRowConfig.find(
+      (row: {id: string}) => row.id === 'follow-along',
+    );
+    expect(upstream).toEqual({id: 'follow-along', enabled: false});
   });
 
   it('the tablet sidebar shows the Qariah mark, not the inherited starburst (TECH_DEBT #355: the 3.2.2 iPad screenshots)', () => {
@@ -74,6 +82,7 @@ describe('branding invariants (config/branding.js)', () => {
     expect(match).not.toBeNull();
     const union = match?.[1] ?? '';
     expect(union).toContain("| 'newly-added-recitations'");
+    expect(union).toContain("| 'follow-along-recitations'");
   });
 
   it('the "Share as Image" file carries the Qariah name (GitHub #731: the iOS share sheet showed "bayaan-share" as its title)', () => {

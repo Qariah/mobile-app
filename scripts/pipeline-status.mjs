@@ -25,15 +25,24 @@
 //     `anomaly`), and the `owner-queue` issues that closed in the last 7 days;
 //   - the open pull requests;
 //   - docs/operations/active-rollout.json and auto-sprint-policy.json on the trunk;
-//   - the scheduled runs of the Diagnostics Watch and Signals snapshot workflows.
+//   - the scheduled runs of the Diagnostics Watch and Signals snapshot workflows;
+//   - the stores, read only: the newest TestFlight builds of the app and of the
+//     beta app, and the Play tracks internal, beta and production. This finds an
+//     internal or a public beta that a person made by hand. A store that does
+//     not answer gives an `errors` line; the status is still written.
+//   --no-store             do not read the stores
 //
-// Env: GH_REPO (else the origin remote), GH_TOKEN in CI, SIGNALS_R2_* for --upload.
+// Env: GH_REPO (else the origin remote), GH_TOKEN in CI, SIGNALS_R2_* for --upload,
+// APP_STORE_CONNECT_API_KEY_ID + _ISSUER_ID + _P8_B64 and GOOGLE_PLAY_SA_JSON for the stores.
 // Exit 0 = done. 1 = a read or the upload failed. 2 = a usage error.
 
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {dirname, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+import {ANDROID_PACKAGE_NAME, IOS_BUNDLE_ID} from './lib/app-ids.mjs';
+import {ascGet, ascJwt, resolveAppId} from './lib/asc-client.mjs';
+import {getPlayAccessToken} from './lib/google-play-auth.mjs';
 import {COLLECT_WORKFLOWS, computeStatus} from './lib/pipeline-status.mjs';
 import {putSignalsJson} from './signals/lib/sigv4.mjs';
 
@@ -50,9 +59,11 @@ export function parseArgs(argv) {
     sources: null,
     saveSources: null,
     now: null,
+    store: true,
   };
   for (const arg of argv) {
     if (arg === '--json') a.json = true;
+    else if (arg === '--no-store') a.store = false;
     else if (arg === '--upload') a.upload = true;
     else if (arg.startsWith('--out=')) a.out = arg.slice(6);
     else if (arg.startsWith('--sources=')) a.sources = arg.slice(10);
@@ -142,16 +153,23 @@ export function readSources(repo, now) {
   const rollout = file('docs/operations/active-rollout.json');
   const policy = file('docs/operations/auto-sprint-policy.json');
   const workflows = {};
-  for (const wf of Object.keys(COLLECT_WORKFLOWS)) {
-    const out = gh([
-      `repos/${repo}/actions/workflows/${wf}/runs?event=schedule&per_page=5`,
+  // The newest manual run that passed: it clears a failed scheduled run that came
+  // before it (2026-11-11: a fixed Diagnostics Watch stayed LATE for a day).
+  const workflowsManual = {};
+  const runsOf = query =>
+    gh([
+      `repos/${repo}/actions/workflows/${query}`,
       '--jq',
       '.workflow_runs[] | {status, conclusion, created_at, html_url} | tojson',
-    ]);
-    workflows[wf] = out
+    ])
       .split('\n')
       .filter(Boolean)
       .map(l => JSON.parse(l));
+  for (const wf of Object.keys(COLLECT_WORKFLOWS)) {
+    workflows[wf] = runsOf(`${wf}/runs?event=schedule&per_page=5`);
+    workflowsManual[wf] = runsOf(
+      `${wf}/runs?event=workflow_dispatch&status=success&per_page=1`,
+    );
   }
   // Keep only the fields that the rules read: a saved fixture stays small.
   const slimIssue = i => ({
@@ -194,7 +212,128 @@ export function readSources(repo, now) {
     rollout,
     policy,
     workflows,
+    workflowsManual,
   };
+}
+
+const STORE_TIMEOUT_MS = 45000;
+
+/** Reject after `ms`: one store that hangs must not stop the status. */
+function withTimeout(p, ms, what) {
+  let t;
+  return Promise.race([
+    p,
+    new Promise((_, reject) => {
+      t = setTimeout(
+        () => reject(new Error(`${what}: no answer in ${ms / 1000} s`)),
+        ms,
+      );
+    }),
+  ]).finally(() => clearTimeout(t));
+}
+
+const firstLine = e =>
+  String(e?.message || e)
+    .split('\n')[0]
+    .slice(0, 160);
+
+/** The newest builds of one App Store Connect app → [{build, version, uploadedAt, internal, external, expired}]. */
+async function ascBuilds(bundleId, jwt) {
+  const app = await resolveAppId(bundleId, jwt);
+  if (!app) return [];
+  const body = await ascGet(
+    `/v1/builds?filter[app]=${app}&sort=-uploadedDate&limit=6` +
+      '&fields[builds]=version,uploadedDate,expired,buildBetaDetail,preReleaseVersion' +
+      '&include=buildBetaDetail,preReleaseVersion' +
+      '&fields[buildBetaDetails]=internalBuildState,externalBuildState&fields[preReleaseVersions]=version',
+    jwt,
+  );
+  const inc = new Map(
+    (body.included || []).map(x => [`${x.type}:${x.id}`, x.attributes || {}]),
+  );
+  return (body.data || []).map(b => {
+    const rel = b.relationships || {};
+    const beta =
+      inc.get(`buildBetaDetails:${rel.buildBetaDetail?.data?.id}`) || {};
+    const pre =
+      inc.get(`preReleaseVersions:${rel.preReleaseVersion?.data?.id}`) || {};
+    return {
+      build: String(b.attributes?.version || ''),
+      version: pre.version || null,
+      uploadedAt: b.attributes?.uploadedDate
+        ? new Date(b.attributes.uploadedDate).toISOString()
+        : null,
+      internal: beta.internalBuildState || null,
+      external: beta.externalBuildState || null,
+      expired: Boolean(b.attributes?.expired),
+    };
+  });
+}
+
+/** The Play tracks, read only: it opens an edit, reads, and deletes the edit. */
+async function playTracks() {
+  const token = await getPlayAccessToken({scope: 'publisher'});
+  const base = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${ANDROID_PACKAGE_NAME}`;
+  const call = async (method, path) => {
+    const r = await fetch(`${base}/${path}`, {
+      method,
+      headers: {Authorization: `Bearer ${token}`},
+    });
+    if (!r.ok)
+      throw new Error(`Play ${r.status} on ${method} ${path.split('/').pop()}`);
+    return method === 'DELETE' ? null : r.json();
+  };
+  const edit = await call('POST', 'edits');
+  try {
+    const t = await call('GET', `edits/${edit.id}/tracks`);
+    const out = {};
+    for (const tr of t.tracks || [])
+      if (['internal', 'beta', 'production'].includes(tr.track))
+        out[tr.track] = (tr.releases || []).map(r => ({
+          versionCodes: (r.versionCodes || []).map(String),
+          status: r.status || null,
+          name: r.name || null,
+        }));
+    return out;
+  } finally {
+    await call('DELETE', `edits/${edit.id}`).catch(() => null);
+  }
+}
+
+/** The store state for the status. Never throws: a failure is an `errors` line. */
+export async function readStore(env = process.env) {
+  const out = {
+    readAt: new Date().toISOString(),
+    ios: null,
+    android: null,
+    errors: [],
+  };
+  if (env.APP_STORE_CONNECT_API_KEY_ID && env.APP_STORE_CONNECT_ISSUER_ID) {
+    try {
+      const jwt = ascJwt();
+      const [app, beta] = await withTimeout(
+        Promise.all([
+          ascBuilds(IOS_BUNDLE_ID, jwt),
+          ascBuilds(`${IOS_BUNDLE_ID}.beta`, jwt),
+        ]),
+        STORE_TIMEOUT_MS,
+        'App Store Connect',
+      );
+      out.ios = {app, beta};
+    } catch (e) {
+      out.errors.push(`App Store Connect: ${firstLine(e)}`);
+    }
+  } else out.errors.push('App Store Connect: no credentials');
+  try {
+    out.android = await withTimeout(
+      playTracks(),
+      STORE_TIMEOUT_MS,
+      'Google Play',
+    );
+  } catch (e) {
+    out.errors.push(`Google Play: ${firstLine(e)}`);
+  }
+  return out;
 }
 
 export function summary(st) {
@@ -208,6 +347,7 @@ export function summary(st) {
     `needs you: ${c.decisions} decisions · ${c.actions} actions · ${c.approvals} approvals · ${c.reviews} reviews`,
   );
   for (const b of st.bottlenecks) out.push(`  - ${b}`);
+  for (const e of st.builds?.errors || []) out.push(`store: ${e}`);
   return out.join('\n');
 }
 
@@ -226,6 +366,7 @@ async function main() {
     else if (!sources.now) sources.now = Date.now();
   } else {
     sources = readSources(repoName(), args.now || Date.now());
+    if (args.store) sources.store = await readStore();
   }
   if (args.saveSources) {
     mkdirSync(dirname(resolve(args.saveSources)), {recursive: true});

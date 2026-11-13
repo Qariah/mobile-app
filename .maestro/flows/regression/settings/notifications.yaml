@@ -1,5 +1,5 @@
-# NTF-01 (Sprint 48, S48.7) — Settings → Notifications: the page shows the five switches, and a
-# switch keeps its value after a force-quit.
+# NTF-01 (Sprint 48, S48.7) — Settings → Notifications: the page shows the six switches (#845
+# added "New follow-along"), and a switch keeps its value after a force-quit.
 #
 # The page is app/(tabs)/(d.settings)/notifications.tsx. Each switch has the testID
 # `notification-switch-<type>`, and each one is ON by default. The switches stay disabled
@@ -73,6 +73,8 @@ tags:
           timeout: 10000
       - assertVisible:
           id: 'notification-switch-new_recitation'
+      - assertVisible:
+          id: 'notification-switch-follow_along'
       - assertVisible:
           id: 'notification-switch-kahf_friday'
       - assertVisible:

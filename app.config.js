@@ -318,6 +318,8 @@ module.exports = {
       './plugins/withOkHttpFloor.js',
       // Qariah: the Arabic widget-picker text (from i18n/native/widget-strings.json).
       './withQariahNativeStrings.js',
+      // Qariah (2026-11-11): the Android app shortcuts (Continue listening, Continue reading, Search).
+      './withQariahAndroidShortcuts.js',
     ],
   },
 };

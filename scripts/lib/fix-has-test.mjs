@@ -3,7 +3,7 @@
 // scripts/lib/fix-has-test.mjs
 // ----------------------------
 // The rule "every fix PR carries a test, or one written sentence why none is
-// possible" (CLAUDE.md "Verification & testing", 2026-11-06). Pure functions;
+// possible" (docs/operations/standing-rules/verification-testing.md, 2026-11-06). Pure functions;
 // no I/O. scripts/check-fix-has-test.mjs reads the PR and applies them.
 //
 // A PR is a fix when it has the label `bug`, `crash` or `sentry`, when its

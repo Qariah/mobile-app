@@ -50,6 +50,8 @@ type IntroChangeCallback = (surahNumber: number, inIntro: boolean) => void;
  */
 export type SurahEndReason = 'finished' | 'skipped';
 type SurahEndCallback = (reason: SurahEndReason) => void;
+/** Qariah (#847): each tracking poll, after its ayah check. @ai */
+type TrackingTickCallback = (positionMs: number) => void;
 
 class MushafAudioService {
   private static instance: MushafAudioService;
@@ -75,6 +77,10 @@ class MushafAudioService {
   // the polls left to wait for it.
   private pendingSeekMs: number | null = null;
   private pendingSeekTicks = 0;
+  // Qariah (#847): the poll period, and a listener of each poll (the word
+  // mark, services/audio/mushafWordTracker.ts).
+  private trackingIntervalMs = AYAH_TRACKING_INTERVAL;
+  private onTrackingTick: TrackingTickCallback | null = null;
   // @ai-end
 
   // Callbacks
@@ -113,6 +119,32 @@ class MushafAudioService {
    */
   setOnIntroChange(callback: IntroChangeCallback): void {
     this.onIntroChange = callback;
+  }
+
+  /**
+   * Qariah (#847): called on each tracking poll with the position, after the
+   * poll's ayah and intro callbacks. Null removes it.
+   */
+  setOnTrackingTick(callback: TrackingTickCallback | null): void {
+    this.onTrackingTick = callback;
+  }
+
+  /**
+   * Qariah (#847): the poll period in ms (default AYAH_TRACKING_INTERVAL).
+   * The word mark asks for a shorter one only while the Mushaf shows and a
+   * timed ayah plays; null gives the default again. A running poll restarts
+   * with the new period.
+   */
+  setTrackingIntervalMs(ms: number | null): void {
+    const next =
+      ms === null ? AYAH_TRACKING_INTERVAL : Math.max(16, Math.round(ms));
+    if (next === this.trackingIntervalMs) return;
+    this.trackingIntervalMs = next;
+    if (this.trackingInterval) this.startAyahTracking();
+  }
+
+  getTrackingIntervalMs(): number {
+    return this.trackingIntervalMs;
   }
   // @ai-end
 
@@ -373,7 +405,8 @@ class MushafAudioService {
           }
         }
       }
-    }, AYAH_TRACKING_INTERVAL);
+      this.onTrackingTick?.(positionMs); // @ai Qariah (#847)
+    }, this.trackingIntervalMs); // @ai Qariah (#847)
   }
 
   private stopAyahTracking(): void {

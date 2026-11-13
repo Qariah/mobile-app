@@ -512,3 +512,21 @@ describe('content commands without a runner', () => {
     spy.mockRestore();
   });
 });
+
+// @ai-start
+// Qariah (2026-11-11): an iOS App Shortcut queues openShortcut.
+const mockOpenAppShortcutRoute = jest.fn(async () => undefined);
+jest.mock('@/services/shortcuts/appShortcuts', () => ({
+  openAppShortcutRoute: (...args: unknown[]) =>
+    (mockOpenAppShortcutRoute as (...a: unknown[]) => Promise<void>)(...args),
+}));
+
+describe('openShortcut', () => {
+  it('opens the shortcut screen and plays nothing', async () => {
+    const d = deps();
+    await handleWidgetCommand({type: 'openShortcut', target: 'search'}, d);
+    expect(mockOpenAppShortcutRoute).toHaveBeenCalledWith('search');
+    expect(d.calls).toEqual([]);
+  });
+});
+// @ai-end

@@ -24,7 +24,10 @@
 #   * Auto-release on any exit (EXIT/INT/TERM trap) — normal runs never leave a stale lock.
 #   * Stale-steal: if the recorded holder PID is dead, the lock is reclaimed automatically.
 #   * Blocks up to --timeout (default 1800s) for a LIVE holder, reporting the holder each poll.
-#   * Exports ANDROID_SERIAL for the wrapped command so adb/maestro target the locked device.
+#   * Device: --serial, else an exported ANDROID_SERIAL, else the one attached device.
+#     With several devices attached and no serial, it exits 1 and lists them.
+#   * Exports ANDROID_SERIAL for the wrapped command so adb targets the locked device.
+#     Maestro does NOT read ANDROID_SERIAL: pass `maestro --device "$ANDROID_SERIAL"`.
 #   * Exit code is the wrapped command's exit code (or 1 on lock timeout / usage error).
 
 set -u
@@ -50,24 +53,38 @@ if [ $# -eq 0 ]; then
 fi
 
 # Resolve adb, then default SERIAL to the single attached device (if exactly one).
+# An ANDROID_SERIAL that the caller already exported names the device too.
 ADB="${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}"
 [ -x "$ADB" ] || ADB="$(command -v adb 2>/dev/null || true)"
+SERIAL="${SERIAL:-${ANDROID_SERIAL:-}}"
 if [ -z "$SERIAL" ] && [ -n "$ADB" ]; then
   count=$("$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"{n++} END{print n+0}')
   if [ "$count" = "1" ]; then
     SERIAL=$("$ADB" devices 2>/dev/null | awk 'NR>1 && $2=="device"{print $1; exit}')
+  elif [ "$count" -gt 1 ]; then
+    # Several devices (Pixel 3, Samsung A10s, an emulator): a guess would lock one
+    # device and drive another. Stop and name them.
+    echo "with-device-lock: $count devices attached — pass --serial=SERIAL or export ANDROID_SERIAL:" >&2
+    "$ADB" devices -l 2>/dev/null | awk 'NR>1 && $2=="device"{print "  " $0}' >&2
+    exit 1
   fi
 fi
-SERIAL="${SERIAL:-default}"
+# No device attached: lock "default" and leave ANDROID_SERIAL alone, so adb gives
+# its own "no devices" error rather than "device 'default' not found".
+LOCK_NAME="${SERIAL:-default}"
 
 # Re-entrant: if this process tree already holds the lock for this serial (a parent
 # with-device-lock is wrapping us, or a self-locking script re-exec'd under us), just
 # run — don't self-deadlock on mkdir. Makes the wrapper safe to nest.
-if [ "${QARIAH_DEVICE_LOCK_HELD:-}" = "$SERIAL" ]; then
-  exec "$@"
-fi
+# QARIAH_DEVICE_LOCK_HELD is a ':'-separated set of the held names, so a lock on the
+# Pixel, then a nested lock on the A10s, then a nested call on the Pixel still runs.
+case ":${QARIAH_DEVICE_LOCK_HELD:-}:" in
+  *":$LOCK_NAME:"*)
+    [ -n "$SERIAL" ] && export ANDROID_SERIAL="$SERIAL"
+    exec "$@" ;;
+esac
 
-LOCKDIR="${TMPDIR:-/tmp}/qariah-device-${SERIAL}.lock"
+LOCKDIR="${TMPDIR:-/tmp}/qariah-device-${LOCK_NAME}.lock"
 LOCKDIR="${LOCKDIR%/}"        # normalize any trailing slash from TMPDIR
 HOLDER="$LOCKDIR/holder"
 OWNED=0
@@ -86,22 +103,23 @@ while :; do
   # Held — is the holder still alive?
   hpid=$(sed -n 's/^pid=//p' "$HOLDER" 2>/dev/null)
   if [ -n "$hpid" ] && ! kill -0 "$hpid" 2>/dev/null; then
-    echo "with-device-lock: stale lock (holder pid $hpid is dead) — reclaiming ${SERIAL}" >&2
+    echo "with-device-lock: stale lock (holder pid $hpid is dead) — reclaiming ${LOCK_NAME}" >&2
     rm -rf "$LOCKDIR" 2>/dev/null
     continue
   fi
   elapsed=$(( $(date +%s) - start ))
   if [ "$elapsed" -ge "$TIMEOUT" ]; then
-    echo "with-device-lock: timed out after ${TIMEOUT}s waiting for device ${SERIAL}." >&2
+    echo "with-device-lock: timed out after ${TIMEOUT}s waiting for device ${LOCK_NAME}." >&2
     [ -f "$HOLDER" ] && { echo "  held by:" >&2; sed 's/^/    /' "$HOLDER" >&2; }
     exit 1
   fi
   hlabel=$(sed -n 's/^label=//p' "$HOLDER" 2>/dev/null)
-  echo "with-device-lock: device ${SERIAL} busy [${hlabel:-?}]; waiting ${elapsed}/${TIMEOUT}s…" >&2
+  echo "with-device-lock: device ${LOCK_NAME} busy [${hlabel:-?}]; waiting ${elapsed}/${TIMEOUT}s…" >&2
   sleep 5
 done
 
-export ANDROID_SERIAL="$SERIAL"
-export QARIAH_DEVICE_LOCK_HELD="$SERIAL"   # lets nested/self-locking children skip re-locking
+[ -n "$SERIAL" ] && export ANDROID_SERIAL="$SERIAL"
+# Lets nested/self-locking children skip re-locking this device (and keeps the others).
+export QARIAH_DEVICE_LOCK_HELD="${QARIAH_DEVICE_LOCK_HELD:+$QARIAH_DEVICE_LOCK_HELD:}$LOCK_NAME"
 "$@"
 exit $?

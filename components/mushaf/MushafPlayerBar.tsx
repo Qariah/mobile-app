@@ -41,6 +41,13 @@ import {forceLTR} from '@/utils/rtl';
 import {showToast} from '@/utils/toastUtils'; // @ai
 
 // @ai-start
+// Qariah (UX critique 2026-11-11): 44 pt hit areas, with no visible change.
+// mushafHitSlop.ts says how each one grows and why no two overlap.
+import {playerBarHitSlops} from './mushafHitSlop';
+const HIT_SLOP = playerBarHitSlops(moderateScale);
+// @ai-end
+
+// @ai-start
 const surahNameOf = (surah: number): string =>
   surah >= 1 && surah <= 114 ? getSurahDisplayName(SURAHS[surah - 1]) : '';
 // @ai-end
@@ -162,6 +169,11 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
             {backgroundColor: Color(theme.colors.text).alpha(0.08).toString()},
           ]}
           onPress={handleChangeReciter}
+          // @ai: the button is about 33 pt tall (12 pt text, 8 pt padding);
+          // 6 pt above and below give a 44 pt hit area with no visible change
+          // (UX critique 2026-11-11, rule T1). Nothing else in the error row
+          // takes a tap, so the slop overlaps no other control.
+          hitSlop={{top: moderateScale(6), bottom: moderateScale(6)}}
           accessibilityRole="button"
           accessibilityLabel={t('playerBar.changeReciter')}>
           <Text style={[styles.changeReciterText, {color: theme.colors.text}]}>
@@ -179,6 +191,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
         <Pressable
           style={styles.edgeButton}
           onPress={onSearch}
+          hitSlop={HIT_SLOP.idleEdge} // @ai Qariah
           accessibilityRole="button"
           accessibilityLabel={t('common:actions.search')}>
           <Feather
@@ -195,6 +208,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
               {backgroundColor: Color(theme.colors.text).alpha(0.1).toString()},
             ]}
             onPress={handlePlayPress}
+            hitSlop={HIT_SLOP.idlePlay} // @ai Qariah
             accessibilityRole="button"
             accessibilityLabel={t('common:actions.play')}>
             <PlayIcon color={theme.colors.text} size={moderateScale(16)} />
@@ -204,6 +218,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
         <Pressable
           style={styles.edgeButton}
           onPress={handleOptions}
+          hitSlop={HIT_SLOP.idleEdge} // @ai Qariah
           accessibilityRole="button"
           accessibilityLabel={t('playerBar.playbackOptions')}>
           <Ionicons
@@ -240,6 +255,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
         <Pressable
           style={styles.edgeButton}
           onPress={handleStop}
+          hitSlop={HIT_SLOP.activeEdge} // @ai Qariah
           accessibilityRole="button"
           accessibilityLabel={t('toolbar.stop')}>
           <Ionicons
@@ -253,6 +269,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
           <Pressable
             style={styles.chevronButton}
             onPress={handlePrevAyah}
+            hitSlop={HIT_SLOP.chevron} // @ai Qariah
             disabled={verseNavDisabled}
             accessibilityRole="button"
             accessibilityLabel={t('playerBar.previousAyah')}
@@ -267,6 +284,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
           <Pressable
             style={styles.playPauseButton}
             onPress={handlePlayPause}
+            hitSlop={HIT_SLOP.playPause} // @ai Qariah
             disabled={isLoading}
             accessibilityRole="button"
             accessibilityLabel={
@@ -286,6 +304,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
           <Pressable
             style={styles.chevronButton}
             onPress={handleNextAyah}
+            hitSlop={HIT_SLOP.chevron} // @ai Qariah
             disabled={verseNavDisabled}
             accessibilityRole="button"
             accessibilityLabel={t('playerBar.nextAyah')}
@@ -301,6 +320,7 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
         <Pressable
           style={styles.edgeButton}
           onPress={handleOptions}
+          hitSlop={HIT_SLOP.activeEdge} // @ai Qariah
           accessibilityRole="button"
           accessibilityLabel={t('playerBar.playbackOptions')}>
           <Ionicons
@@ -312,11 +332,15 @@ export const MushafPlayerBar: React.FC<MushafPlayerBarProps> = ({
       </View>
 
       {/* Row 2: verse info */}
-      <Text
-        style={[styles.verseInfo, {color: theme.colors.textSecondary}]}
-        numberOfLines={1}>
-        {infoText}
-      </Text>
+      {/* @ai Qariah: the verse line takes no touch, so the hit areas of the
+       * buttons above it can grow over it (mushafHitSlop.ts). */}
+      <View pointerEvents="none" testID="mushaf-bar-verse-line">
+        <Text
+          style={[styles.verseInfo, {color: theme.colors.textSecondary}]}
+          numberOfLines={1}>
+          {infoText}
+        </Text>
+      </View>
     </View>
   );
 };

@@ -21,6 +21,15 @@ class MainActivity : ReactActivity() {
     // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
+    // @generated begin qariah-shortcut-history - expo prebuild (DO NOT MODIFY) sync-4907b31f7c92a121f2d37ae1d03419cc108a9e0e
+    // Qariah: a launch from Recents after process death repeats the first
+    // intent. A shortcut link must not run again (withQariahAndroidShortcuts.js).
+    if ((intent.flags and android.content.Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0 &&
+        intent.data?.scheme == "qariah" &&
+        setOf("continue-listening", "continue-reading", "search").contains(intent.data?.host)) {
+      intent.data = null
+    }
+    // @generated end qariah-shortcut-history
     super.onCreate(null)
     // @generated begin qariah-nonblocking-splash - expo prebuild (DO NOT MODIFY) sync-50b69a7387a914b6c966a31d0cd2791cf613514e
     if (QariahBootSplash.onActivityCreated(this, BuildConfig.QARIAH_LAB)) {

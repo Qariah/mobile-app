@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-router/ios/Toolbar/RouterToolbarModule.swift b/node_modules/expo-router/ios/Toolbar/RouterToolbarModule.swift
+index 1bee03c..a31c002 100644
+--- a/node_modules/expo-router/ios/Toolbar/RouterToolbarModule.swift
++++ b/node_modules/expo-router/ios/Toolbar/RouterToolbarModule.swift
+@@ -70,11 +70,17 @@ public class RouterToolbarModule: Module {
+       Prop("titleStyle") { (view: RouterToolbarItemView, style: TitleStyleRecord?) in
+         view.titleStyle = style?.toTitleStyle()
+       }
++      // Qariah patch: the bar button reads routerAccessibilityLabel and
++      // routerAccessibilityHint (RouterToolbarItemView.applyCommonProperties).
++      // Upstream set only the host UIView's own label, which VoiceOver never
++      // reads, so the button kept its SF Symbol name ("go to end").
+       Prop("accessibilityLabel") { (view: RouterToolbarItemView, accessibilityLabel: String?) in
+         view.accessibilityLabel = accessibilityLabel
++        view.routerAccessibilityLabel = accessibilityLabel
+       }
+       Prop("accessibilityHint") { (view: RouterToolbarItemView, accessibilityHint: String?) in
+         view.accessibilityHint = accessibilityHint
++        view.routerAccessibilityHint = accessibilityHint
+       }
+       Prop("disabled") { (view: RouterToolbarItemView, disabled: Bool?) in
+         view.disabled = disabled ?? false

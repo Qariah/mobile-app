@@ -30,6 +30,7 @@ const TRACKS: Array<[keyof typeof qariahAnalytics, string]> = [
   ['trackColdStartBegan', 'cold_start_began'],
   ['trackBootSplashFlagResolved', 'boot_splash_flag_resolved'],
   ['trackBootRiskEnrolled', 'boot_risk_enrolled'],
+  ['trackAppReturnSlow', 'app_return_slow'],
   ['trackScreenContentStalled', 'screen_content_stalled'],
   ['trackScreenContentRendered', 'screen_content_rendered'],
   ['trackPlaybackStoppedInBackground', 'playback_stopped_in_background'],
@@ -52,18 +53,23 @@ const TRACKS: Array<[keyof typeof qariahAnalytics, string]> = [
   ['trackNotificationOpened', 'notification_opened'],
 ];
 
+/** Events that carry no property at all (TECH_DEBT #369). */
+const NO_PROPS_TRACKS: ReadonlyArray<[keyof typeof qariahAnalytics, string]> = [
+  ['trackReflectionPublished', 'reflection_published'],
+];
+
 describe('qariahEvents', () => {
   beforeEach(() => mockCaptureDiagnosticEvent.mockClear());
 
   it('keeps every Qariah event name', () => {
     expect(Object.values(QARIAH_ANALYTICS_EVENTS).sort()).toEqual(
-      TRACKS.map(([, name]) => name).sort(),
+      [...TRACKS, ...NO_PROPS_TRACKS].map(([, name]) => name).sort(),
     );
   });
 
   it('has one track function for each event', () => {
     expect(Object.keys(qariahAnalytics).sort()).toEqual(
-      TRACKS.map(([fn]) => fn).sort(),
+      [...TRACKS, ...NO_PROPS_TRACKS].map(([fn]) => fn).sort(),
     );
   });
 
@@ -79,6 +85,18 @@ describe('qariahEvents', () => {
       expect(sent).toEqual(props);
       // A copy, as AnalyticsService's `{...props}` was.
       expect(sent).not.toBe(props);
+    },
+  );
+
+  it.each(NO_PROPS_TRACKS)(
+    '%s sends %s with no property, whatever the caller passes',
+    (fn, name) => {
+      (qariahAnalytics[fn] as unknown as (p?: unknown) => void)({
+        body: 'my reflection text',
+        verseKey: '2:255',
+      });
+      expect(mockCaptureDiagnosticEvent).toHaveBeenCalledTimes(1);
+      expect(mockCaptureDiagnosticEvent).toHaveBeenCalledWith(name, {});
     },
   );
 });

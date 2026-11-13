@@ -5,8 +5,8 @@
 // --------------------
 // Run the blocking CI gates on this machine, with the commands of the
 // workflow files themselves: url-leak-guard.yml, lint.yml and test.yml. Use it
-// when GitHub Actions does not start jobs (a billing stop, see CLAUDE.md
-// "Process, agents & docs"). The advisory steps (Prettier, the full ESLint)
+// when GitHub Actions does not start jobs (a billing stop, see
+// docs/operations/standing-rules/process-agents.md). The advisory steps (Prettier, the full ESLint)
 // and the install steps do not run.
 //
 //   node scripts/ci-local.mjs          # as Main check: Jest with the *.alldbs suites
@@ -124,8 +124,8 @@ function main() {
 }
 
 /**
- * The advisory line "every fix PR carries a test" (CLAUDE.md "Verification &
- * testing", 2026-11-06): scripts/check-fix-has-test.mjs on the PR of the
+ * The advisory line "every fix PR carries a test" (docs/operations/standing-rules/verification-testing.md,
+ * 2026-11-06): scripts/check-fix-has-test.mjs on the PR of the
  * current branch. Advisory: it never changes the exit code. It becomes a
  * blocking step when a week of runs shows no false FAIL.
  */

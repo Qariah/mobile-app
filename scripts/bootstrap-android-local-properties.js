@@ -63,33 +63,56 @@ sdk.dir=${sdkDir}
   console.log(`[bootstrap-android] Wrote ${target}`);
 }
 
+/**
+ * The first `.env.local` in another worktree of THIS repository, or null.
+ * Only `git worktree list` names candidates: a directory beside the root can be
+ * another project, and its secrets file would give a build the wrong keys (#822).
+ * The main checkout comes first in the porcelain output.
+ */
+function findWorktreeEnvLocal(
+  root,
+  listWorktrees = gitWorktrees,
+  exists = fs.existsSync,
+) {
+  const self = path.resolve(root);
+  for (const dir of listWorktrees(root)) {
+    if (path.resolve(dir) === self) continue;
+    const candidate = path.join(dir, '.env.local');
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+function gitWorktrees(root) {
+  try {
+    const out = require('child_process').execFileSync(
+      'git',
+      ['-C', root, 'worktree', 'list', '--porcelain'],
+      {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']},
+    );
+    return out
+      .split('\n')
+      .filter(line => line.startsWith('worktree '))
+      .map(line => line.slice('worktree '.length));
+  } catch {
+    return []; // not a git checkout, or git is absent
+  }
+}
+
 // Report a missing .env.local. Never copy one: a sibling worktree's value can be stale.
 function checkEnvLocal() {
   const root = path.join(__dirname, '..');
   const target = path.join(root, '.env.local');
   if (fs.existsSync(target)) return;
 
-  // Look one level up for sibling worktrees with .env.local already present.
-  const parent = path.dirname(root);
-  let sibling = null;
-  try {
-    for (const entry of fs.readdirSync(parent)) {
-      const candidate = path.join(parent, entry, '.env.local');
-      if (entry !== path.basename(root) && fs.existsSync(candidate)) {
-        sibling = candidate;
-        break;
-      }
-    }
-  } catch {
-    // parent directory not readable; ignore
-  }
+  const sibling = findWorktreeEnvLocal(root);
 
   console.log(
     '[bootstrap-android] .env.local is missing. Some features (Sentry, PostHog, QF OAuth, CDN killswitch) will be disabled.',
   );
   if (sibling) {
     console.log(
-      `[bootstrap-android] A sibling worktree has one at: ${sibling}`,
+      `[bootstrap-android] Another worktree of this repository has one at: ${sibling}`,
     );
     console.log(
       `[bootstrap-android] If still current: cp "${sibling}" "${target}"`,
@@ -185,6 +208,10 @@ function checkJavaToolchain() {
   );
 }
 
-main();
-checkEnvLocal();
-checkJavaToolchain();
+if (require.main === module) {
+  main();
+  checkEnvLocal();
+  checkJavaToolchain();
+}
+
+module.exports = {findWorktreeEnvLocal};

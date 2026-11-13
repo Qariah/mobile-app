@@ -9,7 +9,7 @@
 // read it, nobody owned it, and a question (AskUserQuestion) stalled the run
 // with no notice (owner, 2026-11-04). Now every question and every finding is
 // one GitHub issue with the label `owner-queue`. The Steward (a cloud routine,
-// .claude/routines/qariah-steward.md) reads the open queue every 2 hours and
+// .claude/routines/qariah-steward.md) reads the open queue every 4 hours and
 // answers it, fixes it, hands it to the Fixer, or escalates it to the owner.
 // The owner gets a push only for a decision of his.
 //
@@ -72,7 +72,21 @@ export function markerFor(key) {
 }
 
 const MARKER_RE = /<!--\s*owner-queue:([a-z0-9][a-z0-9._-]{0,79})\s*-->/;
-const FIELD_RE = /^-\s*(kind|run|due|priority|asked)\s*:\s*(.+?)\s*$/i;
+const FIELD_RE =
+  /^-\s*(kind|run|due|priority|asked|do|not-before|blocks)\s*:\s*(.+?)\s*$/i;
+/** The steps of the Pipeline page that `--blocks` may name. */
+export const BLOCK_STEPS = [
+  'collect',
+  'triage',
+  'steward',
+  'fix',
+  'integrate',
+  'audit',
+  'go',
+  'promote',
+  'ramp',
+  'close',
+];
 
 /** The key of an issue body, or null. */
 export function keyOf(body) {
@@ -106,6 +120,23 @@ export function validateAsk(f = {}) {
     errors.push('--due must be an ISO date (YYYY-MM-DD or a full timestamp)');
   if (out.run && !RUNS.includes(out.run))
     errors.push(`--run must be ${RUNS.join('|')}`);
+  // The Pipeline page fields (optional, one line each).
+  for (const k of ['do', 'notBefore', 'blocks'])
+    if (out[k] !== undefined && out[k] !== null)
+      out[k] = String(out[k]).replace(/\s+/g, ' ').trim() || undefined;
+  if (
+    out.notBefore &&
+    !/^build\s*>\s*\d+$/i.test(out.notBefore) &&
+    !/^\d{4}-\d{2}-\d{2}/.test(out.notBefore)
+  )
+    errors.push('--not-before must be build>N or an ISO date');
+  if (out.blocks) {
+    const bad = out.blocks
+      .split(/[\s,]+/)
+      .filter(b => b && !BLOCK_STEPS.includes(b));
+    if (bad.length)
+      errors.push(`--blocks must name steps of ${BLOCK_STEPS.join('|')}`);
+  }
   if (
     out.priority === undefined ||
     out.priority === null ||
@@ -157,14 +188,20 @@ export function renderBody({
   due,
   priority = 'P2',
   asked,
+  do: todo,
+  notBefore,
+  blocks,
 }) {
   const L = [markerFor(key), '', `- kind: ${kind}`, `- priority: ${priority}`];
   if (run) L.push(`- run: ${run}`);
   if (due) L.push(`- due: ${due}`);
   if (asked) L.push(`- asked: ${asked}`);
+  if (todo) L.push(`- do: ${todo}`);
+  if (notBefore) L.push(`- not-before: ${notBefore}`);
+  if (blocks) L.push(`- blocks: ${blocks}`);
   L.push('', String(body).trim(), '', '## Reply', '', String(reply).trim(), '');
   L.push(
-    '_Filed by `scripts/owner-queue.mjs`. The Steward (`.claude/routines/qariah-steward.md`) reads this queue every 2 hours. It answers, fixes, hands over, or escalates. An escalation assigns the owner and sends one email._',
+    '_Filed by `scripts/owner-queue.mjs`. The Steward (`.claude/routines/qariah-steward.md`) reads this queue every 4 hours. It answers, fixes, hands over, or escalates. An escalation assigns the owner and sends one email._',
   );
   return L.join('\n');
 }
@@ -177,7 +214,7 @@ export function replyOf(body) {
   return m ? m[1].trim() : '';
 }
 
-/** The `- kind:` style fields of a body → {kind, run, due, priority, asked}. */
+/** The `- kind:` style fields of a body → {kind, run, due, priority, asked, do, not-before, blocks}. */
 export function fieldsOf(body) {
   const out = {};
   for (const line of String(body || '').split('\n')) {
@@ -325,7 +362,7 @@ export function escalationPlan(items, {hourPT}) {
     if (i.priority === 'P0') now.push(i);
     else if (i.priority === 'P1') batch.push(i);
   }
-  // The routine fires at the odd UTC hours (0 1-23/2 * * *): 17:00 UTC is 9am
+  // The routine fires at 01, 05, 09, 13, 17 and 21 UTC (0 1-23/4 * * *): 17:00 UTC is 9am
   // PST or 10am PDT, so the batch run is the one whose PT hour is 9 or 10.
   const batchDue = hourPT === 9 || hourPT === 10;
   return {now, batch, sendBatch: batchDue && batch.length > 0};
@@ -347,7 +384,9 @@ export function hourIn(ms, tz = 'America/Los_Angeles') {
 /** One email text for a list of items (the Steward's escalation). */
 export function escalationEmail(items, {repo}) {
   const lines = [
-    `${items.length} item${items.length === 1 ? '' : 's'} in the owner queue need${items.length === 1 ? 's' : ''} you.`,
+    `${items.length} item${
+      items.length === 1 ? '' : 's'
+    } in the owner queue need${items.length === 1 ? 's' : ''} you.`,
     '',
   ];
   for (const i of sortQueue(items)) {
@@ -358,6 +397,6 @@ export function escalationEmail(items, {repo}) {
       '',
     );
   }
-  lines.push('Reply on the issue. The Steward reads it within 2 hours.');
+  lines.push('Reply on the issue. The Steward reads it within 4 hours.');
   return lines.join('\n');
 }

@@ -40,6 +40,7 @@
  */
 
 import type {AyahTimestamp} from '@/types/timestamps';
+import {wordTimesTestTimings} from './wordTimesTest'; // Qariah (#847): test builds only
 
 /** Per-rewayat per-surah ayah timings. See file header for invariants. */
 export const BUNDLED_TIMINGS: Record<
@@ -43939,6 +43940,9 @@ export function getBundledTimings(
   rewayatId: string,
   surahNumber: number,
 ): AyahTimestamp[] | null {
+  // #847: a test build (EXPO_PUBLIC_QARIAH_WORD_TIMES_TEST=1) has one file with word times.
+  const test = wordTimesTestTimings(rewayatId, surahNumber);
+  if (test) return test;
   const byRewayat = BUNDLED_TIMINGS[rewayatId];
   if (!byRewayat) return null;
   const arr = byRewayat[surahNumber];

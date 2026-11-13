@@ -22,6 +22,7 @@ import type {QueueState} from '@/services/player/types/state'; // @ai
 
 import {NowPlayingIndicator} from './NowPlayingIndicator';
 import {formatAyahRange, getSurahMetadataSync} from '@/utils/surahMetadata';
+import {FollowAlongBadge} from '@/components/badges/FollowAlongBadge'; // @ai Qariah (#847)
 import {useReciterStore} from '@/store/reciterStore';
 import {
   useDownloadProgress,
@@ -73,6 +74,11 @@ interface SurahItemProps {
    * options aren't surah options (downloads). @ai
    */
   optionsMenu?: React.ReactNode;
+  /**
+   * Show the "Follow Along" chip after the place chip: the player can follow
+   * along this surah of this rewayah. @ai Qariah (#847)
+   */
+  showFollowAlong?: boolean;
 }
 
 // @ai-start
@@ -90,6 +96,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
     pressAction = 'play', // @ai
     tableColumns = false, // @ai
     optionsMenu, // @ai
+    showFollowAlong = false, // @ai Qariah (#847)
   }) => {
     const {theme} = useTheme();
     const {t} = useTranslation(['home', 'common']);
@@ -212,6 +219,8 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
     const revelationPlace = item.revelation_place.toLowerCase() as
       | 'makkah'
       | 'madinah';
+    // @ai Qariah (#847): on the place-chip line only (not the iPad table).
+    const followAlongChip = showFollowAlong && !tableColumns && !rewayatName;
 
     return (
       <View style={styles.surahItem}>
@@ -230,6 +239,7 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
               t('surahItem.a11yName', {name: displayName}),
               meaning,
               versesLabel,
+              followAlongChip ? t('home.followAlong') : null, // @ai Qariah (#847)
               isCurrentlyPlaying ? t('surahItem.a11yPlaying') : null,
             ]
               .filter(Boolean)
@@ -307,36 +317,41 @@ export const SurahItem: React.FC<SurahItemProps> = React.memo(
               {tableColumns ? null : rewayatName ? (
                 <Text style={styles.rewayatText}>{rewayatName}</Text>
               ) : (
-                <View
-                  style={[
-                    styles.locationIndicator,
-                    {
-                      backgroundColor: Color(theme.colors.card)
-                        .alpha(0.8)
-                        .toString(),
-                    },
-                  ]}>
-                  {revelationPlace === 'makkah' ? (
-                    <MakkahIcon
-                      size={moderateScale(13)}
-                      color={theme.colors.textSecondary}
-                      secondaryColor={Color(theme.colors.card)
-                        .alpha(0.8)
-                        .toString()}
-                    />
-                  ) : (
-                    <MadinahIcon
-                      size={moderateScale(13)}
-                      color={theme.colors.textSecondary}
-                    />
-                  )}
-                  <Text style={styles.locationText}>
-                    {t(
-                      revelationPlace === 'makkah'
-                        ? 'surahItem.makkah'
-                        : 'surahItem.madinah',
+                // @ai Qariah (#847): the chip line, the place chip and then the
+                // "Follow Along" chip.
+                <View style={styles.chipLine}>
+                  <View
+                    style={[
+                      styles.locationIndicator,
+                      {
+                        backgroundColor: Color(theme.colors.card)
+                          .alpha(0.8)
+                          .toString(),
+                      },
+                    ]}>
+                    {revelationPlace === 'makkah' ? (
+                      <MakkahIcon
+                        size={moderateScale(13)}
+                        color={theme.colors.textSecondary}
+                        secondaryColor={Color(theme.colors.card)
+                          .alpha(0.8)
+                          .toString()}
+                      />
+                    ) : (
+                      <MadinahIcon
+                        size={moderateScale(13)}
+                        color={theme.colors.textSecondary}
+                      />
                     )}
-                  </Text>
+                    <Text style={styles.locationText}>
+                      {t(
+                        revelationPlace === 'makkah'
+                          ? 'surahItem.makkah'
+                          : 'surahItem.madinah',
+                      )}
+                    </Text>
+                  </View>
+                  {followAlongChip ? <FollowAlongBadge /> : null}
                 </View>
               )}
             </View>
@@ -575,6 +590,13 @@ const createStyles = (theme: Theme) =>
       borderWidth: 1,
       borderColor: Color(theme.colors.border).alpha(0.1).toString(),
       alignSelf: 'flex-start',
+    },
+    // @ai Qariah (#847): the place chip and the "Follow Along" chip.
+    chipLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: moderateScale(6),
     },
     locationText: {
       fontSize: moderateScale(9),
