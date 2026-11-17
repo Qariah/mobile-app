@@ -26,6 +26,10 @@ import {lockScreenService} from './LockScreenService';
 import {ambientAudioService} from './AmbientAudioService';
 import {audioCoordinator} from './AudioCoordinator';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {
+  isTrackEndPause,
+  takeAutoplayStart,
+} from '@/services/analytics/qariahEventGates'; // @ai Qariah (TECH_DEBT #391)
 import {usePlayerStore} from '@/services/player/store/playerStore';
 import {isRestoreSeekPending} from '@/services/player/utils/restoreSession'; // @ai
 import {useRecentlyPlayedStore} from '@/services/player/store/recentlyPlayedStore';
@@ -119,6 +123,7 @@ export function ExpoAudioProvider({
   const accumulatedListenMsRef = useRef(0);
   const lastTrackIdRef = useRef<string | null>(null);
   const hasFiredStartedRef = useRef(false);
+  const realPauseRef = useRef(false); // @ai Qariah (TECH_DEBT #391): a pause that sent playback_paused
 
   // Get store actions
   const updatePlaybackState = usePlayerStore(
@@ -280,6 +285,7 @@ export function ExpoAudioProvider({
       accumulatedListenMsRef.current = 0;
       playbackStartTimeRef.current = 0;
       hasFiredStartedRef.current = false;
+      realPauseRef.current = false; // @ai Qariah (TECH_DEBT #391)
       lastTrackIdRef.current = currentTrackId;
     }
 
@@ -308,7 +314,8 @@ export function ExpoAudioProvider({
         reciter_id: currentTrack.reciterId,
         reciter_name: currentTrack.reciterName,
         rewayah_id: currentTrack.rewayatId ?? '',
-        source: 'queue',
+        // @ai Qariah (TECH_DEBT #391): an automatic advance is 'autoplay', not a skip.
+        source: takeAutoplayStart(currentTrack.id) ? 'autoplay' : 'queue',
         position_ms: Math.round(status.currentTime * 1000),
       });
     }
@@ -353,12 +360,17 @@ export function ExpoAudioProvider({
         if (state === 'playing' && currentState === 'paused') {
           // Resumed from pause
           playbackStartTimeRef.current = Date.now();
-          analyticsService.trackPlaybackResumed({
-            surah_id: surahId,
-            reciter_id: analyticsTrack.reciterId,
-            reciter_name: analyticsTrack.reciterName,
-            position_ms: Math.round(status.currentTime * 1000),
-          });
+          // @ai-start Qariah (TECH_DEBT #391): only after a real pause, not at a track start.
+          if (realPauseRef.current) {
+            realPauseRef.current = false;
+            analyticsService.trackPlaybackResumed({
+              surah_id: surahId,
+              reciter_id: analyticsTrack.reciterId,
+              reciter_name: analyticsTrack.reciterName,
+              position_ms: Math.round(status.currentTime * 1000),
+            });
+          }
+          // @ai-end
         } else if (
           state === 'paused' &&
           wasPlaying.current &&
@@ -367,13 +379,19 @@ export function ExpoAudioProvider({
           // Paused from playing — calculate listened time
           const sessionMs = Date.now() - playbackStartTimeRef.current;
           accumulatedListenMsRef.current += sessionMs;
-          analyticsService.trackPlaybackPaused({
-            surah_id: surahId,
-            reciter_id: analyticsTrack.reciterId,
-            reciter_name: analyticsTrack.reciterName,
-            position_ms: Math.round(status.currentTime * 1000),
-            listened_ms: sessionMs,
-          });
+          // @ai-start Qariah (TECH_DEBT #391): the end of a track is not a pause;
+          // playback_completed sends its listened time.
+          realPauseRef.current = !isTrackEndPause(status);
+          if (realPauseRef.current) {
+            analyticsService.trackPlaybackPaused({
+              surah_id: surahId,
+              reciter_id: analyticsTrack.reciterId,
+              reciter_name: analyticsTrack.reciterName,
+              position_ms: Math.round(status.currentTime * 1000),
+              listened_ms: sessionMs,
+            });
+          }
+          // @ai-end
           playbackStartTimeRef.current = 0;
         }
       }
@@ -476,10 +494,10 @@ export function ExpoAudioProvider({
         // Auto-advance to next track
         if (__DEV__)
           console.log('[ExpoAudioProvider] Auto-advancing to next track');
-        await skipToNext();
+        await skipToNext({auto: true}); // @ai Qariah (TECH_DEBT #391): not a user skip
       } else if (branding.continueToNextSurah && (await queueNextSurah())) {
         // @ai Qariah (#557): the queue ended; the next surah by the same reciter is now queued.
-        await skipToNext();
+        await skipToNext({auto: true}); // @ai Qariah (TECH_DEBT #391)
       } else {
         // End of queue, no repeat
         if (__DEV__) console.log('[ExpoAudioProvider] End of queue reached');

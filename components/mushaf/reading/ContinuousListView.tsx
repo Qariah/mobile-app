@@ -40,6 +40,7 @@ import BasmalaHeader from '@/components/player/v2/PlayerContent/QuranView/Basmal
 import {getTranslationName} from '@/utils/translationLookup';
 import {getAllahNameHighlightColorHex} from '@/constants/mushafAllahHighlight';
 import {readingListSidePadding} from '../readerListKey'; // @ai Sprint 52 Task 8
+import {listStartIndex} from './listStartIndex'; // @ai TECH_DEBT #411
 // @ai-start
 import {useRewayahVerseUnits} from '@/hooks/useRewayahVerseUnits';
 import {parseAnchorKey} from '@/services/mushaf/RewayahVerseUnits';
@@ -134,6 +135,17 @@ function getVerseIndex(verseKey: string): number {
   return verseIndexMap.get(verseKey) ?? 0;
 }
 
+// @ai-start TECH_DEBT #411
+/** The list index of a verse, or undefined for an unknown or absent verse. */
+function verseIndexOf(
+  verseKey: string | null | undefined,
+): number | undefined {
+  if (!verseKey) return undefined;
+  getVerseIndex(verseKey); // builds the map
+  return verseIndexMap?.get(verseKey);
+}
+// @ai-end
+
 // @ai Qariah: the page of the verse's first word, from the verse index. A map
 // built from the 604 pages here read all the words on the JS thread.
 function getPageForVerse(verseKey: string): number | null {
@@ -172,6 +184,11 @@ interface ContinuousListViewProps {
   width?: number;
   /** Whether a tap on the status bar scrolls back to the start. Default on. */
   scrollsToTop?: boolean;
+  /**
+   * TECH_DEBT #411: the Hafs key of a verse on `initialPage` to start at (a
+   * bookmark opened from Collection). Without it the list starts at the page.
+   */
+  initialVerseKey?: string;
   // @ai-end
 }
 
@@ -191,6 +208,7 @@ const ContinuousListView = forwardRef<
       onCurrentPageChange,
       width,
       scrollsToTop = true,
+      initialVerseKey, // TECH_DEBT #411
     },
     ref,
   ) => {
@@ -362,12 +380,32 @@ const ContinuousListView = forwardRef<
     }, [onTap]);
 
     // Compute initial scroll index from page number
+    // @ai-start
+    // TECH_DEBT #411: at the verse the reader opened at, when it is on the
+    // start page; else at the page.
     const initialScrollIndex = useMemo(() => {
-      if (unitList) return unitList.indexForPage(initialPage) ?? 0; // @ai
-      const verseKey = getFirstVerseKeyForPage(initialPage);
-      if (verseKey) return getVerseIndex(verseKey);
-      return 0;
-    }, [initialPage, unitList]);
+      if (unitList) {
+        const verseIndex = initialVerseKey
+          ? unitList.indexForHafsReference(initialVerseKey, [])
+          : undefined;
+        return (
+          listStartIndex(
+            unitList.indexForPage(initialPage),
+            verseIndex,
+            unitList.indexForPage(initialPage + 1),
+          ) ?? 0
+        );
+      }
+      const pageStart = verseIndexOf(getFirstVerseKeyForPage(initialPage));
+      const verseIndex = initialVerseKey
+        ? verseIndexOf(hafsVerseKeyOf(initialVerseKey))
+        : undefined;
+      const nextPageStart = verseIndexOf(
+        getFirstVerseKeyForPage(initialPage + 1),
+      );
+      return listStartIndex(pageStart, verseIndex, nextPageStart) ?? 0;
+    }, [initialPage, initialVerseKey, unitList]);
+    // @ai-end
 
     // #55: FlashList v2 mis-lands `initialScrollIndex` before measurement. Scroll again after layout (2 rAF).
     const didInitialScrollRef = useRef(false);

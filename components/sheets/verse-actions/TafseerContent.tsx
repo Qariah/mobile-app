@@ -27,7 +27,7 @@ import {TafseerHtmlRenderer} from './TafseerHtmlRenderer';
 // @ai-start
 import {flipX, latinLetterSpacing} from '@/utils/rtl';
 import {useTranslation} from 'react-i18next';
-import {localizeDigits} from '@/i18n/format';
+import {localizeDigits, formatNumber} from '@/i18n/format';
 import {
   compareTafaseer,
   getTafseerDisplayName,
@@ -37,6 +37,7 @@ import {
   distinctTafseerResults,
   hafsPagerPage,
   tafseerBadge,
+  type TafseerBadgeLabels,
   unitPagerPage,
   type UnitStart,
 } from './verseUnitScreens';
@@ -106,6 +107,17 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
   const {theme} = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const {t} = useTranslation(['sheets', 'common']);
+  // @ai-start — the tafsir range line in the app language (TECH_DEBT #409)
+  const {t: tBadge} = useTranslation(['home', 'content']);
+  const badgeLabels = useMemo<TafseerBadgeLabels>(
+    () => ({
+      verses: tBadge('home:surahItem.columnVerses'),
+      hafs: tBadge('content:rewayah.short.hafs'),
+      formatNumber: value => formatNumber(value),
+    }),
+    [tBadge],
+  );
+  // @ai-end
   const downloadedMeta = useTafseerStore(s => s.downloadedMeta);
   const sortedTafaseer = useMemo(
     () => [...downloadedMeta].sort(compareTafaseer),
@@ -348,6 +360,7 @@ export const TafseerContent: React.FC<TafseerContentProps> = ({
                     result,
                     page,
                     tafseerResults.length,
+                    badgeLabels, // TECH_DEBT #409: the app language
                   );
                   return (
                     <React.Fragment
@@ -574,6 +587,7 @@ const createStyles = (theme: Theme) =>
       fontFamily: 'Manrope-SemiBold',
       color: Color(theme.colors.textSecondary).alpha(0.5).toString(),
       letterSpacing: latinLetterSpacing(1.2),
+      textTransform: 'uppercase', // @ai — "Verses" reads "VERSES" (TECH_DEBT #409)
       marginBottom: verticalScale(8),
     },
     noTafseer: {

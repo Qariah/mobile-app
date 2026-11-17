@@ -10,7 +10,8 @@
 // escalates it to the owner. The rules are in scripts/lib/owner-queue.mjs.
 //
 //   node scripts/owner-queue.mjs ask --kind=decision|action|info --title=<text> \
-//        --body-file=<path> [--reply=<the exact reply text>] [--due=<ISO>] \
+//        --body-file=<path> [--reply=<the exact reply text> | --reply-kind=promotion --build=<n>] \
+//        [--due=<ISO>] \
 //        [--run=<task>] [--issue=<n>] [--key=<a-z0-9->] [--priority=P0|P1|P2] [--dry-run] \
 //        [--do=<one line: what the owner does>] [--not-before=build>N|<ISO date>] \
 //        [--blocks=<steps, for example audit,promote>]
@@ -23,7 +24,10 @@
 // `ask` files one issue with the label `owner-queue` and the kind, with the
 // marker `<!-- owner-queue:<key> -->` (the key is `--key`, or a slug of the
 // title). An open issue with the same key is updated, not duplicated.
-// `--issue=<n>` updates that issue. `answer` records the answer as a comment
+// `--issue=<n>` updates that issue. `--reply-kind=promotion --build=<n>` makes
+// the script write the public-beta approval reply for build <n>, from the
+// same source that the Promoter reads. The publish guard denies a command
+// that holds the approval text, so a run must not pass it in `--reply` (#835). `answer` records the answer as a comment
 // and closes the issue. `handover` records the Steward's answer, removes the
 // `owner-queue` label and keeps the issue OPEN with `loop-actionable`, so the
 // Fixer's queue (open issues only) gets it. `escalate` assigns the repository owner and adds the
@@ -89,7 +93,7 @@ function usage(msg) {
     [
       'usage:',
       '  owner-queue.mjs ask --kind=decision|action|info --title=<text> --body-file=<path>',
-      '        [--reply=<text>] [--due=<ISO>] [--run=<task>] [--issue=<n>] [--key=<k>] [--priority=P0|P1|P2] [--dry-run]',
+      '        [--reply=<text> | --reply-kind=promotion --build=<n>] [--due=<ISO>] [--run=<task>] [--issue=<n>] [--key=<k>] [--priority=P0|P1|P2] [--dry-run]',
       '        [--do=<text>] [--not-before=build>N|<ISO>] [--blocks=<step,step>]',
       '  owner-queue.mjs list [--json] [--kind=<k>]',
       '  owner-queue.mjs answer <n> --by=steward|owner --text-file=<path> [--dry-run]',
@@ -134,6 +138,8 @@ function ask() {
     title: str('title'),
     body,
     reply: str('reply'),
+    replyKind: flags['reply-kind'],
+    build: flags.build,
     due: str('due'),
     run: str('run'),
     key: str('key'),

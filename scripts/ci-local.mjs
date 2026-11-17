@@ -4,7 +4,8 @@
 // scripts/ci-local.mjs
 // --------------------
 // Run the blocking CI gates on this machine, with the commands of the
-// workflow files themselves: url-leak-guard.yml, lint.yml and test.yml. Use it
+// workflow files themselves: url-leak-guard.yml, lint.yml, test.yml and
+// qariah-checks.yml (Qariah's own steps, TECH_DEBT #359). Use it
 // when GitHub Actions does not start jobs (a billing stop, see
 // docs/operations/standing-rules/process-agents.md). The advisory steps (Prettier, the full ESLint)
 // and the install steps do not run.
@@ -28,12 +29,12 @@ const REPO = fileURLToPath(new URL('..', import.meta.url));
 /** [workflow file, step name]: the blocking gate steps, in run order. */
 export const STEPS = [
   ['url-leak-guard.yml', 'Scan for storage-origin tokens'],
-  ['lint.yml', 'Duplicate object keys (JS)'],
-  ['lint.yml', 'ESLint (Qariah-owned files)'],
+  ['qariah-checks.yml', 'Duplicate object keys (JS)'],
+  ['qariah-checks.yml', 'ESLint (Qariah-owned files)'],
   ['lint.yml', 'TypeScript'],
-  ['lint.yml', 'Branding (no hardcoded Bayaan brand strings)'],
+  ['qariah-checks.yml', 'Branding (no hardcoded Bayaan brand strings)'],
   ['test.yml', 'Jest'],
-  ['test.yml', 'Script tests (node --test)'],
+  ['qariah-checks.yml', 'Script tests (node --test)'],
 ];
 
 // Steps that CI needs and a local checkout does not (or does differently).
@@ -41,6 +42,37 @@ export const NOT_LOCAL = new Set([
   'Install dependencies', // node_modules is already installed
   'Fetch the upstream file names', // ensurePin() below
 ]);
+
+// The Node version that CI resolved (test.yml `node-version: 24`) when this
+// file last changed. Issue #833: Node 24.4.0 on the Mac crashed a Jest worker
+// with a SIGSEGV in V8 garbage collection; CI had none in 300 runs.
+export const NODE_PIN_FILE = '.nvmrc';
+
+/** Pure: a WARN line when local and pinned major.minor differ, else null. */
+export function nodeVersionWarning(local, pinned) {
+  const mm = v =>
+    String(v || '')
+      .trim()
+      .replace(/^v/, '')
+      .split('.')
+      .slice(0, 2)
+      .join('.');
+  if (!mm(pinned) || mm(local) === mm(pinned)) return null;
+  return (
+    `WARN  local Node ${local} differs from the CI-matched Node ` +
+    `${String(pinned).trim()} in ${NODE_PIN_FILE}. A Jest worker crash ` +
+    `(SIGSEGV in V8 garbage collection, issue #833) happened on Node ` +
+    `24.4.0 only. Treat a worker crash here as a local Node defect first.`
+  );
+}
+
+function readNodePin() {
+  try {
+    return readFileSync(join(REPO, NODE_PIN_FILE), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
 
 /** Pure: the names of the blocking `run:` steps of a parsed workflow. */
 export function blockingSteps(doc) {
@@ -96,6 +128,8 @@ function ensurePin() {
 
 function main() {
   const event = process.argv.includes('--pr') ? 'pull_request' : 'schedule';
+  const nodeWarn = nodeVersionWarning(process.versions.node, readNodePin());
+  if (nodeWarn) console.log(nodeWarn);
   ensurePin();
   const results = [];
   for (const [file, name] of STEPS) {
@@ -120,6 +154,7 @@ function main() {
   for (const r of results)
     console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.name} (${r.seconds} s)`);
   if (event === 'pull_request') console.log(`  ${fixHasTestAdvisory()}`);
+  if (nodeWarn) console.log(`  ${nodeWarn}`);
   process.exit(results.every(r => r.ok) ? 0 : 1);
 }
 

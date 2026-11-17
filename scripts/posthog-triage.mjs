@@ -143,11 +143,15 @@ if (!TOKEN || !PROJECT) {
 // The events we track for health. app_opened is the denominator/anchor; the
 // rest are downstream features whose disappearance means something broke.
 const ANCHOR = 'app_opened';
+// `playback_skipped` left this list with TECH_DEBT #391: since then an app
+// build sends it only for a skip by the user, not for the automatic advance at
+// a track end, so its per-user rate falls from about the listening rate to the
+// skip rate. On the first such build the tripwire would read that as "reaches
+// ~0 users". A user who does not skip is not a broken feature.
 const KEY_EVENTS = [
   'app_opened',
   'playback_started',
   'playback_completed',
-  'playback_skipped',
   'meaningful_listen',
   'mushaf_page_opened',
 ];
@@ -188,7 +192,7 @@ const RATIOS = [
     hint: 'Mushaf usage dropped. Skia/SQLite preload or navigation into the Mushaf tab may be failing.',
   },
   // RETIRED 2026-06-13 (issue #163): skip_rate = playback_skipped / playback_started
-  // was structurally misleading. `playback_skipped` is ALSO emitted by auto-advance
+  // was structurally misleading. Until TECH_DEBT #391 (2026-11), `playback_skipped` was ALSO emitted by auto-advance
   // (skipToNext is called from handleTrackEnd on didJustFinish — services/player/store/
   // playerStore.ts:225 ← ExpoAudioProvider.tsx:536), so every naturally-completed track
   // in a queue fires playback_skipped(direction='next'). The ratio therefore tracks

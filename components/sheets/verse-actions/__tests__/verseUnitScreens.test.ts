@@ -32,6 +32,13 @@ import {
   unitPagerPage,
   wbwParts,
 } from '../verseUnitScreens';
+// @ai-start
+import {formatNumber} from '@/i18n/format';
+import enHome from '@/i18n/locales/en/home.json';
+import arHome from '@/i18n/locales/ar/home.json';
+import enContent from '@/i18n/locales/en/content.json';
+import arContent from '@/i18n/locales/ar/content.json';
+// @ai-end
 
 type FixtureDb = 'hafs' | 'warsh' | 'bazzi';
 const fixture =
@@ -145,6 +152,50 @@ describe('translation and tafsir pagers', () => {
     expect(tafseerBadge(passage(2, 2), page, 1)).toBe('HAFS 2:2');
     expect(tafseerBadge(passage(1, 1), page, 1)).toBeNull();
   });
+
+  // @ai-start — TECH_DEBT #409: the badge in the app language
+  it('builds the badge from the words and the digits it is given', () => {
+    const passage = {surahNumber: 67, fromAyah: 1, toAyah: 5};
+    const hafsPage = hafsPagerPage('67:1');
+    const english = {
+      verses: enHome.surahItem.columnVerses,
+      hafs: enContent.rewayah.short.hafs,
+      formatNumber: (value: number) => formatNumber(value, 'en'),
+    };
+    // English: the style sets the case, so the screen reads
+    // "VERSES 67:1 – 67:5" as before.
+    expect(tafseerBadge(passage, hafsPage, 1, english)).toBe(
+      'Verses 67:1 – 67:5',
+    );
+    expect(tafseerBadge(passage, hafsPage, 1, english)?.toUpperCase()).toBe(
+      'VERSES 67:1 – 67:5',
+    );
+    const page = {label: '67:2', hafsReferences: true};
+    expect(tafseerBadge({...passage, toAyah: 1}, page, 1, english)).toBe(
+      'Hafs 67:1',
+    );
+  });
+
+  it('shows Arabic words and Arabic-Indic digits in Arabic', () => {
+    const passage = {surahNumber: 67, fromAyah: 1, toAyah: 5};
+    const arabic = {
+      verses: arHome.surahItem.columnVerses,
+      hafs: arContent.rewayah.short.hafs,
+      formatNumber: (value: number) => formatNumber(value, 'ar'),
+    };
+    const n = arabic.formatNumber;
+    const badge = tafseerBadge(passage, hafsPagerPage('67:1'), 1, arabic);
+    expect(badge).toBe(`${arabic.verses} ${n(67)}:${n(1)} – ${n(67)}:${n(5)}`);
+    expect(badge?.startsWith(arabic.verses)).toBe(true);
+    expect(badge).not.toMatch(/[0-9A-Za-z]/);
+    expect(badge).toMatch(/[\u0660-\u0669]/);
+    // Another rewayah: the Hafs word and the digits are Arabic too.
+    const page = {label: '67:1', hafsReferences: true};
+    const hafsBadge = tafseerBadge(passage, page, 1, arabic);
+    expect(hafsBadge).toBe(`${arabic.hafs} ${badge}`);
+    expect(hafsBadge).not.toMatch(/[0-9A-Za-z]/);
+  });
+  // @ai-end
 
   it('shows a grouped tafsir passage once', () => {
     const a = {surahNumber: 2, fromAyah: 1, toAyah: 5, text: 'A'};

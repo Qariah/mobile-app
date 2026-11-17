@@ -61,7 +61,11 @@ import {shallowWatchBuilds} from './lib/release-watch.mjs';
 import {cardSection, evaluateOwnerActions} from './lib/owner-actions.mjs';
 import {dropOverlap, needsYouLines} from './lib/owner-queue.mjs';
 import {ownerOf} from './lib/owner-replies.mjs';
-import {approvalReply, candidates, parseEvents} from './lib/promotion-approval.mjs';
+import {
+  approvalReply,
+  candidates,
+  parseEvents,
+} from './lib/promotion-approval.mjs';
 import {
   fixedInLabelled,
   loadOwnerActions,
@@ -196,7 +200,10 @@ const hogql = query =>
 // The other three are the depth behind that headline:
 //   • meaningful_listen  — fired at 10% of the track or 30s, whichever is SMALLER
 //   • playback_completed — played through to the end
-//   • mushaf_page_opened — the reading side, which the play count is blind to
+//   • mushaf_page_opened — the reading side, which the play count is blind to.
+//     Since TECH_DEBT #391 an app build sends it once for each page in a Mushaf
+//     session (a swipe back to a page is not a new page), so "Mushaf pages" now
+//     counts distinct pages of each session, and falls as people update.
 const USAGE = [
   {key: 'plays', label: 'Recitations', events: ['playback_started']},
   {key: 'heard', label: 'Heard properly', events: ['meaningful_listen']},
@@ -724,7 +731,9 @@ function releaseLines() {
     const out = [];
     for (const c of candidates(events)) {
       if (c.state === 'no-approval' && c.action) {
-        out.push(`READY ${c.action} ${c.build}: to publish, comment on this issue: ${approvalReply(c)}`);
+        out.push(
+          `READY ${c.action} ${c.build}: to publish, comment on this issue: ${approvalReply(c)}`,
+        );
       } else if (['approved', 'in-progress'].includes(c.state)) {
         out.push(`${c.action} ${c.build}: ${c.state}, the Promoter has it`);
       } else if (['failed', 'stale'].includes(c.state)) {

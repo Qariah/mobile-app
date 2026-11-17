@@ -113,6 +113,28 @@ export function distinctTafseerResults(
   return out;
 }
 
+// @ai-start
+/**
+ * The words and the digits of a tafsir badge in the app language
+ * (TECH_DEBT #409). TafseerContent passes the translated words and
+ * `formatNumber`, and its style sets the case ("VERSES" in English).
+ */
+export interface TafseerBadgeLabels {
+  /** The word for verses: "Verses", "الآيات". */
+  verses: string;
+  /** The word for the Hafs rewayah: "Hafs", "حفص". */
+  hafs: string;
+  /** Formats a surah or ayah number with the app's digits. */
+  formatNumber: (value: number) => string;
+}
+
+const DEFAULT_BADGE_LABELS: TafseerBadgeLabels = {
+  verses: 'VERSES',
+  hafs: 'HAFS',
+  formatNumber: String,
+};
+// @ai-end
+
 /**
  * The badge over a tafsir passage, or null. Hafs: "VERSES 2:1 – 2:5" for a
  * grouped passage, as before. Another rewayah: a passage is keyed by Hafs
@@ -123,16 +145,21 @@ export function tafseerBadge(
   result: Pick<TafseerResult, 'surahNumber' | 'fromAyah' | 'toAyah'>,
   page: Pick<VersePagerPage, 'label' | 'hafsReferences'>,
   passages: number,
+  labels: TafseerBadgeLabels = DEFAULT_BADGE_LABELS, // @ai
 ): string | null {
-  const {surahNumber: s, fromAyah: from, toAyah: to} = result;
+  // @ai-start
+  const {surahNumber, fromAyah: from, toAyah: to} = result;
+  const n = labels.formatNumber;
+  const s = n(surahNumber);
   if (from !== to) {
-    const range = `VERSES ${s}:${from} – ${s}:${to}`;
-    return page.hafsReferences ? `HAFS ${range}` : range;
+    const range = `${labels.verses} ${s}:${n(from)} – ${s}:${n(to)}`;
+    return page.hafsReferences ? `${labels.hafs} ${range}` : range;
   }
   if (!page.hafsReferences) return null;
-  return passages > 1 || `${s}:${from}` !== page.label
-    ? `HAFS ${s}:${from}`
+  return passages > 1 || `${surahNumber}:${from}` !== page.label
+    ? `${labels.hafs} ${s}:${n(from)}`
     : null;
+  // @ai-end
 }
 
 /** A Hafs verse shown word by word, with its caption ("Hafs 2:6") if any. */

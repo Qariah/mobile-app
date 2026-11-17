@@ -28,6 +28,10 @@ BRANCH="${BRANCH:-qariah-main}"
 #   .github/workflows/lint.yml                  → "TypeScript, duplicate keys, Qariah-owned ESLint, branding (blocking); Prettier, full ESLint (advisory)"
 #     (since 2026-10-25 it also runs the branding check; branding-conformance.yml is gone)
 #   .github/workflows/test.yml                  → "Jest"
+#   Since 2026-11-15 (issue #906, TECH_DEBT #359) the duplicate-key, Qariah-owned
+#   ESLint, branding and script-test steps run in .github/workflows/qariah-checks.yml
+#   ("Qariah checks (...)"). The lint.yml job keeps its name, because it is a
+#   required check. scripts/__tests__/ci-required-checks.test.mjs checks the names.
 #
 # `claude-code-review.yml` ("claude-review") is NOT required: since 2026-09-27 it
 # runs only when someone adds the `claude-review` label, so most PRs never get it.

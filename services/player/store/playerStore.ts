@@ -18,6 +18,10 @@ import {computeQueueRemoval} from './queueRemoval'; // @ai
 import {expoAudioService} from '@/services/audio/ExpoAudioService';
 import {audioCoordinator} from '@/services/audio/AudioCoordinator';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {
+  markAutoplayStart,
+  noteSeek,
+} from '@/services/analytics/qariahEventGates'; // @ai Qariah (TECH_DEBT #391)
 import {guardedJSONStorage} from '@/services/storage/hydrationGuardedStorage';
 
 const STORAGE_KEY = 'player-store';
@@ -50,7 +54,8 @@ export interface PlayerStoreState extends Omit<UnifiedPlayerState, 'ui'> {
   // Playback Actions
   play: () => Promise<void>;
   pause: () => Promise<void>;
-  skipToNext: () => Promise<void>;
+  /** @ai Qariah (TECH_DEBT #391): `auto` = the queue advanced by itself; no playback_skipped. */
+  skipToNext: (options?: {auto?: boolean}) => Promise<void>;
   skipToPrevious: () => Promise<void>;
   seekTo: (position: number) => Promise<void>;
   setRate: (rate: number) => Promise<void>;
@@ -416,15 +421,17 @@ export const usePlayerStore = create<PlayerStoreState>()(
         }
       },
 
-      skipToNext: async () => {
+      skipToNext: async (options?: {auto?: boolean}) => {
         diagBreadcrumb('playback', {action: 'skipToNext'});
         const state = get();
         const {tracks, currentIndex} = state.queue;
         const {repeatMode} = state.settings;
+        const auto = options?.auto === true; // @ai Qariah (TECH_DEBT #391)
 
         // Fire analytics before advancing
         const currentTrack = tracks[currentIndex];
-        if (currentTrack?.surahId && !currentTrack.isUserUpload) {
+        // @ai Qariah (TECH_DEBT #391): an automatic advance is not a skip.
+        if (!auto && currentTrack?.surahId && !currentTrack.isUserUpload) {
           analyticsService.trackPlaybackSkipped({
             surah_id: parseInt(currentTrack.surahId, 10),
             reciter_id: currentTrack.reciterId,
@@ -454,6 +461,9 @@ export const usePlayerStore = create<PlayerStoreState>()(
               return;
             }
           }
+
+          // @ai Qariah (TECH_DEBT #391): the next playback_started says 'autoplay'.
+          markAutoplayStart(auto ? tracks[nextIndex]?.id : null);
 
           // Optimistic update: set currentIndex immediately so UI updates instantly
           set(state => ({
@@ -599,7 +609,8 @@ export const usePlayerStore = create<PlayerStoreState>()(
         try {
           const currentTrack = get().queue.tracks[get().queue.currentIndex];
           if (currentTrack?.surahId && !currentTrack.isUserUpload) {
-            analyticsService.trackPlaybackSeeked({
+            // @ai Qariah (TECH_DEBT #391): one playback_seeked for a run of seeks.
+            noteSeek(currentTrack.id, {
               surah_id: parseInt(currentTrack.surahId, 10),
               from_ms: Math.round(get().playback.position * 1000),
               to_ms: Math.round(position * 1000),

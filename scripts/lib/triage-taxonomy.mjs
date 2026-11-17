@@ -86,6 +86,14 @@ export const BUCKETS = {
     heading: 'Waiting for a release (fix built, not yet in production)',
     loopEligible: false,
   },
+  // Qariah (2026-11-11): TECH_DEBT rows and feature asks with a valid `### Scope`
+  // block (scripts/lib/scope-block.mjs). The auto-sprint picks them up
+  // (`scopedPickup` in docs/operations/auto-sprint-policy.json); the fix loop does not.
+  scoped: {
+    emoji: '🧩',
+    heading: 'Scoped work (TECH_DEBT and features, ready for the auto-sprint)',
+    loopEligible: false,
+  },
   wontfix: {emoji: '🗑️', heading: "Won't fix / not-a-bug", loopEligible: false},
   other: {emoji: '❔', heading: 'Uncategorised', loopEligible: false},
 };
@@ -271,6 +279,19 @@ export function classify(issue, ledger = {}) {
         : 'promoted with evidence (loop-actionable label)';
     return out('actionable', reason, {loopEligible});
   }
+
+  // 4c. SCOPED — a TECH_DEBT row or a feature ask (or a bundle) written up with a
+  //     `### Scope` block (scripts/lib/scope-block.mjs) and labelled `scoped`. Rules
+  //     1–4b keep winning (a decision label holds it; a fixed-in label waits for
+  //     production). The auto-sprint re-validates the block before it builds it.
+  if (has(labels, 'scoped'))
+    return out(
+      'scoped',
+      pinned
+        ? 'scoped work, pinned-open (under active work — skip)'
+        : 'scoped work (Scope block) — the auto-sprint picks it up',
+      {isFeature: has(labels, 'enhancement') || has(labels, 'feature-request')},
+    );
 
   // 5. Store review — a star review, no stack. (Often mislabelled `bug`.)
   if (

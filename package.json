@@ -8,8 +8,8 @@
     "bootstrap": "node scripts/bootstrap-android-local-properties.js",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo $JAVA_HOME) PATH=$JAVA_HOME/bin:$PATH expo run:android",
-    "ios": "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 expo run:ios",
+    "android": "node scripts/sync-widget-fonts.js && JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo $JAVA_HOME) PATH=$JAVA_HOME/bin:$PATH expo run:android",
+    "ios": "node scripts/sync-widget-fonts.js && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 expo run:ios",
     "web": "expo start --web",
     "test": "jest --watchAll",
     "test:ci": "jest --watchAll=false --ci --reporters=default",
@@ -19,6 +19,7 @@
     "generate:widget-data": "tsx scripts/generate-widget-data.ts",
     "check:rewayah-manifest": "node scripts/rewayah/gen-manifest.mjs --check",
     "eas-build-pre-install": "node scripts/rewayah/gen-manifest.mjs --check",
+    "eas-build-post-install": "node scripts/sync-widget-fonts.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "i18n:check": "i18next-cli extract --ci --dry-run && i18next-cli lint",
@@ -52,6 +53,7 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "workerIdleMemoryLimit": "1GB",
     "modulePathIgnorePatterns": [
       "<rootDir>/.claude/worktrees/"
     ],

@@ -80,6 +80,7 @@ import PageEdgeDecoration, {
   EDGE_HORIZONTAL_INSET,
 } from './PageEdgeDecoration';
 import {analyticsService} from '@/services/analytics/AnalyticsService';
+import {firstOpenInSession} from '@/services/analytics/qariahEventGates'; // @ai Qariah (TECH_DEBT #391)
 import {
   qcfFontLoader,
   getQCFFontVariant,
@@ -620,6 +621,7 @@ type AskedSurah = {surahId: number; page: number}; // @ai
 export default function MushafViewer({
   pageNumber: initialPage,
   initialSurahId,
+  initialVerseKey, // @ai TECH_DEBT #411: the List views start at it
 }: MushafViewerProps) {
   // QARIAHV2-C: an OEM can destroy the Activity in the background; ignore the benign deactivate rejection.
   useKeepAwake(undefined, {suppressDeactivateWarnings: true});
@@ -957,6 +959,7 @@ export default function MushafViewer({
   const sessionStartRef = useRef<number>(Date.now());
   const pagesOpenedRef = useRef<number>(1);
   const pagesReadRef = useRef<number>(0);
+  const openedPagesRef = useRef(new Set<number>()); // @ai Qariah (TECH_DEBT #391)
 
   const trackPageChange = useCallback(
     (page: number) => {
@@ -964,11 +967,14 @@ export default function MushafViewer({
       const juzNumber = getJuzForPage(page);
 
       // Fire page_opened
-      analyticsService.trackMushafPageOpened({
-        page_number: page,
-        surah_id: surahId,
-        juz_number: juzNumber,
-      });
+      // @ai Qariah (TECH_DEBT #391): once for each page in a Mushaf session.
+      if (firstOpenInSession(openedPagesRef.current, page)) {
+        analyticsService.trackMushafPageOpened({
+          page_number: page,
+          surah_id: surahId,
+          juz_number: juzNumber,
+        });
+      }
       pagesOpenedRef.current += 1;
 
       // Clear existing page_read timer
@@ -1523,6 +1529,7 @@ export default function MushafViewer({
             onCurrentPageChange={handleContinuousPageChange}
             width={readingPageSize?.width} // @ai
             scrollsToTop={scrollsToTop} // @ai
+            initialVerseKey={initialVerseKey} // @ai TECH_DEBT #411
           />
         ) : metrics.facingPages && viewMode === 'mushaf' ? (
           <FlatList
@@ -1595,6 +1602,11 @@ export default function MushafViewer({
                     // @ai TECH_DEBT #265 — the page takes the pager item size.
                     metrics={metrics}
                     pageSize={readingPageSize} // @ai
+                    // @ai TECH_DEBT #411: the page the reader opened at
+                    // starts at the verse it opened for.
+                    startVerseKey={
+                      item === initialPage ? initialVerseKey : undefined
+                    }
                   />
                 );
               }

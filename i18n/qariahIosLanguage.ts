@@ -92,24 +92,17 @@ function appLanguageModule(): AppLanguageModule | null {
 let writtenThisSession: string | null = null;
 
 /**
- * The device's language codes, without the per-app value that Qariah wrote.
- * Null when no Qariah value is active (or not iOS, or an older binary): then
- * `expo-localization` already reports the device languages. While a Qariah
- * value is active, `getLocales()` returns that value first, so "System
- * default" would resolve to the in-app choice (Sprint 47 review).
+ * The device's language codes, without a per-app value that Qariah wrote.
+ * Always null since Pass D (TECH_DEBT #406, issue #900): upstream's iOS
+ * language screen hands the choice to the iOS Settings app, and
+ * `migratePreferenceToSystemSettings` (i18n/language.ts) moves an old in-app
+ * choice into `AppleLanguages`. So the per-app value is the person's own
+ * choice, and `expo-localization` reports it first, as iOS launches with it.
+ * Skipping it showed the device language in the app while UIKit ran in the
+ * per-app language. Kept so that the seam in `getDeviceLanguage` stays put.
  */
 export function deviceLanguagesWithoutOverride(): string[] | null {
-  try {
-    if (Platform?.OS !== 'ios') return null;
-    const marker = Settings.get(MARKER);
-    if (typeof marker !== 'string' || !marker) return null;
-    const native = appLanguageModule();
-    const tags = native?.getSystemLanguages?.();
-    if (!Array.isArray(tags) || tags.length === 0) return null;
-    return tags.map(tag => tag.split(/[-_]/)[0]);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**
@@ -126,14 +119,15 @@ export function syncIosAppLanguage(preference: LanguagePreference): boolean {
     const written = typeof marker === 'string' && marker ? marker : null;
     if (preference === 'system') {
       if (!written) return false;
-      // Remove our value only while it is still the active one, never a
-      // per-app language that the person set in the iOS Settings app.
-      const ours =
-        writtenThisSession === written || readFirstAppleLanguage() === written;
-      if (ours) native.setPreferredLanguage(null);
+      // Never remove the per-app language here (TECH_DEBT #406, issue #900).
+      // Since Pass D the preference is 'system' on iOS only after
+      // `migratePreferenceToSystemSettings` moved an old in-app choice into
+      // `AppleLanguages`: removing "our" value then threw the person's own
+      // language away at the first launch after the update. Only the marker
+      // of the old sync goes.
       Settings.set({[MARKER]: ''});
       writtenThisSession = null;
-      return ours;
+      return false;
     }
     if (written === preference && readFirstAppleLanguage() === preference) {
       return false;

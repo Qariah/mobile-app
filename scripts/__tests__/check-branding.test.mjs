@@ -86,7 +86,7 @@ describe('check-branding.sh', () => {
     assert.equal(r.status, 0, r.out);
   });
 
-  describe('a lowercase brand file name (GitHub #731)', () => {
+  describe('a brand file name (GitHub #731)', () => {
     const LOWER = NAME.toLowerCase();
 
     it('fails on a user-visible file name in a template literal', () => {
@@ -101,6 +101,19 @@ describe('check-branding.sh', () => {
       assert.match(r.out, /components\/Fixture\.tsx:2:/);
       assert.match(r.out, /GitHub #731/);
     });
+
+    // TECH_DEBT #394: the match is case-blind and the separator is optional.
+    for (const fileName of [
+      `${NAME.toUpperCase()}-share.png`,
+      `${LOWER}Share.png`,
+    ]) {
+      it(`fails on ${fileName}`, () => {
+        const r = check(`export const file = '${fileName}';\n`);
+        assert.equal(r.status, 1, r.out);
+        assert.match(r.out, /components\/Fixture\.tsx:1:/);
+        assert.match(r.out, /GitHub #731/);
+      });
+    }
 
     it('passes a resource name, an identifier and a comment', () => {
       const r = check(

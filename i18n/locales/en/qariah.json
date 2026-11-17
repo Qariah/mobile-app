@@ -458,7 +458,8 @@
       "features": {
         "0": "iPad: a layout made for the larger screen, with your Collection in a sidebar, wider rows, Settings in two columns and the player in two panes",
         "1": "iPad: Tafsir, Reflections and Personal Notes open in a panel beside the Mushaf page in a wide window, and as a centred card in a narrow one",
-        "2": "Lite mode on Android phones with less than 3 GB of memory or a 32-bit processor: simpler and faster screens that keep listening, reciter profiles, downloads, background audio and Mushaf reading. Settings › Lite mode offers Automatic, On and Off; the choice applies at the next launch"
+        "2": "Lite mode on Android phones with less than 3 GB of memory or a 32-bit processor: simpler and faster screens that keep listening, reciter profiles, downloads, background audio and Mushaf reading. Settings › Lite mode offers Automatic, On and Off; the choice applies at the next launch",
+        "3": "Shortcuts to Continue listening, Continue reading and Search: touch and hold the Qariah icon on Android, or type Qariah in Spotlight on iPhone and iPad"
       },
       "improvements": {
         "0": "The splash screen no longer waits for the Mushaf data on low-memory Android phones",
@@ -467,7 +468,8 @@
         "3": "The Mushaf keeps its line layout across launches and loads the word data faster",
         "4": "The player keeps its position and its queue up to date while the app is in the background, so the return after a long listen does not freeze",
         "5": "Android: lighter now-playing bars that stop when their screen is not on view",
-        "6": "Android: the app stops its screen animations while it is in the background, so it uses less battery when you are not looking at it"
+        "6": "Android: the app stops its screen animations while it is in the background, so it uses less battery when you are not looking at it",
+        "7": "Accessibility: VoiceOver reads the toolbar buttons on iPhone and iPad, small buttons have a larger touch area, and card captions have more contrast"
       },
       "fixes": {
         "0": "iPhone: playback no longer freezes for a few seconds when a recitation starts",

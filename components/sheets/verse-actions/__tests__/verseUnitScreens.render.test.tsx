@@ -16,7 +16,7 @@
  */
 import React, {act} from 'react';
 import TestRenderer from 'react-test-renderer';
-import {Text} from 'react-native';
+import {StyleSheet, Text} from 'react-native'; // @ai: StyleSheet
 
 const mockLog: Array<[string, Record<string, unknown>]> = [];
 function mockRecord(name: string, props: Record<string, unknown>) {
@@ -229,18 +229,25 @@ async function render(element: Parameters<typeof TestRenderer.create>[0]) {
   await settle();
 }
 
-/** Every string drawn in a Text. */
+// @ai-start — the strings as drawn: the tafsir range line reads its words
+// from i18n and its style sets the case (TECH_DEBT #409).
+/** Every string drawn in a Text, in the case its style draws it. */
 function texts(): string[] {
   return renderer!.root
     .findAll(n => (n.type as unknown) === Text)
-    .map(n =>
-      ([] as unknown[])
+    .map(n => {
+      const text = ([] as unknown[])
         .concat(n.props.children)
         .filter(c => typeof c === 'string' || typeof c === 'number')
-        .join(''),
-    )
+        .join('');
+      const style = StyleSheet.flatten(n.props.style) as
+        | {textTransform?: string}
+        | undefined;
+      return style?.textTransform === 'uppercase' ? text.toUpperCase() : text;
+    })
     .filter(Boolean);
 }
+// @ai-end
 
 async function press(label: string) {
   const target = renderer!.root

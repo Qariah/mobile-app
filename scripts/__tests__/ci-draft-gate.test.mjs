@@ -10,6 +10,7 @@ for (const [file, job] of [
   ['test.yml', 'jest'],
   ['lint.yml', 'check'],
   ['url-leak-guard.yml', 'url-leaks'],
+  ['qariah-checks.yml', 'qariah'],
 ]) {
   test(`${file}: a draft skips, and ready_for_review and later pushes run`, () => {
     const text = readFileSync(

@@ -22,11 +22,13 @@ import {sqlList} from './lab-exclusion.mjs';
 // starts at Opened. True downloads need App Store Connect (Sales & Trends) or
 // the Play reports bucket.
 //
-// "Logged in" counts the people who signed in on a counted build. PostHog does
-// not know who is ALREADY signed in: the app never calls identify() and sends
-// no signed-in property, so a person who signed in on an older build and
-// stayed signed in does not count. The number is a floor until the app reports
-// its signed-in state on each launch.
+// "Logged in" counts the people who sent `sign_in_succeeded`, or any event with
+// `properties.signed_in = true`. Since PR #576 the app sets the `signed_in`
+// super property on each launch (`AnalyticsService.setSignedIn()`), so a person
+// who signed in on an older build and stayed signed in counts too. The count is
+// full for the builds that send the super property (the production builds since
+// iOS 3772 and Android vc3763). An older build sends `signed_in` only on
+// `onboarding_completed`, so for it the count is still a floor (TECH_DEBT #239).
 export const STEPS = [
   {
     key: 'installed',
@@ -47,7 +49,7 @@ export const STEPS = [
     key: 'logged_in',
     label: 'Logged in',
     events: ['sign_in_succeeded'],
-    or: "(event = 'onboarding_completed' AND properties.signed_in = true)",
+    or: 'properties.signed_in = true',
   },
   {
     key: 'started',

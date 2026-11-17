@@ -13,7 +13,8 @@
  *
  *   loading        → spinner card
  *   empty          → null (no DOM — keep the Mushaf clean)
- *   error          → null (silent — the provider reports to Sentry)
+ *   error          → null (silent — the provider reports to Sentry);
+ *                    a mount after the back-off fetches again (below)
  *   1 reflection   → 1 reflection card
  *   N>1            → 1 reflection card + "View N-1 more" link
  *
@@ -26,7 +27,10 @@
  *
  * The render state is module-local (one map shared by every mounted verse
  * row), so a recycled or re-mounted row shows its known state at once and
- * scrolling away and back does not refetch. The provider
+ * scrolling away and back does not refetch. An errored verse is the
+ * exception (TECH_DEBT #388): a mount 30 s or more after the failure
+ * fetches again, and each further failure doubles the wait, to at most
+ * 5 min (`retryDelayMs`). The provider
  * (`services/userState/communityReflectionsProvider.ts`) shares the request
  * with the action-sheet popup.
  */
@@ -54,6 +58,28 @@ interface CacheEntry {
   data?: CommunityReflection[];
   /** ms epoch — an idempotency guard if a stale promise resolves after a newer one. */
   startedAt: number;
+  /** Failed fetches in a row for this verse (0 after a success). */
+  failures?: number;
+  /** ms epoch of the last failure ('error' entries only). */
+  failedAt?: number;
+}
+
+/** The wait after the first failure; each further failure doubles it. */
+export const RETRY_BASE_MS = 30_000;
+/** The longest wait between two fetches of an errored verse. */
+export const RETRY_MAX_MS = 5 * 60_000;
+
+/** The wait after `failures` failed fetches in a row (failures >= 1). */
+export function retryDelayMs(failures: number): number {
+  const doublings = Math.max(0, failures - 1);
+  return Math.min(RETRY_BASE_MS * 2 ** doublings, RETRY_MAX_MS);
+}
+
+/** True when a mount must fetch: no entry, or an error whose wait passed. */
+function needsFetch(entry: CacheEntry | undefined, now: number): boolean {
+  if (!entry) return true;
+  if (entry.state !== 'error') return false;
+  return now - (entry.failedAt ?? 0) >= retryDelayMs(entry.failures ?? 1);
 }
 
 // Module-local — shared across all verse rows in the JS context.
@@ -85,7 +111,9 @@ async function fetchReflections(
   const provider = branding.communityReflectionsProvider;
   if (!provider) return; // the upstream wrapper gates on this
   const startedAt = Date.now();
-  cache.set(verseKey, {state: 'loading', startedAt});
+  // Keep the failure count, so that the next failure doubles the wait.
+  const failures = cache.get(verseKey)?.failures ?? 0;
+  cache.set(verseKey, {state: 'loading', startedAt, failures});
   notify(verseKey);
   try {
     const data = await provider(surahNumber, ayahNumber, 'en');
@@ -98,7 +126,12 @@ async function fetchReflections(
     // The provider already reported the failure to Sentry.
     const cur = cache.get(verseKey);
     if (cur && cur.startedAt !== startedAt) return;
-    cache.set(verseKey, {state: 'error', startedAt});
+    cache.set(verseKey, {
+      state: 'error',
+      startedAt,
+      failures: failures + 1,
+      failedAt: Date.now(),
+    });
     notify(verseKey);
   }
 }
@@ -121,8 +154,8 @@ export function QuranReflectAyahReflections({
   const [, setTick] = useState(0);
   useEffect(() => {
     const unsubscribe = subscribe(verseKey, () => setTick(tick => tick + 1));
-    // Kick off a fetch if we haven't yet for this verse
-    if (!cache.has(verseKey)) {
+    // Fetch when this verse has no entry yet, or when its error's wait passed
+    if (needsFetch(cache.get(verseKey), Date.now())) {
       void fetchReflections(verseKey, surahNumber, ayahNumber);
     }
     return unsubscribe;

@@ -54,7 +54,7 @@ export const DEFINITIONS = {
   installs:
     'distinct installs (PostHog person_id) with any event on the build in the window. The platform of an install on a build is iOS when any of its events there says iOS or iPadOS, else Android. A person who updated counts under each build they used, so the rows add up to more than all',
   journey:
-    'installs that reached each step in the window, on that build (the Daily card steps, scripts/lib/journey-steps.mjs): Opened = cold_start_began; Past loading = splash_hidden or screen_content_rendered; Logged in = sign_in_succeeded, or onboarding_completed with signed_in = true (a floor); Started = playback_started or mushaf_page_opened; Really used = meaningful_listen, mushaf_page_read or playback_completed',
+    'installs that reached each step in the window, on that build (the Daily card steps, scripts/lib/journey-steps.mjs): Opened = cold_start_began; Past loading = splash_hidden or screen_content_rendered; Logged in = sign_in_succeeded, or any event with signed_in = true (a floor on builds before PR #576); Started = playback_started or mushaf_page_opened; Really used = meaningful_listen, mushaf_page_read or playback_completed',
   rows: 'one row for each production build (active-rollout.json card.builds) and each older build with 25 or more installs in the window; beta = the builds whose version is above the newest production version, in one row; other = the remaining builds (under 25 installs each), in one row. A group row counts each install once',
 };
 

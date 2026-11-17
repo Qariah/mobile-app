@@ -62,11 +62,57 @@ export function decideCandidate({
 }
 
 /**
+ * The evidence slug of an Android claim (`pixel3`, `a10s`), or null for an iOS
+ * claim. The artifact name `android-<slug>-…` decides first; else the device name.
+ */
+export function androidSlug(r) {
+  const base = String(r.artifact || '')
+    .split('/')
+    .pop();
+  const m = base.match(/^android-([a-z0-9]+)-/);
+  if (m) return m[1];
+  const d = String(r.device || '');
+  if (!/pixel|galaxy|samsung|android|a10s/i.test(d)) return null;
+  return (
+    d
+      .toLowerCase()
+      .replace(/galaxy|samsung/g, '')
+      .replace(/[^a-z0-9]/g, '') || null
+  );
+}
+
+/** The file that scripts/android-evidence-install.sh writes for a slug. */
+export const installFileName = slug => `android-${slug}-install.txt`;
+
+/**
+ * One line about the install file of an Android claim (issue #832). A missing
+ * file means that the build on the device is not recorded.
+ */
+export function installLine(slug, text, build) {
+  const name = installFileName(slug);
+  if (text == null)
+    return `  install: MISSING ${name}. The build on the device is not recorded, so this claim does not prove the build.`;
+  const code = (text.match(/versionCode=(\d+)/) || [])[1];
+  const ver = (text.match(/versionName=(\S+)/) || [])[1];
+  if (!code) return `  install: ${name} has no versionCode. Open it.`;
+  const same =
+    build == null || build === '?'
+      ? 'the claim has no build'
+      : String(build) === code
+        ? 'equals the claim build'
+        : `DIFFERS from the claim build ${build}`;
+  return `  install: ${name} versionCode=${code} versionName=${ver || '?'} (${same})`;
+}
+
+/**
  * The claims in the lines of results.ndjson files, oldest directory first.
  * kind `cases`: each PASS, to run again. kind `artifacts`: each PASS with its
  * artifact, to open; a PASS with no artifact prints NO ARTIFACT, a failed claim.
+ * For an Android artifact claim, `readInstall(fileName)` gives the text of the
+ * install file in the same evidence directory, or null; the claim then has an
+ * `install:` line.
  */
-export function claimsFrom(lines, kind) {
+export function claimsFrom(lines, kind, {readInstall} = {}) {
   const out = [];
   for (const line of lines) {
     let r;
@@ -77,7 +123,15 @@ export function claimsFrom(lines, kind) {
     }
     if (r.result !== 'PASS' || !r.case) continue;
     const id = `${r.case} ${r.device || '?'} ${r.build || '?'}`;
-    out.push(kind === 'cases' ? id : `${id} ${r.artifact || 'NO ARTIFACT'}`);
+    if (kind === 'cases') {
+      out.push(id);
+      continue;
+    }
+    let claim = `${id} ${r.artifact || 'NO ARTIFACT'}`;
+    const slug = readInstall && androidSlug(r);
+    if (slug)
+      claim += `\n${installLine(slug, readInstall(installFileName(slug)), r.build)}`;
+    out.push(claim);
   }
   return out;
 }

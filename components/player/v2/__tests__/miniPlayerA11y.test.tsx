@@ -173,3 +173,33 @@ describe.each(bars)('$name accessibility (#401)', ({Component}) => {
     expect(mockExpandPlayerSheet).toHaveBeenCalledTimes(1);
   });
 });
+
+// @ai TECH_DEBT #260 (issue #896): on Android, `accessibilityViewIsModal` on
+// the full player does nothing, so TalkBack walked the screens and the mini
+// player behind the open player. The root Stack's wrapper hides them.
+describe('the app behind the open full player (Android)', () => {
+  const {
+    behindPlayerImportance,
+  } = require('@/components/player/v2/PlayerModalStack');
+
+  it('hides the app behind the open player from TalkBack', () => {
+    expect(behindPlayerImportance('full', 'android', true)).toBe(
+      'no-hide-descendants',
+    );
+  });
+
+  it('keeps the app and the mini player reachable while the player is closed', () => {
+    expect(behindPlayerImportance('hidden', 'android', true)).toBe('auto');
+    expect(behindPlayerImportance('mini', 'android', true)).toBe('auto');
+  });
+
+  it('keeps the app reachable when the sheet is full but no player is drawn', () => {
+    // A widget deep link with an empty queue, or the state restore: PlayerHost
+    // draws nothing, so nothing covers the app.
+    expect(behindPlayerImportance('full', 'android', false)).toBe('auto');
+  });
+
+  it('leaves iOS to accessibilityViewIsModal', () => {
+    expect(behindPlayerImportance('full', 'ios', true)).toBe('auto');
+  });
+});

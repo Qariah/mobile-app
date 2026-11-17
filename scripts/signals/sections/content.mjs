@@ -25,7 +25,10 @@
 //                      (TECH_DEBT #296).
 //   mushafPagesRead    mushaf_page_read (15 s or more on a page) by page_number
 //                      (1 to 604); surah = the surah_id most installs sent with it.
-//   mushafPagesOpened  mushaf_page_opened by page_number, the same way.
+//   mushafPagesOpened  mushaf_page_opened by page_number, the same way. Since
+//                      TECH_DEBT #391 an app build sends it once for each page
+//                      in a Mushaf session (before: each open), so `events`
+//                      falls as people update; `installs` does not.
 //   bookmarks, highlights  "notInstrumented": the app sends no event for them
 //                      (TECH_DEBT #297).
 //
@@ -479,7 +482,7 @@ export function shape(listenRows, mushafRows, to, names = EMPTY) {
         mushafPagesRead:
           'mushaf_page_read (the page stayed visible for 15 s or more) by page_number (1 to 604); surah = the surah_id most installs sent with the page',
         mushafPagesOpened:
-          'mushaf_page_opened by page_number; opening a page is not reading it',
+          'mushaf_page_opened by page_number; opening a page is not reading it; since TECH_DEBT #391 an app build sends it once for each page in a Mushaf session (before: each open), so events fall as people update and installs do not',
         totals:
           'distinct installs and event counts over the whole window (listeners/listens = meaningful_listen, completers/completions = playback_completed, readers/pagesRead = mushaf_page_read, openers/pagesOpened = mushaf_page_opened)',
         distinct:

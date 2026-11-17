@@ -222,3 +222,105 @@ test('splitTemplate keeps braces inside an expression', async () => {
   ]);
   assert.deepEqual(splitTemplate('no template'), [{text: 'no template'}]);
 });
+
+// ---- tap by accessibility id (TECH_DEBT #352) ----
+
+/**
+ * A mock WebDriverAgent client: it records each HTTP call and answers from a small model of a
+ * screen. `elements` maps an accessibility id to its rect; `source` is the tree of `/source`.
+ */
+async function mockWda({elements = {}, source = tree, windowSize} = {}) {
+  const {Wda} = await import('../iphone/lib/wda.mjs');
+  const calls = [];
+  const wda = new Wda({udid: 'mock', baseUrl: 'http://mock'});
+  wda.sessionId = 'S';
+  wda.call = async (method, path, body) => {
+    calls.push({method, path, body});
+    if (path === '/source?format=json') return source;
+    if (path.endsWith('/wda/alert/buttons')) return [];
+    if (path.endsWith('/window/size'))
+      return windowSize || {width: 393, height: 852};
+    if (path.endsWith('/element') && body?.using === 'accessibility id') {
+      if (!elements[body.value]) {
+        const err = new Error('no such element');
+        err.status = 404;
+        throw err;
+      }
+      return {ELEMENT: `uuid-${body.value}`};
+    }
+    const rectPath = path.match(/\/element\/uuid-(.+)\/rect$/);
+    if (rectPath) return elements[rectPath[1]];
+    if (path.endsWith('/wda/tap')) return null;
+    if (/\/element\/uuid-.+\/name$/.test(path)) return 'XCUIElementTypeButton';
+    const labelPath = path.match(/\/element\/uuid-(.+)\/attribute\/label$/);
+    if (labelPath) return `Label of ${labelPath[1]}`;
+    throw new Error(`unexpected call ${method} ${path}`);
+  };
+  return {wda, calls};
+}
+
+const treeReads = calls =>
+  calls.filter(c => c.path === '/source?format=json').length;
+const taps = calls => calls.filter(c => c.path.endsWith('/wda/tap'));
+
+test('tap: an id selector taps with no tree request', async () => {
+  const {wda, calls} = await mockWda({
+    elements: {'search-button': rect(300, 60, 44, 44)},
+  });
+  const node = await wda.tap({id: 'search-button'}, {timeoutMs: 1000});
+  assert.equal(treeReads(calls), 0);
+  assert.deepEqual(taps(calls)[0].body, {x: 322, y: 82});
+  assert.equal(node.id, 'search-button');
+  assert.equal(node.type, 'XCUIElementTypeButton');
+  assert.equal(node.label, 'Label of search-button');
+  assert.deepEqual(node.rect, rect(300, 60, 44, 44));
+});
+
+test('tap: a text selector still reads the tree', async () => {
+  const {wda, calls} = await mockWda();
+  const node = await wda.tap('Surahs', {timeoutMs: 1000});
+  assert.equal(treeReads(calls), 1);
+  assert.equal(
+    calls.filter(c => c.body?.using === 'accessibility id').length,
+    0,
+  );
+  assert.equal(node.label, 'Surahs');
+  assert.deepEqual(taps(calls)[0].body, {x: 195, y: 195});
+});
+
+test('tap: an id that the fast query misses falls back to the tree', async () => {
+  const {wda, calls} = await mockWda({elements: {}});
+  const node = await wda.tap({id: 'recitation-card'}, {timeoutMs: 1000});
+  assert.equal(treeReads(calls), 1);
+  assert.equal(node.id, 'recitation-card');
+  assert.equal(taps(calls).length, 1);
+});
+
+test('tap: an id off screen or in the bottom band falls back to the tree', async () => {
+  for (const r of [
+    rect(30, 2000, 100, 40),
+    rect(0, 0, 0, 0),
+    rect(10, 780, 100, 40),
+  ]) {
+    const {wda, calls} = await mockWda({elements: {'recitation-card': r}});
+    await wda.tap({id: 'recitation-card'}, {timeoutMs: 1000});
+    assert.equal(treeReads(calls), 1, JSON.stringify(r));
+  }
+});
+
+test('tap: a miss in both paths keeps the error text of the tree path', async () => {
+  const {wda} = await mockWda({elements: {}});
+  await assert.rejects(
+    wda.tap({id: 'no-such-id'}, {timeoutMs: 1, intervalMs: 1}),
+    /not visible after 1 ms: \{"id":"no-such-id"\}/,
+  );
+});
+
+test('tap: a regular expression, an index or a second key needs the tree', async () => {
+  const {Wda} = await import('../iphone/lib/wda.mjs');
+  assert.equal(Wda.fastId({id: 'mini-player-bar'}), 'mini-player-bar');
+  assert.equal(Wda.fastId({id: 'recitation-card', index: 0}), null);
+  assert.equal(Wda.fastId({id: 'reciter-.*'}), null);
+  assert.equal(Wda.fastId({id: 'a', text: 'b'}), null);
+  assert.equal(Wda.fastId('Play'), null);
+});

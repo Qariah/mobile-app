@@ -50,6 +50,7 @@ import {
 
 beforeEach(() => {
   mockDefaults.clear();
+  mockNative.setPreferredLanguage.mockClear();
   mockPlatform.OS = 'ios';
   mockHasNative = true;
 });
@@ -63,11 +64,20 @@ it('writes the chosen language as the per-app language', () => {
   expect(mockDefaults.get('AppleLanguages')).toEqual(['en']);
 });
 
-it('removes its own value for System default', () => {
+it('keeps an old in-app choice that the update moved to iOS Settings (#900)', () => {
+  // A build before Pass D: the person chose Arabic in the app.
   syncIosAppLanguage('ar');
-  expect(syncIosAppLanguage('system')).toBe(true);
-  expect(mockDefaults.has('AppleLanguages')).toBe(false);
+  expect(mockDefaults.get('qariah_apple_languages')).toBe('ar');
+  // The update: migratePreferenceToSystemSettings writes AppleLanguages and
+  // removes the stored preference, so bootstrapDirection syncs 'system'.
+  mockDefaults.set('AppleLanguages', ['ar']);
   expect(syncIosAppLanguage('system')).toBe(false);
+  expect(mockDefaults.get('AppleLanguages')).toEqual(['ar']);
+  expect(mockNative.setPreferredLanguage).not.toHaveBeenCalledWith(null);
+  // The marker of the old sync is gone; the next launch changes nothing.
+  expect(mockDefaults.get('qariah_apple_languages')).toBe('');
+  expect(syncIosAppLanguage('system')).toBe(false);
+  expect(mockDefaults.get('AppleLanguages')).toEqual(['ar']);
 });
 
 it('keeps a per-app language that the person set in iOS Settings', () => {
@@ -119,12 +129,10 @@ describe('invertLtrNativeSlider', () => {
   });
 });
 
-it('gives the device languages, not its own value, while that value is set', () => {
-  // No Qariah value: expo-localization already reports the device list.
+it('never skips the per-app language: iOS Settings owns it since Pass D (#900)', () => {
   expect(deviceLanguagesWithoutOverride()).toBeNull();
+  // A marker left by a build before Pass D, before the first sync clears it.
   syncIosAppLanguage('ar');
-  expect(deviceLanguagesWithoutOverride()).toEqual(['en', 'fr']);
-  syncIosAppLanguage('system');
   expect(deviceLanguagesWithoutOverride()).toBeNull();
   mockPlatform.OS = 'android';
   expect(deviceLanguagesWithoutOverride()).toBeNull();

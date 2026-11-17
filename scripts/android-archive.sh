@@ -26,6 +26,9 @@
 # It deletes the failed build. Git ignores the font copies, so a fresh checkout
 # has none (Sprint 51). SKIP_WIDGET_FONT_CHECK=1 turns the check off (a WARNING).
 #
+# Before the build, it applies patches/ to node_modules (scripts/apply-patches.sh)
+# and stops when a patch does not apply (TECH_DEBT #401).
+#
 # Branch-driven QF environment (mirrors scripts/ios-archive.sh):
 #   - On `qariah-main` → QF production (EXPO_PUBLIC_QF_* sourced from
 #     .env.local's QF_PROD_*). This is the build that represents the
@@ -180,6 +183,15 @@ fi
 echo -e "${YELLOW}🤖 Android Release Archive Script${NC}"
 echo "===================================="
 echo -e "  Branch:    ${GREEN}$CURRENT_BRANCH${NC}"
+
+# Apply patches/ to node_modules before the build (TECH_DEBT #401). A
+# node_modules from an older install can lack a new or changed patch, and the
+# build then ships the old native code with no error. Stop when one fails.
+echo -e "\n${YELLOW}🩹 Checking patches/ against node_modules...${NC}"
+if ! bash "$SCRIPT_DIR/apply-patches.sh" "$REPO_ROOT"; then
+    echo -e "${RED}❌ patch-package failed (see above). No build ran.${NC}"
+    exit 1
+fi
 
 # Pin Java 21 — Gradle + AGP in this project require Java 21 (NOT 25).
 # Mirrors package.json's "android" script. java_home -v 21 fails loudly

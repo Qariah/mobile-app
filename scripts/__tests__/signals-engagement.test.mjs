@@ -18,7 +18,10 @@ import * as use from '../signals/sections/use.mjs';
 import * as weekly from '../signals/sections/weekly.mjs';
 import * as retention from '../signals/sections/retention.mjs';
 import * as funnel from '../signals/sections/funnel.mjs';
-import {STEPS as CARD_STEPS} from '../lib/journey-steps.mjs';
+import {
+  STEPS as CARD_STEPS,
+  stepCond as cardStepCond,
+} from '../lib/journey-steps.mjs';
 import * as content from '../signals/sections/content.mjs';
 import * as restore from '../signals/sections/restore.mjs';
 
@@ -244,9 +247,17 @@ test('retention: shape gives rates for mature cohorts and null otherwise', () =>
 // The Daily card's steps (scripts/lib/journey-steps.mjs since 2026-10-25).
 const cardSteps = () => CARD_STEPS;
 
+// Since issue #907 (2026-11-15) the card's `logged_in` step counts every event
+// with `properties.signed_in = true`. The funnel section keeps its own
+// `loggedInCardRule` (the onboarding rule of 2026-10-18): #907 does not change
+// scripts/signals/sections/funnel.mjs. So that row is out of the exact match.
+const FUNNEL_KEEPS_OWN_RULE = new Set(['logged_in']);
+
 test('funnel: the card-rule rows use the Daily card conditions exactly', () => {
   const card = Object.fromEntries(cardSteps().map(s => [s.key, s]));
-  for (const s of funnel.EVENT_STEPS.filter(x => x.card)) {
+  for (const s of funnel.EVENT_STEPS.filter(
+    x => x.card && !FUNNEL_KEEPS_OWN_RULE.has(x.card),
+  )) {
     const c = card[s.card];
     assert.ok(c, `card step ${s.card}`);
     assert.deepEqual(s.events, c.events, s.key);
@@ -270,6 +281,21 @@ test('funnel: the card-rule rows use the Daily card conditions exactly', () => {
     'splash_hidden',
     'screen_content_rendered',
   ]);
+});
+
+test('card: Logged in counts every event with signed_in = true (#907)', () => {
+  const loggedIn = cardSteps().find(s => s.key === 'logged_in');
+  const cond = cardStepCond(loggedIn);
+  assert.equal(
+    cond,
+    "event IN ('sign_in_succeeded') OR properties.signed_in = true",
+  );
+  assert.ok(cond.includes('properties.signed_in = true'));
+  assert.ok(!cond.includes('onboarding_completed'));
+  // The funnel section keeps its own rule (not changed by #907).
+  const row = funnel.EVENT_STEPS.find(s => s.key === 'loggedInCardRule');
+  assert.equal(row.card, 'logged_in');
+  assert.match(row.or, /onboarding_completed/);
 });
 
 test('funnel: the query has the cut-off, aged30 and the 30-day MAU window', () => {

@@ -151,12 +151,12 @@ interface AnalyticsService {
 
 | Event | Trigger | Key Properties |
 |-------|---------|----------------|
-| `playback_started` | Play pressed or autoplay | `surah_id`, `reciter_id`, `rewayah_id`, `source` (queue/direct/autoplay/playlist), `position_ms` |
-| `playback_paused` | User pauses | `surah_id`, `reciter_id`, `position_ms`, `listened_ms` |
-| `playback_resumed` | User resumes | `surah_id`, `reciter_id`, `position_ms` |
+| `playback_started` | Play pressed or autoplay | `surah_id`, `reciter_id`, `rewayah_id`, `source` (queue/direct/autoplay/playlist; Qariah, TECH_DEBT #391: `autoplay` after an automatic advance at a track end), `position_ms` |
+| `playback_paused` | User pauses (Qariah, TECH_DEBT #391: not the end of a track) | `surah_id`, `reciter_id`, `position_ms`, `listened_ms` |
+| `playback_resumed` | User resumes (Qariah, TECH_DEBT #391: only after a `playback_paused`, not at a track start) | `surah_id`, `reciter_id`, `position_ms` |
 | `playback_completed` | Surah finishes naturally | `surah_id`, `reciter_id`, `reciter_name`, `rewayah_id` (Qariah, TECH_DEBT #296; counts from the build that ships it), `duration_ms`, `listened_ms`, `completion_pct` |
-| `playback_skipped` | Skip next/prev | `surah_id`, `reciter_id`, `position_ms`, `listened_ms`, `direction` (next/prev) |
-| `playback_seeked` | User seeks | `surah_id`, `from_ms`, `to_ms` |
+| `playback_skipped` | Skip next/prev (Qariah, TECH_DEBT #391: by the user only, not the automatic advance) | `surah_id`, `reciter_id`, `position_ms`, `listened_ms`, `direction` (next/prev) |
+| `playback_seeked` | User seeks (Qariah, TECH_DEBT #391: one event for a run of seeks less than 3 s apart, with the first `from_ms` and the last `to_ms`) | `surah_id`, `from_ms`, `to_ms` |
 | `meaningful_listen` | Crosses 30s or 10% threshold | `surah_id`, `reciter_id`, `rewayah_id` |
 | `rate_changed` | Playback speed changed | `old_rate`, `new_rate` |
 | `queue_modified` | Track added/removed/reordered | `action` (add/remove/reorder), `surah_id`, `queue_length` |
@@ -165,7 +165,7 @@ interface AnalyticsService {
 
 | Event | Trigger | Key Properties |
 |-------|---------|----------------|
-| `mushaf_page_opened` | Page becomes visible | `page_number`, `surah_id`, `juz_number` |
+| `mushaf_page_opened` | Page becomes visible (Qariah, TECH_DEBT #391: once for each page in a Mushaf session) | `page_number`, `surah_id`, `juz_number` |
 | `mushaf_page_read` | Page visible > 15s | `page_number`, `duration_ms`, `surah_id` |
 | `mushaf_session_ended` | Leave mushaf or app backgrounds | `pages_opened`, `pages_read`, `total_duration_ms` |
 
@@ -236,8 +236,8 @@ Qariah-only events, named in `services/analytics/qariahEvents.ts` and sent by `s
 | Event | Trigger | Key Properties |
 |-------|---------|----------------|
 | `$screen` | Navigation | Auto-captured by PostHog |
-| `app_opened` | App foregrounds | (auto properties: device, version, OS) |
-| `app_backgrounded` | App backgrounds | `session_duration_ms`, `total_listen_ms` |
+| `app_opened` | App foregrounds (Qariah, TECH_DEBT #391: after a `background`, not after `inactive`) | (auto properties: device, version, OS) |
+| `app_backgrounded` | App backgrounds (Qariah, TECH_DEBT #391: `background` only; iOS `inactive` is Control Center or the notification list) | `session_duration_ms`, `total_listen_ms` |
 
 ### Local Aggregation Store
 

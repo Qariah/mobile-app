@@ -1,6 +1,6 @@
 // @ai-generated
 // Tests for scripts/catalog-arabic-names.mjs (Sprint 47 Task 8). Run with
-// node --test (CI: .github/workflows/test.yml "Script tests"); Jest does not
+// node --test (CI: .github/workflows/qariah-checks.yml "Script tests"); Jest does not
 // pick up .mjs. The R2 write guard has its own file
 // (catalog-r2-mutate.test.mjs), because the public mirror strips that script.
 import {test} from 'node:test';

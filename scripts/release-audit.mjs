@@ -11,6 +11,8 @@
 //   node scripts/release-audit.mjs sample --kind=artifacts|cases [--since=YYYY-MM-DD] [--n=5]
 //       reads ~/qariah-releases/evidence/*/results.ndjson since the last public beta,
 //       and prints n claims, chosen by crypto.randomInt, not by the agent.
+//       An Android artifact claim also prints its android-<device>-install.txt
+//       (scripts/android-evidence-install.sh), or MISSING when it is absent.
 //   node scripts/release-audit.mjs what-to-test --build=<n> --out=<path>
 //       writes the tester text of the newest READY comment for that build.
 //   node scripts/release-audit.mjs post --verdict=READY|NOT-READY --action=public-beta
@@ -173,13 +175,19 @@ async function main() {
         ? flags.since
         : (lastPublicBeta(readEvents().events) || {}).date || '';
     const dir = join(homedir(), 'qariah-releases', 'evidence');
-    const lines = [];
+    const items = [];
     for (const d of existsSync(dir) ? readdirSync(dir).sort() : []) {
       const f = join(dir, d, 'results.ndjson');
-      if (d.replace(/^auto-/, '') >= since && existsSync(f))
-        lines.push(...readFileSync(f, 'utf8').split('\n').filter(Boolean));
+      if (d.replace(/^auto-/, '') >= since && existsSync(f)) {
+        const lines = readFileSync(f, 'utf8').split('\n').filter(Boolean);
+        // An Android claim also prints its install file (issue #832).
+        const readInstall = name => {
+          const p = join(dir, d, name);
+          return existsSync(p) ? readFileSync(p, 'utf8') : null;
+        };
+        items.push(...claimsFrom(lines, flags.kind, {readInstall}));
+      }
     }
-    const items = claimsFrom(lines, flags.kind);
     if (!items.length) console.log('no claims to sample');
     const n = Math.min(Number(flags.n || 5), items.length);
     for (let i = 0; i < n; i++) {

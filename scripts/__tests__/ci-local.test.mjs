@@ -10,7 +10,12 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import yaml from 'js-yaml';
-import {STEPS, blockingSteps, expand} from '../ci-local.mjs';
+import {
+  STEPS,
+  blockingSteps,
+  expand,
+  nodeVersionWarning,
+} from '../ci-local.mjs';
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const workflow = file =>
@@ -18,7 +23,12 @@ const workflow = file =>
 
 describe('ci-local', () => {
   it('runs every blocking step of the gate workflows, and only those', () => {
-    for (const file of ['url-leak-guard.yml', 'lint.yml', 'test.yml']) {
+    for (const file of [
+      'url-leak-guard.yml',
+      'lint.yml',
+      'test.yml',
+      'qariah-checks.yml',
+    ]) {
       const want = blockingSteps(workflow(file)).sort();
       const have = STEPS.filter(([f]) => f === file)
         .map(([, n]) => n)
@@ -37,5 +47,14 @@ describe('ci-local', () => {
     assert.equal(expand('${{ github.event_name }}', 'schedule'), 'schedule');
     assert.equal(expand('npm run x', 'pull_request'), 'npm run x');
     assert.throws(() => expand('${{ inputs.x }}', 'schedule'));
+  });
+
+  it('warns when the local Node major.minor differs from .nvmrc (#833)', () => {
+    assert.equal(nodeVersionWarning('24.22.0', '24.22.1'), null);
+    assert.equal(nodeVersionWarning('v24.22.1', '24.22.1\n'), null);
+    assert.equal(nodeVersionWarning('24.4.0', ''), null);
+    const w = nodeVersionWarning('24.4.0', '24.22.1');
+    assert.match(w, /^WARN {2}local Node 24\.4\.0 .* 24\.22\.1 in \.nvmrc/);
+    assert.match(w, /#833/);
   });
 });

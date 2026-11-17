@@ -20,7 +20,11 @@
 #   4. Checks free disk on $HOME against runLimits.diskFloorGB.other. A skip day needs
 #      no build space. The auto-sprint checks the build floor later, only when its
 #      scope is not empty: `bash scripts/disk-floor.sh build`.
-#   Steps 3 and 4 are skipped when CLAUDE_CODE_REMOTE=true (a cloud session).
+#   5. Moves the task tree ($QARIAH_TASKS_TREE) to origin/qariah-main when it is clean, and
+#      syncs the live task files (scripts/link-scheduled-tasks.sh --run-start). It writes
+#      <state dir>/task-sync.<task>.txt; run-end.sh puts `tasks=<state>` in the run-health
+#      line. A failed fetch, a dirty tree or a failed copy is a line, never a stop.
+#   Steps 3, 4 and 5 are skipped when CLAUDE_CODE_REMOTE=true (a cloud session).
 #
 # Exit 0 = start the run. Exit 1 = do not start; write the report, and run
 # `bash scripts/run-end.sh <task> FAILED` first. Exit 3 = the pause switch (step 1b)
@@ -124,7 +128,7 @@ else
 fi
 
 if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-  echo "run-start: cloud session — preflight and disk checks skipped"
+  echo "run-start: cloud session — preflight, disk and task-file checks skipped"
   exit 0
 fi
 
@@ -168,6 +172,22 @@ if [ -n "$floor_gb" ]; then
   elif [ -n "$gb" ]; then
     echo "run-start: disk OK (${gb} GB free, floor ${floor_gb} GB)"
   fi
+fi
+
+# --- 5. the live task files ----------------------------------------------------------
+# Move the task tree to origin/qariah-main (only when it is clean) and copy each changed
+# task file to ~/.claude/scheduled-tasks/ (scripts/link-scheduled-tasks.sh --run-start).
+# From 2026-11-06 to 2026-11-15 all five live copies were stale, so merged fixes never
+# reached a run. The app reads SKILL.md when the task fires, so this run keeps its prompt;
+# the next run gets the new file. A failed fetch, a dirty tree or a failed copy never
+# stops the run: the lines say what happened, and run-end.sh puts `tasks=<state>` in the
+# run-health line. This step runs after a FAIL above too: it repairs the next run.
+sync="$here/link-scheduled-tasks.sh"
+if [ -f "$sync" ]; then
+  mkdir -p "$state_dir" 2>/dev/null
+  bash "$sync" --run-start "$task" --state-file="$state_dir/task-sync.$task.txt" 2>&1 | sed 's/^/run-start: /'
+else
+  echo "run-start: WARN $sync is missing, so the live task files were not synced"
 fi
 
 if [ "$fail" -ne 0 ]; then

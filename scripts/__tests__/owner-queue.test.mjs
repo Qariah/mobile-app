@@ -11,11 +11,15 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   FIXER_LABEL,
   KINDS,
   LABEL,
+  REPLY_KINDS,
   answerBody,
   handoverRefusal,
   defaultReply,
@@ -35,6 +39,7 @@ import {
   sortQueue,
   validateAsk,
 } from '../lib/owner-queue.mjs';
+import {parseEvents} from '../lib/promotion-approval.mjs';
 
 const CLI = fileURLToPath(new URL('../owner-queue.mjs', import.meta.url));
 
@@ -110,6 +115,56 @@ describe('validateAsk', () => {
       'ready-3790',
     );
     assert.equal(validateAsk(ask({key: 'Bad!'})).ok, false);
+  });
+});
+
+// The approval text, from parts: a command that holds it whole meets the
+// publish guard (#835).
+const approval = build =>
+  ['owner-reply:', 'go', 'public-beta', build].join(' ');
+
+describe('validateAsk --reply-kind (#835)', () => {
+  const rk = over => ask({reply: undefined, ...over});
+  it('builds the promotion reply from the build number', () => {
+    const v = validateAsk(rk({replyKind: 'promotion', build: '4487'}));
+    assert.equal(v.ok, true, v.errors.join('; '));
+    assert.equal(v.fields.reply, approval('4487'));
+    assert.equal(REPLY_KINDS.promotion('3790'), approval('3790'));
+  });
+  it('builds a reply that the Promoter reads as an approval of the same build', () => {
+    const [e] = parseEvents(
+      [{id: 1, user: {login: 'owner'}, body: REPLY_KINDS.promotion('4487')}],
+      {owner: 'owner'},
+    );
+    assert.equal(e && e.kind, 'approve');
+    assert.equal(String(e.build), '4487');
+  });
+  it('refuses an unknown reply kind', () => {
+    const v = validateAsk(rk({replyKind: 'prod', build: '4487'}));
+    assert.equal(v.ok, false);
+    assert.match(v.errors.join(' '), /--reply-kind must be promotion/);
+    assert.equal(validateAsk(rk({replyKind: true, build: '1'})).ok, false);
+  });
+  it('refuses a build that is not digits, or no build', () => {
+    for (const build of [undefined, '', true, '44a7', '-1', '4487 x', '04487'])
+      assert.match(
+        validateAsk(rk({replyKind: 'promotion', build})).errors.join(' '),
+        /--build=<digits>/,
+        String(build),
+      );
+  });
+  it('refuses --reply together with --reply-kind', () => {
+    const v = validateAsk(
+      ask({reply: 'x', replyKind: 'promotion', build: '4487'}),
+    );
+    assert.equal(v.ok, false);
+    assert.match(v.errors.join(' '), /not both/);
+  });
+  it('refuses --build with no --reply-kind', () => {
+    assert.match(
+      validateAsk(rk({build: '4487'})).errors.join(' '),
+      /--build needs --reply-kind/,
+    );
   });
 });
 
@@ -381,6 +436,33 @@ describe('the CLI usage exits (no GitHub call)', () => {
       '--body-file=/nonexistent/file',
     ]);
     assert.equal(r.status, 2);
+  });
+  it('writes the promotion reply in a dry run, and refuses --reply with --reply-kind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'owner-queue-'));
+    try {
+      const body = join(dir, 'body.md');
+      writeFileSync(body, 'READY on 4487.\n');
+      const base = [
+        'ask',
+        '--kind=decision',
+        '--title=Publish public beta 4487?',
+        `--body-file=${body}`,
+        '--reply-kind=promotion',
+        '--build=4487',
+        '--dry-run',
+      ];
+      const r = run(base);
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /## Reply\n\n(.*)\n/);
+      assert.equal(r.stdout.match(/## Reply\n\n(.*)\n/)[1], approval('4487'));
+      assert.equal(run([...base, '--reply=x']).status, 2);
+      assert.equal(
+        run(base.map(a => (a === '--build=4487' ? '--build=44x' : a))).status,
+        2,
+      );
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
   });
   it('exits 2 on answer with no number or no --by', () => {
     assert.equal(run(['answer']).status, 2);

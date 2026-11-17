@@ -30,6 +30,7 @@ import {useTheme} from '@/hooks/useTheme';
 import {LocaleDirContext, ThemeProvider} from 'expo-router/react-navigation';
 // @ai-end
 import {PlayerHost} from '@/components/player/v2/PlayerHost';
+import {PlayerModalStack} from '@/components/player/v2/PlayerModalStack'; // @ai TECH_DEBT #260
 import {
   WhatsNewModal,
   WhatsNewModalRef,
@@ -67,6 +68,7 @@ import Constants from 'expo-constants';
 import * as Sentry from '@sentry/react-native';
 // Qariah: the Qariah-only imports sit in this one block (TECH_DEBT #243).
 import {AuthTelemetry} from '@/services/analytics/AuthTelemetry';
+import {appLifecycleListener} from '@/services/analytics/qariahEventGates';
 import {createQariahPostHogClient} from '@/services/analytics/qariahPostHogClient';
 import {
   qariahSentryOptions,
@@ -187,13 +189,9 @@ function AnalyticsConnector(): null {
 
   // Track app foreground/background transitions
   useEffect(() => {
-    function handleAppStateChange(nextState: AppStateStatus): void {
-      if (nextState === 'background' || nextState === 'inactive') {
-        analyticsService.trackAppBackgrounded();
-      } else if (nextState === 'active') {
-        analyticsService.trackAppOpened();
-      }
-    }
+    // @ai Qariah (TECH_DEBT #391): `inactive` (Control Center, the notification list) is not a background.
+    const handleAppStateChange: (nextState: AppStateStatus) => void =
+      appLifecycleListener(AppState.currentState);
     const subscription = AppState.addEventListener(
       'change',
       handleAppStateChange,
@@ -624,7 +622,8 @@ function RootLayout() {
                       <NetworkStatusMonitor />
                       <ConfirmationDialogHost /* @ai: iPad confirmations */ />
                       <SheetProvider>
-                        <Stack
+                        {/* @ai TECH_DEBT #260: the Stack, hidden from Android screen readers while the full player is open */}
+                        <PlayerModalStack
                           screenOptions={{
                             headerShown: false,
                             contentStyle: {
@@ -697,7 +696,7 @@ function RootLayout() {
                             }
                           />
                           {/* @ai-end */}
-                        </Stack>
+                        </PlayerModalStack>
                         <PlayerHost />
                         {keyCommandsSupported() && <AppKeyCommands />}
                         <WhatsNewModal ref={whatsNewModalRef} />

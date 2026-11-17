@@ -24,6 +24,8 @@
 //
 // No I/O here. scripts/__tests__/owner-queue.test.mjs covers every rule.
 
+import {approvalReply} from './promotion-approval.mjs';
+
 export const LABEL = 'owner-queue';
 export const KINDS = ['decision', 'action', 'info'];
 export const PRIORITIES = ['P0', 'P1', 'P2'];
@@ -102,6 +104,14 @@ export function defaultReply(kind) {
   return 'Nothing. The Steward closes this item.';
 }
 
+// A reply that the script builds, so the caller does not write its text in a
+// command. The publish guard denies a command with the text of a release
+// approval in it (#835). `promotion` is the public-beta approval that the
+// Promoter reads (scripts/lib/promotion-approval.mjs, approvalReply).
+export const REPLY_KINDS = {
+  promotion: build => approvalReply({action: 'public-beta', build}),
+};
+
 /**
  * Validate the fields of an `ask`. Returns {ok, errors, fields} with the
  * fields filled (key, priority, reply).
@@ -163,6 +173,15 @@ export function validateAsk(f = {}) {
       errors.push(e.message);
     }
   }
+  if (out.replyKind !== undefined) {
+    if (!Object.hasOwn(REPLY_KINDS, out.replyKind))
+      errors.push(`--reply-kind must be ${Object.keys(REPLY_KINDS).join('|')}`);
+    else if (!/^[1-9]\d*$/.test(String(out.build ?? '')))
+      errors.push('--reply-kind needs --build=<digits>');
+    else if (out.reply !== undefined)
+      errors.push('give --reply or --reply-kind, not both');
+    else out.reply = REPLY_KINDS[out.replyKind](String(out.build));
+  } else if (out.build !== undefined) errors.push('--build needs --reply-kind');
   if (!String(out.reply || '').trim()) out.reply = defaultReply(out.kind);
   return {ok: errors.length === 0, errors, fields: out};
 }

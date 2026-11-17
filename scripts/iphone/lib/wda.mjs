@@ -17,6 +17,7 @@ import {
   findOne,
   findAll,
   center,
+  isOnScreen,
   describeScreen,
   coveringOverlay,
 } from './hierarchy.mjs';
@@ -63,7 +64,9 @@ export class Wda {
         return this.call(method, path, body, {timeoutMs, retry: false});
       }
       throw new WdaError(
-        `WebDriverAgent is not reachable at ${target}: ${err.cause?.code || err.message}`,
+        `WebDriverAgent is not reachable at ${target}: ${
+          err.cause?.code || err.message
+        }`,
       );
     }
     const text = await res.text();
@@ -175,6 +178,11 @@ export class Wda {
     });
     const nodes = flatten(raw);
     const screen = screenOf(nodes);
+    // The id fast path of `tap()` uses the screen rect and the overlays of the last tree read.
+    this.lastScreen = screen;
+    this.lastOverlays = nodes.filter(
+      n => /TabBar$|Toolbar$/.test(n.type) || n.id === 'mini-player-bar',
+    );
     if (alerts) {
       const buttons = await this.alertButtons();
       buttons.forEach((label, i) => {
@@ -229,7 +237,9 @@ export class Wda {
       await sleep(intervalMs);
     } while (Date.now() < end);
     const err = new WdaError(
-      `${not ? 'still visible' : 'not visible'} after ${timeoutMs} ms: ${JSON.stringify(selector)}`,
+      `${
+        not ? 'still visible' : 'not visible'
+      } after ${timeoutMs} ms: ${JSON.stringify(selector)}`,
     );
     err.screen = describeScreen(last.nodes, last.screen);
     throw err;
@@ -260,7 +270,100 @@ export class Wda {
     return this.s('POST', '/wda/tap', {x, y});
   }
 
+  /**
+   * The accessibility id of a selector that the fast path can serve, or null. The fast query
+   * matches one identifier exactly, so only a plain id with no other key qualifies: a regular
+   * expression, an `index` (screen order) or a text, enabled or checked filter needs the tree.
+   */
+  static fastId(selector) {
+    if (!selector || typeof selector !== 'object') return null;
+    const keys = Object.keys(selector).filter(k => selector[k] !== undefined);
+    if (keys.length !== 1 || keys[0] !== 'id') return null;
+    const id = String(selector.id);
+    return /^[A-Za-z0-9_-]+$/.test(id) ? id : null;
+  }
+
+  /**
+   * A tap by accessibility id with no tree read (TECH_DEBT #352): one element query and one
+   * rect read. Returns the tapped node, or null when the caller must read the tree. That is the
+   * case when the element is not found, has no area, is off screen, or sits under an overlay
+   * (the tab bar or the mini player) of the last tree read.
+   */
+  async tapFastId(id) {
+    const uuid = await this.findIdFast(id);
+    if (!uuid) return null;
+    let rect;
+    try {
+      rect = await this.s('GET', `/element/${uuid}/rect`, null, {
+        timeoutMs: 10000,
+      });
+    } catch {
+      return null;
+    }
+    const node = {
+      type: 'XCUIElementTypeOther',
+      id,
+      name: id,
+      label: '',
+      value: '',
+      enabled: true,
+      visibleFlag: true,
+      rect: {
+        x: Number(rect?.x) || 0,
+        y: Number(rect?.y) || 0,
+        width: Number(rect?.width) || 0,
+        height: Number(rect?.height) || 0,
+      },
+    };
+    let screen = this.lastScreen;
+    if (!screen) {
+      // No tree read yet in this session: the window size gives the screen rect.
+      try {
+        const size = await this.s('GET', '/window/size', null, {
+          timeoutMs: 10000,
+        });
+        screen = {x: 0, y: 0, width: size.width, height: size.height};
+      } catch {
+        return null;
+      }
+    }
+    // The tab bar and the mini player sit in the bottom band, and the mini player can appear
+    // after the last tree read: an element there goes to the tree path, which scrolls it free.
+    if (center(node.rect).y > screen.y + screen.height * 0.8) return null;
+    if (!isOnScreen(node, screen)) return null;
+    if (coveringOverlay(node, this.lastOverlays || [])) return null;
+    await this.tapNode(node);
+    // The type and the label after the tap, so that a caller gets the same fields as from the
+    // tree path. A stale element (the tap changed the screen) keeps the defaults.
+    const opts = {timeoutMs: 5000, retry: false};
+    node.type = await this.s('GET', `/element/${uuid}/name`, null, opts).then(
+      v => (typeof v === 'string' && v ? v : node.type),
+      () => node.type,
+    );
+    node.label = await this.s(
+      'GET',
+      `/element/${uuid}/attribute/label`,
+      null,
+      opts,
+    ).then(
+      v => (v == null ? '' : String(v)),
+      () => '',
+    );
+    return node;
+  }
+
   async tap(selector, opts = {}) {
+    // QARIAH_WDA_NO_FAST_TAP=1 turns the fast path off (for an A/B timing or a fault hunt).
+    const fastId = process.env.QARIAH_WDA_NO_FAST_TAP
+      ? null
+      : Wda.fastId(selector);
+    if (fastId) {
+      const node = await this.tapFastId(fastId);
+      if (node) {
+        this.log(`tap id=${fastId}: fast path`);
+        return node;
+      }
+    }
     let {node, nodes, screen} = await this.waitFor(selector, opts);
     // An element under the tab bar or the mini player: scroll it into the open area first.
     for (let i = 0; i < 3 && coveringOverlay(node, nodes); i += 1) {

@@ -93,6 +93,11 @@ interface ReadingPageViewProps {
    * size.
    */
   pageSize?: {width: number; height: number};
+  /**
+   * TECH_DEBT #411: the key of a verse on this page to scroll to once, when
+   * its row is laid out (a bookmark opened from Collection).
+   */
+  startVerseKey?: string;
   // @ai-end
 }
 
@@ -111,11 +116,13 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
   onTap,
   metrics, // @ai TECH_DEBT #265
   pageSize,
+  startVerseKey, // TECH_DEBT #411
 }) => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const verseOffsetsRef = useRef<Map<string, number>>(new Map());
+  const startVerseDoneRef = useRef(false); // @ai TECH_DEBT #411
 
   // Settings subscriptions
   const showTranslation = useMushafSettingsStore(s => s.showTranslation);
@@ -360,6 +367,18 @@ const ReadingPageView: React.FC<ReadingPageViewProps> = ({
               item.verse.verse_key,
               e.nativeEvent.layout.y,
             );
+            // @ai TECH_DEBT #411: start at the verse the reader opened for.
+            if (
+              !startVerseDoneRef.current &&
+              startVerseKey &&
+              item.verse.verse_key === startVerseKey
+            ) {
+              startVerseDoneRef.current = true;
+              scrollViewRef.current?.scrollTo({
+                y: e.nativeEvent.layout.y,
+                animated: false,
+              });
+            }
           }}
           style={
             themeBg ? {backgroundColor: themeBg, borderRadius: 6} : undefined

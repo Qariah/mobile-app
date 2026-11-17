@@ -52,6 +52,13 @@
 // is embedded as a second dedup marker so a re-split of the same signal under a
 // new shortId folds instead of re-filing. `fatal` is floored at `high`.
 //
+// V1 LINEAGE (issue #907, TECH_DEBT #164). The old Flutter app (v1) sends its
+// crashes to this Sentry project too. classify() classifies each issue by its
+// frames (the title, the culprit and the metadata; scripts/lib/app-lineage.mjs,
+// the same rule as play-vitals-triage.mjs). A `v1` issue is not v2 work: the
+// run files no GitHub issue for it, counts it, and prints the count in the
+// summary. The skip runs before the dedup and the --max cap.
+//
 // LAB DEVICES. The agent test phone runs internal betas with
 // environment=production, so it sends the allow-listed warning messages in bulk
 // (GitHub #646: 72 of 72 events of QARIAHV2-3S were lab devices). A message issue
@@ -75,6 +82,7 @@ import {
   markersIn,
 } from './lib/triage-common.mjs';
 import {applyLabGate, isLabGated} from './lib/triage-lab-gate.mjs';
+import {classifySentryLineage} from './lib/app-lineage.mjs';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -369,6 +377,8 @@ function classify(i, tags, collapsedUsers) {
       'No known correlation. Review the stack + device/release breakdown above.',
     severity: sev,
     platforms,
+    // 'v1' | 'v2' | 'unknown' from the title, the culprit and the metadata.
+    lineage: classifySentryLineage(i),
   };
 }
 
@@ -509,8 +519,9 @@ async function main() {
   );
   console.log(`  scanned: ${issues.length} unresolved production issue(s)`);
 
-  // 2. Deterministic filter: level + ignore-list.
+  // 2. Deterministic filter: level + ignore-list + v1 lineage.
   const filtered = [];
+  let v1Skipped = 0;
   for (const i of issues) {
     // Keep the default fatal/error gate, but never drop the purpose-built
     // silent-hang warning signals (MESSAGE_ALLOWLIST) — they are level=warning
@@ -522,9 +533,17 @@ async function main() {
       console.log(`  · skip ${i.shortId} (noise: "${ig}")`);
       continue;
     }
+    // A v1 (Flutter) issue is not v2 work: no GitHub issue, only a count.
+    if (classifySentryLineage(i) === 'v1') {
+      console.log(`  · skip ${i.shortId} (v1 Flutter lineage from its frames)`);
+      v1Skipped++;
+      continue;
+    }
     filtered.push(i);
   }
-  console.log(`  after level+noise filter: ${filtered.length}`);
+  console.log(
+    `  after level+noise+lineage filter: ${filtered.length} (v1 skipped: ${v1Skipped})`,
+  );
 
   // 3. Dedup against already-filed GitHub issues (by embedded marker / shortId).
   // Ensure the `sentry` label exists first, so the `--label` filter below
@@ -701,6 +720,12 @@ async function main() {
   // 6. File.
   let filed = 0;
   for (const {issue: i, tags, triage, group, lab} of candidates) {
+    // Step 2 already removed the v1 issues; this keeps a v1 issue out of a
+    // filed issue if that order changes.
+    if (triage.lineage === 'v1') {
+      v1Skipped++;
+      continue;
+    }
     // A collapsed signal can span platforms — union them across members.
     const memberPlat = new Set(triage.platforms);
     for (const m of group?.members || []) {
@@ -749,7 +774,8 @@ async function main() {
   // 7. Summary + CI output.
   console.log(
     `\n▶ done — scanned ${issues.length}, ${groups.length} new signal(s), ` +
-      `${DRY_RUN ? 'would file' : 'filed'} ${filed}${overflow > 0 ? ` (+${overflow} deferred)` : ''}.`,
+      `${DRY_RUN ? 'would file' : 'filed'} ${filed}${overflow > 0 ? ` (+${overflow} deferred)` : ''}, ` +
+      `v1 skipped ${v1Skipped}.`,
   );
   if (process.env.GITHUB_OUTPUT) {
     writeFileSync(

@@ -46,9 +46,15 @@
 #     archiving (TECH_DEBT #25).
 #   - records uploaded build metadata in `build/last-{beta,public-beta,prod}-
 #     build.json` + appends to `build/testflight-uploads.ndjson` (audit trail).
+#   - applies patches/ to node_modules (scripts/apply-patches.sh) and stops on
+#     a failure, before pod install and the archive (TECH_DEBT #401).
 #   - copies the widget fonts (scripts/sync-widget-fonts.js) before the archive.
 #     The child script then fails the archive when the widget extension lacks
 #     the fonts (scripts/check-widget-fonts.mjs), before the export (Sprint 51).
+#   - keeps a copy of the IPA in ~/qariah-releases (QARIAH_RELEASES_DIR), as
+#     scripts/android-archive.sh keeps the APK (2026-11-15). The auto-sprint
+#     deletes the build output of its tree at run-end.sh, and its teardown
+#     removes the tree.
 #
 # Branch-driven variant selection (added 2026-05-20):
 #   - On `qariah-main` (the protected production branch) → archives as PROD
@@ -225,6 +231,16 @@ done
 
 if [ "$DRY_RUN" = true ] && [ "$UPLOAD" = true ]; then
     echo -e "${RED}❌ --dry-run and --upload are mutually exclusive.${NC}"
+    exit 1
+fi
+
+# Apply patches/ to node_modules before pod install and the archive (TECH_DEBT
+# #401). A node_modules from an older install can lack a new or changed patch:
+# 3.2.4 (3942) shipped without the #773 and #779 patches. Stop when one fails.
+# A dry run applies them too: it changes node_modules only, as postinstall does.
+echo -e "\n${YELLOW}🩹 Checking patches/ against node_modules...${NC}"
+if ! bash "$SCRIPT_DIR/apply-patches.sh" "$REPO_ROOT"; then
+    echo -e "${RED}❌ patch-package failed (see above). No pod install and no archive ran.${NC}"
     exit 1
 fi
 
@@ -795,6 +811,26 @@ env -u VERIFY_FIX \
     EXPORT_OPTIONS="$EXPORT_OPTIONS" \
     ARCHIVE_PATH="$ARCHIVE_PATH" \
     bash "$SCRIPT_DIR/ios-archive.sh" "${CHILD_ARGS[@]}"
+
+# Keep the IPA in ~/qariah-releases, named as android-archive.sh names the APK
+# (qariah-<version>-<build>-<sha>[-<variant>].ipa). An APFS clone (cp -c) uses no
+# new space. Non-fatal: a failed copy must never fail the archive or the upload.
+RELEASES_DIR="${QARIAH_RELEASES_DIR:-$HOME/qariah-releases}"
+if [ -f "$IPA_PATH" ] && mkdir -p "$RELEASES_DIR" 2>/dev/null; then
+    IPA_SUFFIX=""
+    if [ "$BETA" = true ]; then
+        IPA_SUFFIX="-beta"
+    elif [ "$PUBLIC_BETA" = true ]; then
+        IPA_SUFFIX="-public-beta"
+    fi
+    IPA_SHA="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+    ARCHIVED_IPA="$RELEASES_DIR/qariah-${VERSION:-unknown}-${BUILD_NUMBER:-0}-${IPA_SHA}${IPA_SUFFIX}.ipa"
+    if cp -c "$IPA_PATH" "$ARCHIVED_IPA" 2>/dev/null || cp "$IPA_PATH" "$ARCHIVED_IPA" 2>/dev/null; then
+        echo -e "${GREEN}🗄  Durable archive: $ARCHIVED_IPA${NC}"
+    else
+        echo -e "${YELLOW}⚠ Could not archive the IPA to $RELEASES_DIR (non-fatal).${NC}"
+    fi
+fi
 
 # The child uploads only when the App Store Connect key is in the env (else it
 # prints the manual upload options). Record the upload in the same case.

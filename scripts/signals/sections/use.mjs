@@ -11,7 +11,9 @@
 //   playback_started    a recitation starts (once per track)
 //   meaningful_listen   10% of the track or 30 s, whichever is smaller   (core)
 //   playback_completed  the track played to its end                      (core)
-//   mushaf_page_opened  a Mushaf page opens
+//   mushaf_page_opened  a Mushaf page opens (since TECH_DEBT #391: once for each
+//                       page in a Mushaf session, so `events` falls as people
+//                       update; `installs` does not)
 //   mushaf_page_read    a Mushaf page stays visible for 15 s or more      (core)
 //
 // `core: true` marks the three "the app did its job" events of

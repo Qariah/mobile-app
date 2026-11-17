@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Branding conformance (hard-rule #4): no hardcoded Bayaan brand strings.
 #
-# CI runs this script as a step of .github/workflows/lint.yml. Run it
+# CI runs this script as a step of .github/workflows/qariah-checks.yml. Run it
 # locally the same way, from anywhere in the checkout:
 #
 #   bash scripts/check-branding.sh
@@ -9,8 +9,9 @@
 # Exit 0 = clean, 1 = a brand string was found. Three checks:
 #   1. JS/TS: "Bayaan" or "thebayaan" in .ts/.tsx/.js/.jsx outside the
 #      allowlists below (moved here from the workflow in Sprint 46).
-#   1b. JS/TS: a lowercase brand file name with a user-visible extension
-#      (`bayaan-share.png`), with the same allowlists (GitHub #731).
+#   1b. JS/TS: a brand file name with a user-visible extension, in any case
+#      and with or without a separator (`bayaan-share.png`, `BAYAAN-share.png`,
+#      `bayaanShare.png`), with the same allowlists (GitHub #731, TECH_DEBT #394).
 #   2. Native: the word "Bayaan" in user-visible text in .swift/.kt/.xml/
 #      .plist/.xcstrings/.strings under modules/ and targets/, and in the
 #      string literals of the JS/TS paths that PASS_B_ALLOWED exempts
@@ -133,11 +134,13 @@ fi
 
 # GitHub #731: a lowercase brand file name (`bayaan-share.png`) is not the
 # word "Bayaan", so the check above passed it, and the iOS share sheet showed
-# "bayaan-share" as its title. This check fails a `bayaan-<name>.<ext>` or
-# `bayaan_<name>.<ext>` literal whose extension a user can see (an image, a
-# document, a sound, an archive). A resource name (`bayaan_widgets.xml`) and
-# an identifier are not hits. The same allowlists and comment filters apply.
-FILE_NAME_MATCHES=$(grep -rEn 'bayaan[-_][a-z0-9_-]*\.(png|jpe?g|gif|webp|pdf|txt|csv|zip|mp3|m4a|wav)' \
+# "bayaan-share" as its title. This check fails a brand file name literal
+# whose extension a user can see (an image, a document, a sound, an archive).
+# The match is case-blind and the separator is optional (TECH_DEBT #394), so
+# `bayaan-share.png`, `BAYAAN-share.png` and `bayaanShare.png` are all hits.
+# A resource name (`bayaan_widgets.xml`) and an identifier are not hits. The
+# same allowlists and comment filters apply.
+FILE_NAME_MATCHES=$(grep -rEin 'bayaan[-_]?[a-z0-9_-]*\.(png|jpe?g|gif|webp|pdf|txt|csv|zip|mp3|m4a|wav)' \
   --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
   --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=ios --exclude-dir=android \
   . 2>/dev/null | grep -vE "$ALLOWED" | grep -vE "$PASS_B" | grep -vE "$COMMENT_LINE" || true)

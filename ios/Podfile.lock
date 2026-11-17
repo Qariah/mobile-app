@@ -3212,7 +3212,7 @@ SPEC CHECKSUMS:
   ExpoLinking: 912a936d8ca84c3dd30e0e279953bc5963bb870e
   ExpoLocalization: 25bee9b142408614524db891335bceea271a9418
   ExpoLogBox: e09b1da900cec7d5b5cac5336bcf432a5bdfe020
-  ExpoModulesCore: 96dd157758ffacca07c4d9a743c40aba1c06b621
+  ExpoModulesCore: 963f051b29af06d6a7b8f2ef007386422920dac1
   ExpoModulesJSI: 738b08f40f9e03617948013e013ca0c31885259e
   ExpoModulesWorklets: e270b121a92b600fc417933dd37b4e568df4534f
   ExpoModulesWorkletsAdapter: 1b23381216ea395da94fd50446e1d882c217c522

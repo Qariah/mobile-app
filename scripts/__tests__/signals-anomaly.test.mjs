@@ -273,3 +273,43 @@ test('parseArgs wants exactly one source', () => {
   assert.throws(() => parseArgs(['--date=11-04']), /YYYY-MM-DD/);
   assert.deepEqual(parseArgs(['--latest', '--issue', '--dry-run']).issue, true);
 });
+
+// TECH_DEBT #391: an app build sends mushaf_page_opened once for each page in
+// a Mushaf session, so its event count falls as people update. Its series is
+// the installs; the other use series stay event counts.
+test('seriesOf judges mushaf_page_opened by its installs, not its events', () => {
+  const d = days();
+  const ev = (events, installs) => ({
+    events: series(events),
+    installs: series(installs),
+  });
+  const s = seriesOf({
+    sections: {
+      use: {
+        data: {
+          days: d,
+          daily: {
+            playback_started: ev(900, 300),
+            mushaf_page_opened: ev(2000, 150),
+            mushaf_page_read: ev(700, 120),
+          },
+        },
+      },
+    },
+  });
+  const byKey = Object.fromEntries(s.map(x => [x.key, x]));
+  assert.deepEqual(Object.keys(byKey), [
+    'use.playback_started',
+    'use.mushaf_page_opened.installs',
+    'use.mushaf_page_read',
+  ]);
+  assert.deepEqual(
+    byKey['use.mushaf_page_opened.installs'].values,
+    series(150),
+  );
+  assert.equal(
+    byKey['use.mushaf_page_opened.installs'].label,
+    'Installs that opened a Mushaf page',
+  );
+  assert.deepEqual(byKey['use.playback_started'].values, series(900));
+});

@@ -81,12 +81,17 @@ export const COMMENT_GAP_DAYS = 3;
 // The series
 // ---------------------------------------------------------------------------
 
+// [event, label, measure]. Since TECH_DEBT #391 an app build sends
+// mushaf_page_opened once for each page in a Mushaf session (before: each
+// open), so its event count falls as people update and would fire a false
+// `slide`. Its series is the installs, which the fix does not change;
+// mushaf_page_read stays the volume series of the reading side.
 const USE_EVENTS = [
-  ['playback_started', 'Recitations started'],
-  ['meaningful_listen', 'Heard properly'],
-  ['playback_completed', 'Recitations finished'],
-  ['mushaf_page_opened', 'Mushaf pages opened'],
-  ['mushaf_page_read', 'Mushaf pages read'],
+  ['playback_started', 'Recitations started', 'events'],
+  ['meaningful_listen', 'Heard properly', 'events'],
+  ['playback_completed', 'Recitations finished', 'events'],
+  ['mushaf_page_opened', 'Installs that opened a Mushaf page', 'installs'],
+  ['mushaf_page_read', 'Mushaf pages read', 'events'],
 ];
 
 /**
@@ -117,16 +122,16 @@ export function seriesOf(snapshot) {
   }
   const use = s.use?.data;
   if (use?.days) {
-    for (const [ev, label] of USE_EVENTS) {
+    for (const [ev, label, measure] of USE_EVENTS) {
       const d = use.daily?.[ev];
-      if (d?.events)
+      if (d?.[measure])
         out.push({
-          key: `use.${ev}`,
+          key: measure === 'events' ? `use.${ev}` : `use.${ev}.${measure}`,
           label,
           source: 'posthog',
           platform: null,
           days: use.days,
-          values: d.events,
+          values: d[measure],
         });
     }
   }

@@ -171,6 +171,15 @@ const funnel = ({
 
 // ---------- Dashboard definitions ----------
 
+// @ai Qariah (TECH_DEBT #391): an insight's count changed meaning at a build.
+// The runner writes `description` when the spec has one.
+const PAUSE_NOTE =
+  'Interruptions and other pauses from outside the app controls: the on-screen Pause button sends none (Bayaan#514). Until TECH_DEBT #391 (PR #925) the app also sent one at the end of each track, and older builds still do, so the count falls as people update.';
+const SKIP_NOTE =
+  'Since TECH_DEBT #391 (PR #925), playback_skipped is a skip by the user only. Older builds also send one for each automatic advance at a track end, so the count falls as people update; an automatic advance is playback_started with source = autoplay.';
+const OPEN_NOTE =
+  'Since TECH_DEBT #391 (PR #925), iOS sends no app_opened when the user closes Control Center or the notification list (the app was inactive, not in the background). Older builds still send one.';
+
 const DASHBOARDS = [
   {
     name: 'Qariah — Tester health',
@@ -188,11 +197,14 @@ const DASHBOARDS = [
         events: [{event: 'app_opened', math: 'dau'}],
         dateFrom: '-30d',
       }),
-      trendsLine({
-        name: 'Sessions per day (app_opened count)',
-        events: [{event: 'app_opened', math: 'total'}],
-        dateFrom: '-30d',
-      }),
+      {
+        ...trendsLine({
+          name: 'Sessions per day (app_opened count)',
+          events: [{event: 'app_opened', math: 'total'}],
+          dateFrom: '-30d',
+        }),
+        description: OPEN_NOTE,
+      },
       funnel({
         name: 'First-launch funnel (open → reciter → playback → meaningful listen)',
         steps: [
@@ -294,12 +306,15 @@ const DASHBOARDS = [
           },
         },
       },
-      trendsBar({
-        name: 'Most-skipped surahs (14d)',
-        events: [{event: 'playback_skipped'}],
-        breakdown: 'surah_id',
-        breakdownLimit: 20,
-      }),
+      {
+        ...trendsBar({
+          name: 'Most-skipped surahs (14d)',
+          events: [{event: 'playback_skipped'}],
+          breakdown: 'surah_id',
+          breakdownLimit: 20,
+        }),
+        description: SKIP_NOTE,
+      },
     ],
   },
   {
@@ -309,14 +324,17 @@ const DASHBOARDS = [
       'Sentry is the primary error tracker; this dashboard surfaces correlates. ' +
       'Source-of-truth: planning/posthog-dashboards.md (Dashboard 3).',
     insights: [
-      trendsLine({
-        name: 'Sessions opened vs playback_started (daily)',
-        events: [
-          {event: 'app_opened', math: 'total'},
-          {event: 'playback_started', math: 'total'},
-        ],
-        dateFrom: '-14d',
-      }),
+      {
+        ...trendsLine({
+          name: 'Sessions opened vs playback_started (daily)',
+          events: [
+            {event: 'app_opened', math: 'total'},
+            {event: 'playback_started', math: 'total'},
+          ],
+          dateFrom: '-14d',
+        }),
+        description: OPEN_NOTE,
+      },
       trendsBar({
         name: 'App version distribution (last 7d)',
         events: [{event: 'app_opened', math: 'dau'}],
@@ -324,19 +342,25 @@ const DASHBOARDS = [
         breakdownLimit: 10,
         dateFrom: '-7d',
       }),
-      trendsLine({
-        name: 'Playback paused (daily, possible audio issue signal)',
-        events: [{event: 'playback_paused', math: 'total'}],
-        dateFrom: '-14d',
-      }),
-      trendsLine({
-        name: 'Skip vs completion (daily counts)',
-        events: [
-          {event: 'playback_skipped', math: 'total'},
-          {event: 'playback_completed', math: 'total'},
-        ],
-        dateFrom: '-14d',
-      }),
+      {
+        ...trendsLine({
+          name: 'Playback paused (daily, possible audio issue signal)',
+          events: [{event: 'playback_paused', math: 'total'}],
+          dateFrom: '-14d',
+        }),
+        description: PAUSE_NOTE,
+      },
+      {
+        ...trendsLine({
+          name: 'Skip vs completion (daily counts)',
+          events: [
+            {event: 'playback_skipped', math: 'total'},
+            {event: 'playback_completed', math: 'total'},
+          ],
+          dateFrom: '-14d',
+        }),
+        description: SKIP_NOTE,
+      },
     ],
   },
 ];
@@ -389,6 +413,7 @@ async function ensureDashboard(spec) {
         body: JSON.stringify({
           name: insight.name,
           query: insight.query,
+          ...(insight.description ? {description: insight.description} : {}),
         }),
       });
       console.log(`     ↻ Updated insight: "${insight.name}"`);
@@ -398,6 +423,7 @@ async function ensureDashboard(spec) {
         body: JSON.stringify({
           name: insight.name,
           query: insight.query,
+          ...(insight.description ? {description: insight.description} : {}),
           dashboards: [dashboard.id],
         }),
       });
